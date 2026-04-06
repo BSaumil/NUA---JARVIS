@@ -113,7 +113,7 @@ export default function MemoryScreen() {
         <View style={st.loadBox}><ActivityIndicator size="large" color={C.primary} /></View>
       ) : memories.length === 0 ? (
         <View style={st.emptyBox}>
-          <Ionicons name="brain" size={48} color={C.textTer} />
+          <Ionicons name="bulb" size={48} color={C.textTer} />
           <Text style={st.emptyTitle}>No Memories Yet</Text>
           <Text style={st.emptySub}>Chat with Nua or add manually. Say things like:{'\n'}"My name is..." or "I prefer..."</Text>
         </View>
