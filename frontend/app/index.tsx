@@ -5,7 +5,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import {
+  useAudioRecorder,
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+  useAudioRecorderState,
+  AudioPlayer,
+} from 'expo-audio';
 import { useLocalSearchParams } from 'expo-router';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -167,10 +174,23 @@ export default function ChatScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const flatListRef = useRef<FlatList>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Audio recorder hook
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder);
+
+  // Request permissions on mount
+  useEffect(() => {
+    (async () => {
+      const { status } = await AudioModule.requestRecordingPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Microphone permission denied');
+      }
+    })();
+  }, []);
 
   // Load conversation if ID provided
   useEffect(() => {
@@ -257,18 +277,9 @@ export default function ChatScreen() {
 
   const startRecording = async () => {
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') return;
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording: rec } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(rec);
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setIsRecording(true);
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -276,16 +287,18 @@ export default function ChatScreen() {
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
+    if (!isRecording) return;
     setIsRecording(false);
     setIsLoading(true);
 
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
 
-      if (!uri) return;
+      if (!uri) {
+        setIsLoading(false);
+        return;
+      }
 
       const formData = new FormData();
       formData.append('audio', {
@@ -311,7 +324,6 @@ export default function ChatScreen() {
         setMessages(prev => [...prev, errMsg]);
       } else {
         if (!conversationId) setConversationId(data.conversation_id);
-        // Add the transcribed user message
         const userMsg: Message = {
           id: `voice-${Date.now()}`,
           role: 'user',
@@ -329,10 +341,10 @@ export default function ChatScreen() {
 
   const playAudio = async (text: string) => {
     if (isSpeaking) {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
+      if (playerRef.current) {
+        playerRef.current.pause();
+        playerRef.current.release();
+        playerRef.current = null;
       }
       setIsSpeaking(false);
       return;
@@ -348,19 +360,20 @@ export default function ChatScreen() {
       const data = await res.json();
 
       if (data.audio_base64) {
-        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: `data:audio/mp3;base64,${data.audio_base64}` }
-        );
-        soundRef.current = sound;
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) {
+        await setAudioModeAsync({ playsInSilentMode: true });
+        const player = new AudioPlayer(`data:audio/mp3;base64,${data.audio_base64}`);
+        playerRef.current = player;
+        player.play();
+
+        // Monitor playback completion
+        const checkInterval = setInterval(() => {
+          if (!player.playing) {
+            clearInterval(checkInterval);
             setIsSpeaking(false);
-            sound.unloadAsync();
-            soundRef.current = null;
+            player.release();
+            playerRef.current = null;
           }
-        });
-        await sound.playAsync();
+        }, 500);
       }
     } catch (err) {
       console.error('TTS error:', err);
@@ -411,7 +424,7 @@ export default function ChatScreen() {
           <View>
             <Text style={styles.headerTitle}>J.A.R.V.I.S.</Text>
             <Text style={styles.headerSubtitle}>
-              {isLoading ? 'PROCESSING...' : isSpeaking ? 'SPEAKING...' : 'ONLINE'}
+              {isLoading ? 'PROCESSING...' : isSpeaking ? 'SPEAKING...' : isRecording ? 'LISTENING...' : 'ONLINE'}
             </Text>
           </View>
         </View>
