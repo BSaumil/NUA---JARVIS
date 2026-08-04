@@ -69,6 +69,9 @@ interface MemoryDao {
     @Query("SELECT * FROM user_facts WHERE key = :key LIMIT 1")
     suspend fun getFactByKey(key: String): UserFactEntity?
 
+    @Query("DELETE FROM user_facts WHERE id = :id")
+    suspend fun deleteFactById(id: Long)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertFact(fact: UserFactEntity): Long
 

@@ -7,6 +7,11 @@ import javax.inject.Singleton
 
 private const val PREFS_NAME = "nua_notification_stats"
 
+/** Read side used by NotificationPriorityScorer, kept separate so tests can fake it without a Context. */
+interface NotificationStatsProvider {
+    fun quickResponseRate(packageName: String): Double
+}
+
 /**
  * Lightweight per-app interaction counters backing NotificationPriorityScorer's
  * "apps historically responded to quickly" signal. Plain SharedPreferences (not Room,
@@ -16,7 +21,7 @@ private const val PREFS_NAME = "nua_notification_stats"
 @Singleton
 class NotificationStatsStore @Inject constructor(
     @ApplicationContext context: Context,
-) {
+) : NotificationStatsProvider {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun recordPosted(packageName: String) {
@@ -30,7 +35,7 @@ class NotificationStatsStore @Inject constructor(
     }
 
     /** Fraction of this app's notifications historically dismissed within the quick-response window. */
-    fun quickResponseRate(packageName: String): Double {
+    override fun quickResponseRate(packageName: String): Double {
         val total = prefs.getInt(countKey(packageName), 0)
         if (total == 0) return 0.0
         val quick = prefs.getInt(quickDismissKey(packageName), 0)

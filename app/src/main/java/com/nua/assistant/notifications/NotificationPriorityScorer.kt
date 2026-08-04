@@ -23,7 +23,7 @@ data class RankedNotification(
  */
 @Singleton
 class NotificationPriorityScorer @Inject constructor(
-    private val statsStore: NotificationStatsStore,
+    private val statsProvider: NotificationStatsProvider,
 ) {
 
     fun score(entry: NotificationEntry): RankedNotification {
@@ -35,7 +35,7 @@ class NotificationPriorityScorer @Inject constructor(
         if (PRIORITY_APP_HINTS.any { entry.packageName.contains(it, ignoreCase = true) }) {
             reasons += "from a messaging/phone app"
         }
-        if (statsStore.quickResponseRate(entry.packageName) > QUICK_RESPONSE_RATE_THRESHOLD) {
+        if (statsProvider.quickResponseRate(entry.packageName) > QUICK_RESPONSE_RATE_THRESHOLD) {
             reasons += "you usually respond to this app quickly"
         }
 

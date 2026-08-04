@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -52,12 +53,28 @@ import com.nua.assistant.notifications.NotificationSummary
 fun NuaScreen(viewModel: NuaViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val notificationSummary by viewModel.notificationSummary.collectAsState()
+    val facts by viewModel.facts.collectAsState()
+    var showSettings by remember { mutableStateOf(false) }
+
+    if (showSettings) {
+        SettingsScreen(
+            facts = facts,
+            onForgetFact = viewModel::forgetFact,
+            onBack = { showSettings = false },
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("NUA") },
-                actions = { NotificationSummaryChip(notificationSummary) },
+                actions = {
+                    NotificationSummaryChip(notificationSummary)
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    }
+                },
             )
         },
     ) { padding ->

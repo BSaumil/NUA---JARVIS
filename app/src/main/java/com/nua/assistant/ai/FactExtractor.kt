@@ -23,14 +23,6 @@ private data class FactExtractionResponse(
     val facts: List<ExtractedFactDto> = emptyList(),
 )
 
-private val FACT_HINT_REGEX = Regex(
-    """\b(my name is|call me|i'm allergic|i am allergic|i live|i work at|i work as|i drive a|i own a|i always|i usually|i never|i like|i love|i hate|i prefer|remind me|my (birthday|anniversary))\b""",
-    RegexOption.IGNORE_CASE,
-)
-
-/** Fall back to checking one turn in this many even without a local keyword hint. */
-private const val OPPORTUNISTIC_TURN_INTERVAL = 4
-
 private val EXTRACTION_SYSTEM_PROMPT = """
     You read one exchange from a conversation between a user and their personal
     assistant, NUA. Identify any durable fact worth remembering long-term: a stated
@@ -56,9 +48,20 @@ class FactExtractor @Inject constructor(
     private val json: Json,
 ) {
 
-    fun shouldConsider(userMessage: String, userTurnIndex: Int): Boolean {
-        return FACT_HINT_REGEX.containsMatchIn(userMessage) ||
-            userTurnIndex % OPPORTUNISTIC_TURN_INTERVAL == 0
+    /** Pure gating predicate, kept static so it's unit-testable without constructing FactExtractor. */
+    companion object {
+        private val FACT_HINT_REGEX = Regex(
+            """\b(my name is|call me|i'm allergic|i am allergic|i live|i work at|i work as|i drive a|i own a|i always|i usually|i never|i like|i love|i hate|i prefer|remind me|my (birthday|anniversary))\b""",
+            RegexOption.IGNORE_CASE,
+        )
+
+        /** Fall back to checking one turn in this many even without a local keyword hint. */
+        private const val OPPORTUNISTIC_TURN_INTERVAL = 4
+
+        fun shouldConsider(userMessage: String, userTurnIndex: Int): Boolean {
+            return FACT_HINT_REGEX.containsMatchIn(userMessage) ||
+                userTurnIndex % OPPORTUNISTIC_TURN_INTERVAL == 0
+        }
     }
 
     suspend fun extractFacts(userMessage: String, assistantReply: String): List<ExtractedFact> {

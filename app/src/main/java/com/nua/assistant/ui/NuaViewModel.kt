@@ -15,6 +15,7 @@ import com.nua.assistant.memory.MemoryDao
 import com.nua.assistant.memory.MessageEntity
 import com.nua.assistant.memory.MessageRole
 import com.nua.assistant.memory.SecureKeyRepository
+import com.nua.assistant.memory.UserFactEntity
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.notifications.NotificationSummary
 import com.nua.assistant.voice.VoiceManager
@@ -58,6 +59,9 @@ class NuaViewModel @Inject constructor(
     val notificationSummary: StateFlow<NotificationSummary> = notificationRepository.notifications
         .map { notificationRepository.summary() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotificationSummary(emptyList(), emptyList()))
+
+    val facts: StateFlow<List<UserFactEntity>> = memoryDao.observeFacts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch {
@@ -124,7 +128,7 @@ class NuaViewModel @Inject constructor(
 
     private suspend fun maybeExtractFacts(userMessage: String, assistantReply: String) {
         val turnIndex = memoryDao.countUserMessages()
-        if (!factExtractor.shouldConsider(userMessage, turnIndex)) return
+        if (!FactExtractor.shouldConsider(userMessage, turnIndex)) return
 
         factExtractor.extractFacts(userMessage, assistantReply).forEach { fact ->
             memoryDao.upsertFact(key = fact.key, value = fact.value, category = fact.category)
@@ -149,6 +153,10 @@ class NuaViewModel @Inject constructor(
             secureKeyRepository.setApiKey(apiKey)
             _uiState.update { it.copy(needsApiKey = false) }
         }
+    }
+
+    fun forgetFact(factId: Long) {
+        viewModelScope.launch { memoryDao.deleteFactById(factId) }
     }
 
     override fun onCleared() {

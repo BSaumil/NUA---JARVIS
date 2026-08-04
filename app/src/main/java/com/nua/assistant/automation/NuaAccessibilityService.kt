@@ -1,6 +1,9 @@
 package com.nua.assistant.automation
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ComponentName
+import android.content.Context
+import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +34,14 @@ class NuaAccessibilityService : AccessibilityService() {
         internal fun reportFailure(reason: String) {
             Log.w(TAG, "Tier 2 action failed: $reason")
             _lastFailure.value = reason
+        }
+
+        /** Whether the user has enabled NUA's Tier 2 service under system Accessibility settings. */
+        fun isEnabled(context: Context): Boolean {
+            val expected = ComponentName(context, NuaAccessibilityService::class.java).flattenToString()
+            val enabledServices = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+                ?: return false
+            return enabledServices.split(':').any { it.equals(expected, ignoreCase = true) }
         }
     }
 
