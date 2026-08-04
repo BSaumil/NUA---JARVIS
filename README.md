@@ -1,0 +1,101 @@
+# NUA
+
+A personal AI assistant for Android (Kotlin, Jetpack Compose, Hilt/MVVM, Claude API).
+
+NUA is scoped in three tiers of increasing risk:
+
+- **Tier 1 — official APIs/intents.** App launching, media session control, notification
+  listener, on-device calendar, weather. Ships freely, no confirmation gate beyond what
+  the underlying API already requires.
+- **Tier 2 — Accessibility Service automation.** Opt-in, off by default, last resort for
+  actions with no official API. Every Tier 2 action requires explicit per-action
+  confirmation in the moment — never scheduled, never chained, never run unattended.
+  `NuaAccessibilityService` currently ships as an inert skeleton; no concrete Tier 2
+  action is wired up yet.
+- **Tier 3 — not currently implementable or advisable**, and out of scope unless
+  explicitly revisited: direct WiFi/Bluetooth toggling, autonomous purchasing, call/
+  meeting recording without explicit all-party consent, presenting health/emotional
+  inferences as diagnosis.
+
+## Codebase structure
+
+```
+app/src/main/java/com/nua/assistant/
+  NuaApplication.kt        → @HiltAndroidApp entry point
+  MainActivity.kt           → Compose host, permission requests, wake-word broadcast receiver
+  ai/                        → ClaudeApiClient, PersonalityEngine, and Phase 3 intelligence:
+                                IntentClassifier, FactExtractor, TaskPlanner
+  voice/                     → VoiceManager (STT/TTS wrapper)
+  automation/                → AppLauncher (Tier 1), NuaIntentRouter (keyword + Claude-fallback
+                                routing), NuaAccessibilityService (Tier 2 skeleton)
+  weather/                   → WeatherRepository (Open-Meteo, no API key)
+  calendar/                  → CalendarReader (on-device CalendarContract, read + confirmed-plan
+                                reminder writes, no OAuth)
+  memory/                    → MemoryStore.kt (Room: messages + user_facts),
+                                SecureKeyRepository (encrypted Claude API key storage)
+  notifications/              → NuaNotificationListenerService, NotificationRepository,
+                                NotificationPriorityScorer, NotificationStatsStore
+  media/                     → MediaControlManager (MediaSessionManager-based)
+  briefing/                  → MorningBriefing (assembles facts, hands to Claude for phrasing)
+  services/                  → NuaForegroundService (wake-word listening via Porcupine, "Jarvis")
+  di/                        → AppModule (Hilt module for Room, OkHttp, JSON)
+  ui/                        → NuaScreen (Compose), NuaViewModel (@HiltViewModel), NuaTheme
+```
+
+## Phase 3 — what's new
+
+1. **Intent engine upgrade.** `NuaIntentRouter` tries free local keyword matching first;
+   ambiguous/conversational requests ("I'm bored, put some music on") that miss the fast
+   path fall back to `IntentClassifier`, which asks Claude to classify the utterance into
+   a concrete action (or CHAT, if nothing fits) before a single paid API round trip.
+2. **Fact extraction into memory.** `FactExtractor` flags durable facts (a preference, a
+   routine, a name) from a conversation turn and returns them for `NuaViewModel` to write
+   via `MemoryDao.upsertFact`. It doesn't run on every turn — `shouldConsider` gates it to
+   turns that look likely to contain a fact (regex hint) plus a periodic sweep every 4th
+   user turn, so slow-burn facts aren't missed without paying for every single turn.
+3. **Multi-step task planning.** `TaskPlanner` gathers real weather (`WeatherRepository`)
+   and calendar (`CalendarReader`) context the same way `MorningBriefing` does, asks Claude
+   to propose a short plan, and returns it for UI confirmation (`PlanConfirmationDialog`).
+   Reminders are only created via `CalendarReader.createReminder` after the user taps
+   "Confirm plan" — never automatically.
+4. **Notification prioritization.** `NotificationRepository.summary()` ranks rather than
+   lists: `NotificationPriorityScorer` flags call/message-category notifications, high
+   declared priority, messaging/phone apps, and apps the user has historically dismissed
+   quickly (tracked in `NotificationStatsStore`), and phrases the result plainly
+   ("two need attention, eight can wait") instead of reading everything with equal weight.
+
+## Known gaps
+
+- No automated tests yet (unit tests for `NuaIntentRouter`'s keyword fast path and
+  `FactExtractor`'s gating heuristic would be the highest-value first additions).
+- No settings screen beyond the Claude API key dialog — no way to view/forget stored
+  facts, adjust the fact-extraction cadence, or toggle Tier 2 from within the app (Tier 2
+  is enabled/disabled only via Android Settings > Accessibility, by design).
+- No battery-optimization onboarding flow (needed for the wake-word foreground service to
+  survive background restrictions on some OEM skins).
+- `AppLauncher`'s package-name map is best-effort; it falls back to searching installed
+  launcher activities by label, but hasn't been verified against a real device's installed
+  app set.
+- No launcher icon design — `ic_launcher_foreground`/`ic_launcher_background` are
+  placeholders (a plain glyph on a solid field), not real branding.
+- Wake-word listening (`NuaForegroundService`) requires a Picovoice console access key
+  (`-PPICOVOICE_ACCESS_KEY=...`); without one it logs a warning and stops itself rather
+  than silently doing nothing.
+- `NuaAccessibilityService` is a structural skeleton only — the confirmation contract
+  (per-action, in-the-moment, fail-loud via `NuaAccessibilityService.lastFailure`) is
+  settled, but no concrete Tier 2 action is implemented.
+- This environment has no Android SDK and the outbound network policy blocks
+  `dl.google.com` (the only host that serves the Android Gradle Plugin and platform
+  artifacts), so the build could not be verified end-to-end with `./gradlew assembleDebug`
+  here. Every file was written and cross-checked by hand for import/package correctness;
+  it still needs a real build on a machine with the Android SDK before shipping.
+
+## Building
+
+Requires the Android SDK (compileSdk 35) and a JDK 17+. Set your Claude API key at
+runtime through the in-app dialog (stored via `SecureKeyRepository`, never in a build
+file). Optionally pass a Picovoice access key for wake-word support:
+
+```
+./gradlew assembleDebug -PPICOVOICE_ACCESS_KEY=your_key_here
+```

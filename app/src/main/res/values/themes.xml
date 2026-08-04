@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose owns theming (see ui/NuaTheme.kt); this is only the pre-Compose
+         window background used while the activity is launching. -->
+    <style name="Theme.Nua" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
