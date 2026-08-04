@@ -66,13 +66,15 @@ app/src/main/java/com/nua/assistant/
 
 ## Known gaps
 
-- No automated tests yet (unit tests for `NuaIntentRouter`'s keyword fast path and
-  `FactExtractor`'s gating heuristic would be the highest-value first additions).
-- No settings screen beyond the Claude API key dialog — no way to view/forget stored
-  facts, adjust the fact-extraction cadence, or toggle Tier 2 from within the app (Tier 2
-  is enabled/disabled only via Android Settings > Accessibility, by design).
-- No battery-optimization onboarding flow (needed for the wake-word foreground service to
-  survive background restrictions on some OEM skins).
+- Test coverage is limited to the pure-logic pieces that don't need a live Android
+  runtime: `KeywordIntentMatcher`, `FactExtractor.shouldConsider`'s gating heuristic,
+  `NotificationPriorityScorer`, and `extractJsonPayload`. Nothing exercises the Room DAO,
+  `ClaudeApiClient`'s HTTP layer, or Compose UI yet — those would need Robolectric or
+  instrumented tests.
+- The settings screen covers viewing/forgetting facts and Tier 2 / battery-optimization
+  status, but there's still no way to adjust the fact-extraction cadence or rotate the
+  Claude API key from within the app (Tier 2 itself stays toggle-only via Android
+  Settings > Accessibility, by design — the app only deep-links there).
 - `AppLauncher`'s package-name map is best-effort; it falls back to searching installed
   launcher activities by label, but hasn't been verified against a real device's installed
   app set.
