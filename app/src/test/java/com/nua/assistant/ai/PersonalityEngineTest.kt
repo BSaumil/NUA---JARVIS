@@ -1,6 +1,8 @@
 package com.nua.assistant.ai
 
 import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.voice.NuaLanguage
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,5 +38,23 @@ class PersonalityEngineTest {
         val newPrompt = engine.systemPrompt(knownFacts = emptyList(), turnCount = 0)
         val establishedPrompt = engine.systemPrompt(knownFacts = (1..5).map { fact(it) }, turnCount = 20)
         assertNotEquals(newPrompt, establishedPrompt)
+    }
+
+    @Test
+    fun `the system prompt always names the supported languages`() {
+        val prompt = engine.systemPrompt()
+        NuaLanguage.entries.forEach { language -> assertTrue(prompt.contains(language.displayName)) }
+    }
+
+    @Test
+    fun `no pinned language leaves out the override directive`() {
+        val prompt = engine.systemPrompt(pinnedLanguage = null)
+        assertFalse(prompt.contains("preferred language"))
+    }
+
+    @Test
+    fun `a pinned language adds an explicit override instruction`() {
+        val prompt = engine.systemPrompt(pinnedLanguage = NuaLanguage.GUJARATI)
+        assertTrue(prompt.contains("preferred language to Gujarati"))
     }
 }

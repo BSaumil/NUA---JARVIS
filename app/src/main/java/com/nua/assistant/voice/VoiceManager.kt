@@ -23,14 +23,21 @@ class VoiceManager @Inject constructor(
     private var speechRecognizer: SpeechRecognizer? = null
 
     init {
-        textToSpeech = TextToSpeech(context) { status ->
-            ttsReady = status == TextToSpeech.SUCCESS
-            if (ttsReady) textToSpeech?.language = Locale.getDefault()
-        }
+        textToSpeech = TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
     }
 
-    fun speak(text: String) {
+    /**
+     * Speaks [text] in [language]'s voice. Falls back to English if the device/TTS
+     * engine has no voice data for that language (common for Gujarati and Haryanvi in
+     * particular — see NuaLanguage's doc comment).
+     */
+    fun speak(text: String, language: NuaLanguage = NuaLanguage.ENGLISH) {
         if (!ttsReady) return
+        val locale = Locale.forLanguageTag(language.speechTag)
+        val result = textToSpeech?.setLanguage(locale)
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            textToSpeech?.setLanguage(Locale.forLanguageTag(NuaLanguage.ENGLISH.speechTag))
+        }
         textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nua_utterance_${System.currentTimeMillis()}")
     }
 
@@ -38,7 +45,8 @@ class VoiceManager @Inject constructor(
         textToSpeech?.stop()
     }
 
-    fun startListening(onResult: (String) -> Unit, onError: (String) -> Unit) {
+    /** [language] is a recognition hint, not a filter — SpeechRecognizer needs one locale to bias toward per call. */
+    fun startListening(language: NuaLanguage = NuaLanguage.ENGLISH, onResult: (String) -> Unit, onError: (String) -> Unit) {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             onError("Speech recognition isn't available on this device.")
             return
@@ -50,7 +58,7 @@ class VoiceManager @Inject constructor(
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, language.speechTag)
         }
 
         recognizer.setRecognitionListener(object : RecognitionListener {

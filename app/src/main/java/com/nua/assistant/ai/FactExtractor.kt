@@ -1,5 +1,6 @@
 package com.nua.assistant.ai
 
+import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.Serializable
@@ -34,6 +35,11 @@ private val EXTRACTION_SYSTEM_PROMPT = """
 
     If there is nothing durable worth remembering, reply {"facts": []}. Don't invent
     facts that aren't actually stated.
+
+    The exchange may be in any of: ${NuaLanguage.supportedNames()}. Write each "value"
+    in English regardless of the exchange's language — facts are stored once and reused
+    across conversations in whatever language is current then, so keeping them in one
+    language keeps that consistent.
 """.trimIndent()
 
 /**
@@ -50,6 +56,9 @@ class FactExtractor @Inject constructor(
 
     /** Pure gating predicate, kept static so it's unit-testable without constructing FactExtractor. */
     companion object {
+        // English-only on purpose: a reliable hint regex across Devanagari/Gujarati/
+        // Gurmukhi scripts isn't something to fake. Non-English fact hints still get
+        // caught by the periodic sweep below, just less eagerly than English ones.
         private val FACT_HINT_REGEX = Regex(
             """\b(my name is|call me|i'm allergic|i am allergic|i live|i work at|i work as|i drive a|i own a|i always|i usually|i never|i like|i love|i hate|i prefer|remind me|my (birthday|anniversary))\b""",
             RegexOption.IGNORE_CASE,

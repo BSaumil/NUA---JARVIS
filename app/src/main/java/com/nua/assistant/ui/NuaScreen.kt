@@ -54,12 +54,15 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val notificationSummary by viewModel.notificationSummary.collectAsState()
     val facts by viewModel.facts.collectAsState()
+    val pinnedLanguage by viewModel.pinnedLanguage.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
 
     if (showSettings) {
         SettingsScreen(
             facts = facts,
             onForgetFact = viewModel::forgetFact,
+            pinnedLanguage = pinnedLanguage,
+            onLanguageSelected = viewModel::setPinnedLanguage,
             onBack = { showSettings = false },
         )
         return

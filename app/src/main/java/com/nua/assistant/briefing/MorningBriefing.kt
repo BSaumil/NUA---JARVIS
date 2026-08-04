@@ -5,6 +5,7 @@ import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.calendar.CalendarReader
 import com.nua.assistant.memory.MemoryDao
+import com.nua.assistant.voice.NuaLanguage
 import com.nua.assistant.weather.WeatherRepository
 import com.nua.assistant.weather.WeatherSnapshot
 import java.text.SimpleDateFormat
@@ -33,7 +34,7 @@ class MorningBriefing @Inject constructor(
     private val claudeApiClient: ClaudeApiClient,
 ) {
 
-    suspend fun generate(): String {
+    suspend fun generate(triggerUtterance: String? = null, pinnedLanguage: NuaLanguage? = null): String {
         val weather = weatherRepository.currentSnapshot().getOrNull()
         val todayEvents = calendarReader.eventsBetween(startOfTodayMillis(), startOfTodayMillis() + ONE_DAY_MS)
         val facts = memoryDao.getAllFacts()
@@ -43,11 +44,19 @@ class MorningBriefing @Inject constructor(
             appendLine("Weather: ${weather?.let { "${it.condition}, currently ${it.currentTempC.toInt()}°C, high ${it.highTempC.toInt()}°C / low ${it.lowTempC.toInt()}°C, ${it.precipitationChancePercent}% chance of precipitation" } ?: "unavailable"}")
             appendLine("Today's calendar: ${if (todayEvents.isEmpty()) "nothing scheduled" else todayEvents.joinToString("; ") { "${it.title} at ${timeFormat.format(it.startTimeMillis)}" }}")
             appendLine("Known facts about the user: ${if (facts.isEmpty()) "none yet" else facts.joinToString("; ") { it.value }}")
+            if (triggerUtterance != null) appendLine("User's own words when they asked for this, for you to notice what language to reply in: \"$triggerUtterance\"")
+        }
+
+        val system = buildString {
+            appendLine(BRIEFING_SYSTEM_PROMPT)
+            appendLine()
+            appendLine(NuaLanguage.mirrorDirective())
+            if (pinnedLanguage != null) appendLine(NuaLanguage.pinnedDirective(pinnedLanguage))
         }
 
         val result = claudeApiClient.complete(
             userPrompt = prompt,
-            system = BRIEFING_SYSTEM_PROMPT,
+            system = system,
             model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 300,
         )

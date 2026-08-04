@@ -1,6 +1,7 @@
 package com.nua.assistant.ai
 
 import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -32,8 +33,17 @@ class PersonalityEngine @Inject constructor() {
         plainly instead of pretending.
     """.trimIndent()
 
-    fun systemPrompt(knownFacts: List<UserFactEntity> = emptyList(), turnCount: Int = 0): String {
-        val sections = mutableListOf(basePersona, toneForTier(familiarityTier(turnCount, knownFacts.size)))
+    fun systemPrompt(
+        knownFacts: List<UserFactEntity> = emptyList(),
+        turnCount: Int = 0,
+        pinnedLanguage: NuaLanguage? = null,
+    ): String {
+        val sections = mutableListOf(
+            basePersona,
+            toneForTier(familiarityTier(turnCount, knownFacts.size)),
+            NuaLanguage.mirrorDirective(),
+        )
+        if (pinnedLanguage != null) sections += NuaLanguage.pinnedDirective(pinnedLanguage)
 
         if (knownFacts.isNotEmpty()) {
             val factLines = knownFacts.joinToString("\n") { "- ${it.value}" }

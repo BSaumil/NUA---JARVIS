@@ -25,7 +25,8 @@ app/src/main/java/com/nua/assistant/
   MainActivity.kt           → Compose host, permission requests, wake-word broadcast receiver
   ai/                        → ClaudeApiClient, PersonalityEngine, and Phase 3 intelligence:
                                 IntentClassifier, FactExtractor, TaskPlanner
-  voice/                     → VoiceManager (STT/TTS wrapper)
+  voice/                     → VoiceManager (STT/TTS wrapper), NuaLanguage (10-language
+                                catalog), LanguagePreferenceStore (pinned language)
   automation/                → AppLauncher (Tier 1), NuaIntentRouter (keyword + Claude-fallback
                                 routing), NuaAccessibilityService (Tier 2 skeleton)
   weather/                   → WeatherRepository (Open-Meteo, no API key)
@@ -63,6 +64,34 @@ app/src/main/java/com/nua/assistant/
    declared priority, messaging/phone apps, and apps the user has historically dismissed
    quickly (tracked in `NotificationStatsStore`), and phrases the result plainly
    ("two need attention, eight can wait") instead of reading everything with equal weight.
+
+## Languages
+
+NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,
+Italian, Spanish, Haryanvi, Punjabi, Vietnamese, and Chinese (Mandarin) — the catalog
+lives in `voice/NuaLanguage.kt`.
+
+- **Text chat** auto-mirrors whichever of these the user's message is in, turn by turn,
+  no setting required — `PersonalityEngine`, `IntentClassifier`, `TaskPlanner`, and
+  `MorningBriefing` all carry the same mirroring directive. Explicitly asking NUA to
+  switch language works the same way (it's just an instruction Claude follows from
+  conversation history).
+- **Pinning a language** in Settings overrides mirroring — NUA replies in it regardless
+  of what language the user writes in — and also sets the concrete locale used for
+  speech input/output.
+- **Voice (STT/TTS)** can't auto-detect language the way text chat does — Android's
+  `SpeechRecognizer` needs one language hint per listening session, and `TextToSpeech`
+  needs one locale per utterance. Voice defaults to English until the user pins a
+  language in Settings. Haryanvi has no Android speech locale of its own, so it shares
+  Hindi's for voice — NUA still understands and replies to Haryanvi as text on its own
+  terms.
+- Gujarati, Haryanvi, and some regional locales may not have installed TTS voice data on
+  a given device; `VoiceManager.speak` falls back to English automatically when that
+  happens rather than staying silent.
+- `FactExtractor`'s local "does this look like a fact" regex hint is English-only (a
+  reliable one across Devanagari/Gujarati/Gurmukhi scripts isn't something to fake).
+  Non-English fact hints still get caught by the periodic every-4th-turn sweep, just
+  less eagerly than English ones.
 
 ## Known gaps
 

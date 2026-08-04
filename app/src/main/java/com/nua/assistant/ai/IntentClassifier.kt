@@ -1,5 +1,6 @@
 package com.nua.assistant.ai
 
+import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.Serializable
@@ -54,6 +55,10 @@ private val CLASSIFIER_SYSTEM_PROMPT = """
 
     If you're not reasonably confident (>0.6), prefer CHAT with a low confidence score
     rather than guessing at an action.
+
+    The request may be in any of: ${NuaLanguage.supportedNames()} — understand it
+    regardless of language. Keep any extracted text parameters ("app", "query",
+    "activity") in the same language and wording the user used; don't translate them.
 """.trimIndent()
 
 /**

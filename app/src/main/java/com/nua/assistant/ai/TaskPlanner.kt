@@ -1,6 +1,7 @@
 package com.nua.assistant.ai
 
 import com.nua.assistant.calendar.CalendarReader
+import com.nua.assistant.voice.NuaLanguage
 import com.nua.assistant.weather.WeatherRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -61,7 +62,7 @@ class TaskPlanner @Inject constructor(
     private val json: Json,
 ) {
 
-    suspend fun propose(activityDescription: String): TaskPlan? {
+    suspend fun propose(activityDescription: String, pinnedLanguage: NuaLanguage? = null): TaskPlan? {
         val weather = weatherRepository.currentSnapshot().getOrNull()
         val upcomingEvents = calendarReader.eventsForTomorrow()
 
@@ -78,9 +79,16 @@ class TaskPlanner @Inject constructor(
             appendLine("Tomorrow's calendar: ${if (upcomingEvents.isEmpty()) "clear" else upcomingEvents.joinToString("; ") { it.title }}")
         }
 
+        val system = buildString {
+            appendLine(PLANNER_SYSTEM_PROMPT)
+            appendLine()
+            appendLine(NuaLanguage.mirrorDirective())
+            if (pinnedLanguage != null) appendLine(NuaLanguage.pinnedDirective(pinnedLanguage))
+        }
+
         val result = claudeApiClient.complete(
             userPrompt = prompt,
-            system = PLANNER_SYSTEM_PROMPT,
+            system = system,
             model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 700,
         )

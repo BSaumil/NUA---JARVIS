@@ -18,6 +18,8 @@ import com.nua.assistant.memory.SecureKeyRepository
 import com.nua.assistant.memory.UserFactEntity
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.notifications.NotificationSummary
+import com.nua.assistant.voice.LanguagePreferenceStore
+import com.nua.assistant.voice.NuaLanguage
 import com.nua.assistant.voice.VoiceManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -51,10 +53,14 @@ class NuaViewModel @Inject constructor(
     private val secureKeyRepository: SecureKeyRepository,
     private val voiceManager: VoiceManager,
     private val notificationRepository: NotificationRepository,
+    private val languagePreferenceStore: LanguagePreferenceStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
     val uiState: StateFlow<NuaUiState> = _uiState.asStateFlow()
+
+    private val _pinnedLanguage = MutableStateFlow(languagePreferenceStore.getPinnedLanguage())
+    val pinnedLanguage: StateFlow<NuaLanguage?> = _pinnedLanguage.asStateFlow()
 
     val notificationSummary: StateFlow<NotificationSummary> = notificationRepository.notifications
         .map { notificationRepository.summary() }
@@ -77,6 +83,7 @@ class NuaViewModel @Inject constructor(
 
     fun onWakeWordDetected() {
         voiceManager.startListening(
+            language = _pinnedLanguage.value ?: NuaLanguage.ENGLISH,
             onResult = { heard -> sendMessage(heard) },
             onError = { /* stays silent; the mic UI affordance covers the retry path */ },
         )
@@ -93,7 +100,7 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch {
             memoryDao.insertMessage(MessageEntity(role = MessageRole.USER, content = message))
 
-            when (val routed = intentRouter.route(message)) {
+            when (val routed = intentRouter.route(message, _pinnedLanguage.value)) {
                 is NuaRouteResult.ActionTaken -> respond(routed.message, extractFacts = false)
                 is NuaRouteResult.PlanProposed -> _uiState.update { it.copy(isProcessing = false, pendingPlan = routed.plan) }
                 NuaRouteResult.FallThroughToChat -> replyConversationally(message)
@@ -108,7 +115,8 @@ class NuaViewModel @Inject constructor(
             ClaudeMessage(role = if (it.role == MessageRole.USER) "user" else "assistant", content = it.content)
         }
 
-        val result = claudeApiClient.sendMessage(messages = history, system = personalityEngine.systemPrompt(facts, turnCount))
+        val system = personalityEngine.systemPrompt(facts, turnCount, _pinnedLanguage.value)
+        val result = claudeApiClient.sendMessage(messages = history, system = system)
         val reply = when (result) {
             is ClaudeResult.Success -> result.text
             is ClaudeResult.Failure -> "Sorry — ${result.message}"
@@ -120,7 +128,7 @@ class NuaViewModel @Inject constructor(
     private suspend fun respond(text: String, extractFacts: Boolean, sourceUserMessage: String? = null) {
         memoryDao.insertMessage(MessageEntity(role = MessageRole.ASSISTANT, content = text))
         _uiState.update { it.copy(isProcessing = false, messages = it.messages + ChatMessage(MessageRole.ASSISTANT, text)) }
-        voiceManager.speak(text)
+        voiceManager.speak(text, _pinnedLanguage.value ?: NuaLanguage.ENGLISH)
 
         if (extractFacts && sourceUserMessage != null) {
             maybeExtractFacts(sourceUserMessage, text)
@@ -158,6 +166,12 @@ class NuaViewModel @Inject constructor(
 
     fun forgetFact(factId: Long) {
         viewModelScope.launch { memoryDao.deleteFactById(factId) }
+    }
+
+    /** Null pins nothing — NUA goes back to auto-mirroring whatever language the user writes/speaks in. */
+    fun setPinnedLanguage(language: NuaLanguage?) {
+        languagePreferenceStore.setPinnedLanguage(language)
+        _pinnedLanguage.value = language
     }
 
     override fun onCleared() {

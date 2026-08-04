@@ -8,6 +8,7 @@ import com.nua.assistant.ai.TaskPlanner
 import com.nua.assistant.briefing.MorningBriefing
 import com.nua.assistant.media.MediaControlManager
 import com.nua.assistant.notifications.NotificationRepository
+import com.nua.assistant.voice.NuaLanguage
 import com.nua.assistant.weather.WeatherRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,17 +38,17 @@ class NuaIntentRouter @Inject constructor(
     private val intentClassifier: IntentClassifier,
 ) {
 
-    suspend fun route(utterance: String): NuaRouteResult {
-        KeywordIntentMatcher.match(utterance)?.let { return dispatch(it, utterance) }
+    suspend fun route(utterance: String, pinnedLanguage: NuaLanguage? = null): NuaRouteResult {
+        KeywordIntentMatcher.match(utterance)?.let { return dispatch(it, utterance, pinnedLanguage) }
 
         val classified = intentClassifier.classify(utterance) ?: return NuaRouteResult.FallThroughToChat
         if (classified.action == NuaActionType.CHAT || classified.confidence < CLASSIFICATION_CONFIDENCE_THRESHOLD) {
             return NuaRouteResult.FallThroughToChat
         }
-        return dispatch(classified, utterance)
+        return dispatch(classified, utterance, pinnedLanguage)
     }
 
-    private suspend fun dispatch(intent: ClassifiedIntent, originalUtterance: String): NuaRouteResult = when (intent.action) {
+    private suspend fun dispatch(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult = when (intent.action) {
         NuaActionType.OPEN_APP -> {
             val app = intent.parameters["app"]
             if (app.isNullOrBlank()) {
@@ -95,12 +96,12 @@ class NuaIntentRouter @Inject constructor(
         }
 
         NuaActionType.MORNING_BRIEFING -> {
-            NuaRouteResult.ActionTaken(morningBriefing.generate())
+            NuaRouteResult.ActionTaken(morningBriefing.generate(originalUtterance, pinnedLanguage))
         }
 
         NuaActionType.PLAN_TASK -> {
             val activity = intent.parameters["activity"] ?: originalUtterance
-            val plan = taskPlanner.propose(activity)
+            val plan = taskPlanner.propose(activity, pinnedLanguage)
             if (plan != null) NuaRouteResult.PlanProposed(plan) else NuaRouteResult.FallThroughToChat
         }
 
