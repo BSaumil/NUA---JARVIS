@@ -53,18 +53,18 @@ class NuaIntentRouter @Inject constructor(
             if (app.isNullOrBlank()) {
                 NuaRouteResult.FallThroughToChat
             } else if (appLauncher.launch(app)) {
-                NuaRouteResult.ActionTaken("Opening $app.")
+                NuaRouteResult.ActionTaken(ActionCopy.appOpened(app))
             } else {
-                NuaRouteResult.ActionTaken("I couldn't find an app matching \"$app\" installed.")
+                NuaRouteResult.ActionTaken(ActionCopy.appNotFound(app))
             }
         }
 
         NuaActionType.PLAY_MEDIA -> {
             val query = intent.parameters["query"] ?: originalUtterance
             if (mediaControlManager.playByQuery(query)) {
-                NuaRouteResult.ActionTaken("Starting something for \"$query\".")
+                NuaRouteResult.ActionTaken(ActionCopy.mediaStarted(query))
             } else {
-                NuaRouteResult.ActionTaken("I don't have a music app installed that can handle that.")
+                NuaRouteResult.ActionTaken("No music app on here picked that up — is one actually installed?")
             }
         }
 
@@ -77,9 +77,9 @@ class NuaIntentRouter @Inject constructor(
                 else -> false
             }
             if (handled) {
-                NuaRouteResult.ActionTaken("Done.")
+                NuaRouteResult.ActionTaken(ActionCopy.mediaControlHandled())
             } else {
-                NuaRouteResult.ActionTaken("Nothing seems to be playing right now.")
+                NuaRouteResult.ActionTaken("Nothing's playing right now — nothing to control.")
             }
         }
 
@@ -89,9 +89,8 @@ class NuaIntentRouter @Inject constructor(
 
         NuaActionType.GET_WEATHER -> {
             val snapshot = weatherRepository.currentSnapshot().getOrNull()
-            val message = snapshot?.let {
-                "It's ${it.condition} and ${it.currentTempC.toInt()}°C, high of ${it.highTempC.toInt()}°C today with a ${it.precipitationChancePercent}% chance of rain."
-            } ?: "I couldn't get a weather reading — check that location access is granted."
+            val message = snapshot?.let { ActionCopy.weather(it.condition, it.currentTempC, it.highTempC, it.precipitationChancePercent) }
+                ?: "Couldn't get a weather reading — check that location access is granted."
             NuaRouteResult.ActionTaken(message)
         }
 
@@ -106,5 +105,40 @@ class NuaIntentRouter @Inject constructor(
         }
 
         NuaActionType.CHAT -> NuaRouteResult.FallThroughToChat
+    }
+}
+
+/**
+ * Varied phrasing for the fast keyword/classification path, so action confirmations
+ * carry a bit of NUA's voice without paying for a Claude call just to phrase "Done."
+ * Picking randomly among a few options also keeps repeated actions from reading as
+ * canned — the fast path can't evolve tone with familiarity the way chat replies do
+ * (see PersonalityEngine), but it doesn't have to sound like a fixed script either.
+ */
+private object ActionCopy {
+    fun appOpened(app: String): String = listOf(
+        "Opening $app.",
+        "On it — launching $app.",
+        "$app, coming right up.",
+    ).random()
+
+    fun appNotFound(app: String): String =
+        "Couldn't find anything called \"$app\" on here — mistyped, or not installed?"
+
+    fun mediaStarted(query: String): String = listOf(
+        "Cueing up \"$query\" for you.",
+        "Starting something for \"$query\".",
+    ).random()
+
+    fun mediaControlHandled(): String = listOf("Done.", "Handled.", "There you go.").random()
+
+    fun weather(condition: String, currentTempC: Double, highTempC: Double, precipitationChancePercent: Int): String {
+        val base = "It's $condition and ${currentTempC.toInt()}°C, high of ${highTempC.toInt()}°C today with a $precipitationChancePercent% chance of rain."
+        val remark = when {
+            precipitationChancePercent >= 60 -> " Bring an umbrella."
+            precipitationChancePercent <= 10 && currentTempC >= 22 -> " Good excuse to get outside."
+            else -> ""
+        }
+        return base + remark
     }
 }

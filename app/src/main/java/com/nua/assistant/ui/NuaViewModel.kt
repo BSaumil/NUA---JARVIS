@@ -103,11 +103,12 @@ class NuaViewModel @Inject constructor(
 
     private suspend fun replyConversationally(userMessage: String) {
         val facts = memoryDao.getAllFacts()
+        val turnCount = memoryDao.countUserMessages()
         val history = memoryDao.getRecentMessages(CONVERSATION_HISTORY_LIMIT).asReversed().map {
             ClaudeMessage(role = if (it.role == MessageRole.USER) "user" else "assistant", content = it.content)
         }
 
-        val result = claudeApiClient.sendMessage(messages = history, system = personalityEngine.systemPrompt(facts))
+        val result = claudeApiClient.sendMessage(messages = history, system = personalityEngine.systemPrompt(facts, turnCount))
         val reply = when (result) {
             is ClaudeResult.Success -> result.text
             is ClaudeResult.Failure -> "Sorry — ${result.message}"
