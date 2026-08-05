@@ -81,7 +81,13 @@ class NuaViewModel @Inject constructor(
         _uiState.update { it.copy(inputText = text) }
     }
 
-    fun onWakeWordDetected() {
+    /**
+     * [wakePhraseId] (see WakePhrase.id) is which phrase woke NUA up — "jarvis",
+     * "daddys_home", etc. Not used for anything yet beyond starting to listen; it's a
+     * hook for future per-phrase personalization (a groggier reply for "wake up sleepy
+     * head" vs. a plain one for "hey nua"), not required for wake-word detection itself.
+     */
+    fun onWakeWordDetected(wakePhraseId: String? = null) {
         voiceManager.startListening(
             language = _pinnedLanguage.value ?: NuaLanguage.ENGLISH,
             onResult = { heard -> sendMessage(heard) },

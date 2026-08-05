@@ -43,6 +43,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.services.WakePhrases
+import com.nua.assistant.services.isAvailable
 import com.nua.assistant.voice.NuaLanguage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,6 +74,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { LanguageCard(pinnedLanguage, onLanguageSelected) }
+            item { WakeWordsCard() }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -125,6 +128,37 @@ private fun LanguageCard(pinnedLanguage: NuaLanguage?, onLanguageSelected: (NuaL
                         selected = pinnedLanguage == language,
                         onClick = { onLanguageSelected(language) },
                         label = { Text(language.displayName) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WakeWordsCard() {
+    val context = LocalContext.current
+
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Wake words", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Say any active phrase to start a voice turn. \"Needs setup\" ones are " +
+                    "declared but waiting on a trained model — see app/src/main/assets/README.md.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            WakePhrases.ALL.forEach { phrase ->
+                val active = remember(phrase) { phrase.isAvailable(context) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(phrase.displayText, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = if (active) "Active" else "Needs setup",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

@@ -38,7 +38,8 @@ app/src/main/java/com/nua/assistant/
                                 NotificationPriorityScorer, NotificationStatsStore
   media/                     → MediaControlManager (MediaSessionManager-based)
   briefing/                  → MorningBriefing (assembles facts, hands to Claude for phrasing)
-  services/                  → NuaForegroundService (wake-word listening via Porcupine, "Jarvis")
+  services/                  → NuaForegroundService (multi-phrase wake-word listening via
+                                Porcupine), WakePhrase (extensible wake-word catalog)
   di/                        → AppModule (Hilt module for Room, OkHttp, JSON)
   ui/                        → NuaScreen (Compose), NuaViewModel (@HiltViewModel), NuaTheme
 ```
@@ -93,6 +94,21 @@ lives in `voice/NuaLanguage.kt`.
   Non-English fact hints still get caught by the periodic every-4th-turn sweep, just
   less eagerly than English ones.
 
+## Wake words
+
+NUA can wake up to more than one phrase — the catalog lives in `services/WakePhrase.kt`
+(`WakePhrases.ALL`). "Jarvis" works immediately (a Porcupine built-in keyword, no extra
+files needed). The rest — "Hey NUA", "Hello NUA", "NUA", "Daddy's Home", "Wake up Sleepy
+Head" — are custom phrases that each need a Porcupine model trained on [Picovoice
+Console](https://console.picovoice.ai/) and dropped into `app/src/main/assets/` (see
+`app/src/main/assets/README.md` for the exact steps and expected file names).
+
+`NuaForegroundService` only activates phrases whose model is actually present
+(`availableWakePhrases()`) — a declared-but-missing phrase is skipped, not a crash — and
+Settings → Wake words shows each one as Active or Needs setup. Adding a new phrase later
+is one line in `WakePhrases.ALL` plus dropping in the trained `.ppn` file; nothing else
+needs to change, including the multi-keyword detection code in `NuaForegroundService`.
+
 ## Known gaps
 
 - Test coverage is limited to the pure-logic pieces that don't need a live Android
@@ -111,7 +127,11 @@ lives in `voice/NuaLanguage.kt`.
   placeholders (a plain glyph on a solid field), not real branding.
 - Wake-word listening (`NuaForegroundService`) requires a Picovoice console access key
   (`-PPICOVOICE_ACCESS_KEY=...`); without one it logs a warning and stops itself rather
-  than silently doing nothing.
+  than silently doing nothing. Right now only "Jarvis" will actually fire on a fresh
+  checkout — the other five phrases are wired up end to end but need their trained
+  `.ppn` models added to `app/src/main/assets/` (none are bundled in this repo since
+  they have to be trained per-phrase on Picovoice Console, not something generatable
+  here). See the Wake words section above.
 - `NuaAccessibilityService` is a structural skeleton only — the confirmation contract
   (per-action, in-the-moment, fail-loud via `NuaAccessibilityService.lastFailure`) is
   settled, but no concrete Tier 2 action is implemented.

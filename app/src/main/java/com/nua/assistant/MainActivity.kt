@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import com.nua.assistant.services.ACTION_WAKE_WORD_DETECTED
+import com.nua.assistant.services.EXTRA_WAKE_PHRASE_ID
 import com.nua.assistant.ui.NuaScreen
 import com.nua.assistant.ui.NuaTheme
 import com.nua.assistant.ui.NuaViewModel
@@ -26,7 +27,7 @@ class MainActivity : ComponentActivity() {
 
     private val wakeWordReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            viewModel.onWakeWordDetected()
+            viewModel.onWakeWordDetected(intent?.getStringExtra(EXTRA_WAKE_PHRASE_ID))
         }
     }
 
