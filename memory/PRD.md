@@ -1,96 +1,77 @@
-# Nua - AI Personal Assistant - PRD v2
+# Nua - AI Personal Assistant - PRD v3
 
 ## Product Overview
-Nua is a next-generation AI personal assistant — intelligent, proactive, and deeply personal. Inspired by JARVIS, Nua goes beyond answering questions to actually doing things: managing reminders, tracking expenses, taking notes, and remembering everything about you.
+Nua is a next-generation AI personal assistant — intelligent, proactive, and deeply personal. She doesn't just answer questions; she acts, remembers, and anticipates your needs across weather, news, smart home, calendar, finances, and more.
 
 ## Tech Stack
-- **Frontend**: React Native + Expo SDK 54, Expo Router (tab navigation)
+- **Frontend**: React Native + Expo SDK 54, Expo Router (tab + stack navigation)
 - **Backend**: FastAPI (Python) on port 8001
-- **Database**: MongoDB (conversations, messages, user_memory, reminders, notes, expenses)
-- **AI**: OpenAI GPT-5.2 via Emergent LLM Key
-- **Voice**: OpenAI TTS (Nova voice) + Whisper STT
-- **Vision**: GPT-5.2 multimodal (image analysis)
+- **Database**: MongoDB (8 collections)
+- **AI**: OpenAI GPT-5.2 (chat + vision) via Emergent LLM Key
+- **Voice**: OpenAI TTS (Nova) + Whisper STT
+- **Weather**: Open-Meteo API (free, no key required)
+- **News**: RSS feeds (NYTimes, TechCrunch)
 
-## Core Features
+## All Features
 
-### 1. Persistent Memory & Context Engine
-- Automatically extracts and stores user preferences, habits, and personal info from conversations
-- Memory persists across conversations and is loaded into every AI interaction
-- Categories: personal, preference, habit, work, general
-- Manual memory management (add, delete, view)
+### Core AI
+1. **Intelligent Chat** - GPT-5.2 powered with personality, emotion detection, proactive behavior
+2. **Persistent Memory Engine** - Auto-extracts & stores preferences from conversations
+3. **Action-Oriented Agent** - Creates reminders/notes/expenses from natural language
+4. **Multi-Modal Input** - Text + Voice (Whisper) + Image upload (GPT-5.2 Vision)
+5. **Voice Output** - TTS with Nova voice for all AI responses
+6. **Emotional Intelligence** - Detects stress/excitement/frustration, adapts tone
 
-### 2. Action-Oriented Agent
-- Nua doesn't just answer — she acts
-- Automatic action extraction from chat:
-  - "Remind me to..." → Creates reminder
-  - "Note that..." → Saves note
-  - "I spent $20 on..." → Logs expense
-  - "My favorite..." → Stores memory
-- Uses structured action blocks parsed from AI responses
+### Real-Time Data
+7. **Weather** - Live weather via Open-Meteo API with 5-day forecast, city search
+8. **News Feed** - RSS-powered headlines from top sources (NYTimes, TechCrunch) across 5 categories
+9. **Proactive Suggestions** - Time-based smart tips on Dashboard
 
-### 3. Multi-Modal Understanding
-- Text chat with GPT-5.2
-- Voice input via OpenAI Whisper (hold-to-record)
-- Voice output via OpenAI TTS (Nova voice)
-- Image upload and analysis (photo → AI understanding)
+### Life Management
+10. **Reminders** - Create via chat or manually, toggle completion
+11. **Notes** - Quick notes with timestamps
+12. **Expense Tracking** - Log expenses, category breakdown, spending summary
+13. **Calendar** - Local event management (Google Calendar OAuth ready for setup)
 
-### 4. Emotional Intelligence
-- Detects emotional cues (stress, excitement, frustration)
-- Adapts response tone accordingly
-- Wellness check-in quick action
+### Smart Home (Simulation)
+14. **8 Mock Devices** - Lights, thermostat, speaker, lock, camera, plug, blinds
+15. **Room-based Layout** - Devices grouped by Living Room, Bedroom, Kitchen, Entrance
+16. **4 Scenes** - Morning, Focus, Movie, Night (auto-configure multiple devices)
+17. **Real-time Toggle** - Control device states instantly
 
-### 5. Proactive Suggestions
-- Time-based suggestions (morning planning, evening reflection)
-- Context-aware tips based on user data
-- Dashboard surfaces what matters most
+### Skills Marketplace
+18. **10 Skills** - Weather Pro, News Feed, Smart Home Hub, Calendar Sync, Fitness, Recipes, Translator, Meditation, Stocks, Travel
+19. **Install/Uninstall** - Modular skill management
+20. **Category Filtering** - Browse by Utility, Health, Lifestyle, Finance, etc.
+21. **Ratings & Downloads** - Social proof for skill quality
 
-### 6. Financial & Life Management
-- **Expenses**: Log, categorize, view summary with category breakdown
-- **Reminders**: Create, toggle completion, delete
-- **Notes**: Quick notes with timestamps
+### Wake Word (Dev Build Required)
+22. **Always-listening Mode** - Hold-to-record voice activation
+23. **Note**: Actual "Hey Nua" wake word requires native Picovoice/Porcupine SDK (dev build only)
 
-### 7. Modular Skills System
-- 16 skills total: 9 active, 4 coming soon, 3 roadmap
-- Active: Chat, Voice, Vision, Memory, Reminders, Notes, Expenses, Emotions, Proactive
-- Coming Soon: Smart Home, Calendar, Email, Spotify, Rides
-- Roadmap: Digital Twin, Investment Insights
+## Navigation
+- **Tab 1: Nua** - AI chat with text, voice, image
+- **Tab 2: Dashboard** - Weather, news, stats, quick actions, smart home/marketplace access
+- **Tab 3: Memory** - What Nua knows about you
+- **Tab 4: Life Hub** - Reminders, notes, expenses
+- **Stack: Smart Home** - Device controls & scenes
+- **Stack: Marketplace** - Skills browsing & management
+- **Stack: History** - Conversation archives & search
 
-### 8. Dark Futuristic HUD UI
-- Deep black (#050505) + burnished gold (#FFB800)
-- Animated typing indicators, message transitions
-- Voice waveform visualization
-- 4-tab navigation: Nua (Chat), Dashboard, Memory, Life Hub
+## API Endpoints (30+)
+Weather: /api/weather, /api/weather/search
+News: /api/news
+Calendar: /api/calendar/events (CRUD), /api/calendar/status
+Smart Home: /api/smart-home/devices, /api/smart-home/control, /api/smart-home/scene
+Marketplace: /api/skills/marketplace, /api/skills/install/{id}
++ All previous endpoints (chat, memory, reminders, notes, expenses, tts, dashboard, etc.)
 
-## API Endpoints (18 total)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /api/health | System health |
-| POST | /api/chat | AI chat with memory + action extraction |
-| POST | /api/chat/voice | Voice → transcribe → AI response |
-| POST | /api/chat/image | Image + text → AI analysis |
-| POST | /api/tts | Text-to-speech |
-| GET | /api/conversations | List conversations |
-| GET | /api/conversations/search | Search |
-| GET | /api/conversations/{id} | Detail |
-| DELETE | /api/conversations/{id} | Delete |
-| GET | /api/memory | List memories |
-| POST | /api/memory | Add memory |
-| DELETE | /api/memory/{id} | Delete memory |
-| GET/POST/PATCH/DELETE | /api/reminders | CRUD |
-| GET/POST/DELETE | /api/notes | CRUD |
-| GET/POST/DELETE | /api/expenses | CRUD + summary |
-| GET | /api/dashboard | Dashboard data |
-| GET | /api/skills | Skills list |
-| POST | /api/quick-action | Quick actions |
-
-## Roadmap (Future Features)
-- Wake word detection ("Hey Nua")
-- Smart Home Control (Philips Hue, Google Nest)
-- Calendar & Email Integration
-- Spotify, Uber, WhatsApp integration
-- Real-time weather & news
-- Autonomous multi-step task execution
+## Roadmap
+- Google Calendar OAuth sync
+- Real smart home API integration (Philips Hue, Google Nest)
+- Spotify/Music control
+- Real-time stock tracking
+- Multi-user awareness
 - Cross-platform continuity
-- Developer SDK & skills marketplace
-- Digital Twin (AI acting on user's behalf)
-- Per-user fine-tuned AI model
+- Developer SDK & public API
+- Digital Twin
