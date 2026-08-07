@@ -39,6 +39,8 @@ export default function RootLayout() {
         <Tabs.Screen name="life" options={{ title: 'Life Hub', tabBarIcon: LifeIcon }} />
         <Tabs.Screen name="history" options={{ href: null }} />
         <Tabs.Screen name="actions" options={{ href: null }} />
+        <Tabs.Screen name="smarthome" options={{ href: null }} />
+        <Tabs.Screen name="marketplace" options={{ href: null }} />
       </Tabs>
     </View>
   );

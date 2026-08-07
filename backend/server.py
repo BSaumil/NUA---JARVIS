@@ -8,6 +8,7 @@ import base64
 import tempfile
 import json
 import re
+import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -135,6 +136,9 @@ class ExpenseCreate(BaseModel):
     category: str
     description: str = ""
     date: Optional[str] = None
+
+class SceneActivation(BaseModel):
+    scene: str
 
 
 # --- Helper Functions ---
@@ -657,6 +661,251 @@ async def quick_action(req: QuickActionRequest):
     user_msg = UserMessage(text=prompt)
     response = await chat.send_message(user_msg)
     return {"action": req.action, "response": response}
+
+
+# === WEATHER (Open-Meteo - Free, no API key) ===
+WEATHER_CODES = {
+    0: ("Clear sky", "sunny"), 1: ("Mainly clear", "sunny"), 2: ("Partly cloudy", "partly-sunny"),
+    3: ("Overcast", "cloudy"), 45: ("Fog", "cloudy"), 48: ("Rime fog", "cloudy"),
+    51: ("Light drizzle", "rainy"), 53: ("Moderate drizzle", "rainy"), 55: ("Dense drizzle", "rainy"),
+    61: ("Slight rain", "rainy"), 63: ("Moderate rain", "rainy"), 65: ("Heavy rain", "rainy"),
+    71: ("Slight snow", "snow"), 73: ("Moderate snow", "snow"), 75: ("Heavy snow", "snow"),
+    80: ("Slight showers", "rainy"), 81: ("Moderate showers", "rainy"), 82: ("Violent showers", "thunderstorm"),
+    95: ("Thunderstorm", "thunderstorm"), 96: ("Thunderstorm with hail", "thunderstorm"),
+}
+
+@api_router.get("/weather")
+async def get_weather(lat: float = 28.6139, lon: float = 77.2090):
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat, "longitude": lon,
+                    "current": "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,apparent_temperature",
+                    "hourly": "temperature_2m,weather_code",
+                    "daily": "temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset",
+                    "timezone": "auto", "forecast_days": 5,
+                }
+            )
+            data = r.json()
+        current = data.get("current", {})
+        wcode = current.get("weather_code", 0)
+        desc, icon = WEATHER_CODES.get(wcode, ("Unknown", "cloudy"))
+        daily = data.get("daily", {})
+        forecast = []
+        for i in range(min(5, len(daily.get("time", [])))):
+            dc = daily.get("weather_code", [0])[i] if i < len(daily.get("weather_code", [])) else 0
+            dd, di = WEATHER_CODES.get(dc, ("Unknown", "cloudy"))
+            forecast.append({
+                "date": daily["time"][i] if i < len(daily.get("time", [])) else "",
+                "max": daily.get("temperature_2m_max", [0])[i] if i < len(daily.get("temperature_2m_max", [])) else 0,
+                "min": daily.get("temperature_2m_min", [0])[i] if i < len(daily.get("temperature_2m_min", [])) else 0,
+                "description": dd, "icon": di,
+            })
+        return {
+            "temperature": current.get("temperature_2m", 0),
+            "feels_like": current.get("apparent_temperature", 0),
+            "humidity": current.get("relative_humidity_2m", 0),
+            "wind_speed": current.get("wind_speed_10m", 0),
+            "description": desc, "icon": icon, "weather_code": wcode,
+            "forecast": forecast,
+        }
+    except Exception as e:
+        logger.error(f"Weather error: {e}")
+        return {"error": str(e)}
+
+
+@api_router.get("/weather/search")
+async def search_city(q: str):
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": q, "count": 5})
+            data = r.json()
+        results = []
+        for loc in data.get("results", []):
+            results.append({
+                "name": loc.get("name", ""), "country": loc.get("country", ""),
+                "lat": loc.get("latitude", 0), "lon": loc.get("longitude", 0),
+                "admin": loc.get("admin1", ""),
+            })
+        return {"results": results}
+    except Exception as e:
+        return {"error": str(e), "results": []}
+
+
+# === NEWS (RSS Feeds - Free, no API key) ===
+@api_router.get("/news")
+async def get_news(category: str = "top"):
+    feeds = {
+        "top": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+        "tech": "https://feeds.feedburner.com/TechCrunch/",
+        "science": "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
+        "business": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+        "world": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+    }
+    feed_url = feeds.get(category, feeds["top"])
+    try:
+        import feedparser
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(feed_url)
+        feed = feedparser.parse(r.text)
+        articles = []
+        for entry in feed.entries[:15]:
+            articles.append({
+                "title": entry.get("title", ""),
+                "summary": entry.get("summary", "")[:200],
+                "link": entry.get("link", ""),
+                "published": entry.get("published", ""),
+                "source": feed.feed.get("title", "News"),
+            })
+        return {"articles": articles, "category": category}
+    except Exception as e:
+        logger.error(f"News error: {e}")
+        return {"articles": [], "error": str(e)}
+
+
+# === CALENDAR (Local Calendar - MongoDB based) ===
+class CalendarEventCreate(BaseModel):
+    title: str
+    description: str = ""
+    start_time: str
+    end_time: str = ""
+    location: str = ""
+    color: str = "#FFB800"
+
+@api_router.get("/calendar/events")
+async def list_calendar_events():
+    events = await db.calendar_events.find({}, {"_id": 0}).sort("start_time", 1).to_list(200)
+    return {"events": events}
+
+@api_router.post("/calendar/events")
+async def create_calendar_event(event: CalendarEventCreate):
+    doc = {
+        "id": str(uuid.uuid4()), "title": event.title,
+        "description": event.description, "start_time": event.start_time,
+        "end_time": event.end_time, "location": event.location,
+        "color": event.color, "created_at": now_iso(),
+    }
+    await db.calendar_events.insert_one(doc)
+    return {"id": doc["id"], "message": "Event created"}
+
+@api_router.delete("/calendar/events/{event_id}")
+async def delete_calendar_event(event_id: str):
+    await db.calendar_events.delete_one({"id": event_id})
+    return {"deleted": True}
+
+@api_router.get("/calendar/status")
+async def calendar_status():
+    count = await db.calendar_events.count_documents({})
+    return {
+        "local_events": count,
+        "google_connected": False,
+        "google_instructions": "To connect Google Calendar: 1) Set up Google Cloud project with Calendar API, 2) Configure OAuth credentials, 3) Connect via Settings. Full Google Calendar sync requires OAuth setup."
+    }
+
+
+# === SMART HOME (Mock Simulation) ===
+MOCK_DEVICES = [
+    {"id": "light-1", "name": "Living Room Light", "type": "light", "room": "Living Room", "status": "off", "brightness": 80, "color": "#FFB800"},
+    {"id": "light-2", "name": "Bedroom Light", "type": "light", "room": "Bedroom", "status": "off", "brightness": 60, "color": "#FFFFFF"},
+    {"id": "thermostat-1", "name": "Smart Thermostat", "type": "thermostat", "room": "Living Room", "status": "on", "temperature": 22, "mode": "auto"},
+    {"id": "speaker-1", "name": "Smart Speaker", "type": "speaker", "room": "Living Room", "status": "off", "volume": 50, "playing": ""},
+    {"id": "lock-1", "name": "Front Door Lock", "type": "lock", "room": "Entrance", "status": "locked"},
+    {"id": "camera-1", "name": "Security Camera", "type": "camera", "room": "Entrance", "status": "on", "recording": True},
+    {"id": "plug-1", "name": "Smart Plug", "type": "plug", "room": "Kitchen", "status": "off"},
+    {"id": "blinds-1", "name": "Window Blinds", "type": "blinds", "room": "Bedroom", "status": "open", "position": 100},
+]
+
+# Store device states in memory (resets on restart)
+device_states = {d["id"]: dict(d) for d in MOCK_DEVICES}
+
+@api_router.get("/smart-home/devices")
+async def list_smart_devices():
+    return {"devices": list(device_states.values()), "is_simulation": True}
+
+class DeviceControl(BaseModel):
+    device_id: str
+    action: str
+    value: Optional[str] = None
+
+@api_router.post("/smart-home/control")
+async def control_device(ctrl: DeviceControl):
+    dev = device_states.get(ctrl.device_id)
+    if not dev:
+        return {"error": "Device not found"}
+    if ctrl.action == "toggle":
+        if dev["type"] == "lock":
+            dev["status"] = "unlocked" if dev["status"] == "locked" else "locked"
+        elif dev["type"] == "blinds":
+            dev["status"] = "closed" if dev["status"] == "open" else "open"
+        else:
+            dev["status"] = "off" if dev["status"] == "on" else "on"
+    elif ctrl.action == "set_brightness" and ctrl.value:
+        dev["brightness"] = int(ctrl.value)
+    elif ctrl.action == "set_temperature" and ctrl.value:
+        dev["temperature"] = int(ctrl.value)
+    elif ctrl.action == "set_volume" and ctrl.value:
+        dev["volume"] = int(ctrl.value)
+    elif ctrl.action == "set_color" and ctrl.value:
+        dev["color"] = ctrl.value
+    device_states[ctrl.device_id] = dev
+    return {"device": dev, "message": f"Updated {dev['name']}"}
+
+class SceneActivation(BaseModel):
+    scene: str
+
+@api_router.post("/smart-home/scene")
+async def activate_scene(req: SceneActivation):
+    scenes = {
+        "movie": [("light-1", "on", "30"), ("light-2", "off", None), ("blinds-1", "closed", None)],
+        "morning": [("light-1", "on", "100"), ("light-2", "on", "80"), ("blinds-1", "open", None)],
+        "night": [("light-1", "off", None), ("light-2", "off", None), ("lock-1", "locked", None)],
+        "focus": [("light-1", "on", "60"), ("speaker-1", "off", None)],
+    }
+    actions = scenes.get(req.scene, [])
+    for dev_id, status, brightness in actions:
+        if dev_id in device_states:
+            if status in ("on", "off", "locked", "unlocked", "open", "closed"):
+                device_states[dev_id]["status"] = status
+            if brightness and "brightness" in device_states[dev_id]:
+                device_states[dev_id]["brightness"] = int(brightness)
+    return {"scene": req.scene, "applied": True, "devices_affected": len(actions)}
+
+
+# === SKILLS MARKETPLACE ===
+@api_router.get("/skills/marketplace")
+async def get_marketplace():
+    installed = await db.installed_skills.find({}, {"_id": 0}).to_list(100)
+    installed_ids = {s["skill_id"] for s in installed}
+    marketplace = [
+        {"id": "weather", "name": "Weather Pro", "description": "Real-time weather forecasts with 5-day outlook", "category": "Utility", "icon": "cloudy", "rating": 4.8, "downloads": "12.5K", "installed": "weather" in installed_ids, "free": True},
+        {"id": "news", "name": "News Feed", "description": "Live headlines from top global sources", "category": "Information", "icon": "newspaper", "rating": 4.6, "downloads": "8.3K", "installed": "news" in installed_ids, "free": True},
+        {"id": "smart_home", "name": "Smart Home Hub", "description": "Control lights, thermostat, locks and more", "category": "IoT", "icon": "home", "rating": 4.7, "downloads": "15.1K", "installed": "smart_home" in installed_ids, "free": True},
+        {"id": "calendar", "name": "Calendar Sync", "description": "Manage events and sync with Google Calendar", "category": "Productivity", "icon": "calendar", "rating": 4.5, "downloads": "9.7K", "installed": "calendar" in installed_ids, "free": True},
+        {"id": "fitness", "name": "Fitness Tracker", "description": "Track workouts, steps, and health goals", "category": "Health", "icon": "fitness", "rating": 4.4, "downloads": "6.2K", "installed": False, "free": True},
+        {"id": "recipes", "name": "Recipe Chef", "description": "AI-powered recipe suggestions from ingredients", "category": "Lifestyle", "icon": "restaurant", "rating": 4.7, "downloads": "11.8K", "installed": False, "free": True},
+        {"id": "translate", "name": "Universal Translator", "description": "Real-time translation across 50+ languages", "category": "Utility", "icon": "language", "rating": 4.9, "downloads": "20.3K", "installed": False, "free": False, "price": "$2.99"},
+        {"id": "meditation", "name": "Mindful Moments", "description": "Guided meditation and breathing exercises", "category": "Health", "icon": "leaf", "rating": 4.8, "downloads": "7.1K", "installed": False, "free": True},
+        {"id": "stocks", "name": "Stock Watcher", "description": "Real-time stock tracking and portfolio insights", "category": "Finance", "icon": "trending-up", "rating": 4.3, "downloads": "5.8K", "installed": False, "free": False, "price": "$4.99"},
+        {"id": "travel", "name": "Travel Planner", "description": "AI trip planning with flights, hotels, itinerary", "category": "Lifestyle", "icon": "airplane", "rating": 4.6, "downloads": "8.9K", "installed": False, "free": True},
+    ]
+    categories = list(set(s["category"] for s in marketplace))
+    return {"skills": marketplace, "categories": sorted(categories)}
+
+@api_router.post("/skills/install/{skill_id}")
+async def install_skill(skill_id: str):
+    await db.installed_skills.update_one(
+        {"skill_id": skill_id},
+        {"$set": {"skill_id": skill_id, "installed_at": now_iso()}},
+        upsert=True
+    )
+    return {"installed": True, "skill_id": skill_id}
+
+@api_router.delete("/skills/install/{skill_id}")
+async def uninstall_skill(skill_id: str):
+    await db.installed_skills.delete_one({"skill_id": skill_id})
+    return {"uninstalled": True, "skill_id": skill_id}
 
 
 # Include router & middleware

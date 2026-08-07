@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Animated, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -13,62 +13,50 @@ const C = {
   ok: '#10B981', warn: '#F59E0B', err: '#EF4444', info: '#3B82F6',
 };
 
-interface DashData {
-  stats: { conversations: number; memories: number; active_reminders: number; notes: number; total_expenses: number };
-  recent_conversations: any[];
-  upcoming_reminders: any[];
-  suggestions: any[];
-}
-
-function StatCard({ icon, label, value, color, index }: { icon: string; label: string; value: string; color: string; index: number }) {
-  const fade = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(fade, { toValue: 1, duration: 400, delay: index * 100, useNativeDriver: true }).start();
-  }, []);
-  return (
-    <Animated.View style={[st.statCard, { opacity: fade }]}>
-      <View style={[st.statIcon, { borderColor: color + '30' }]}>
-        <Ionicons name={icon as any} size={20} color={color} />
-      </View>
-      <Text style={st.statValue}>{value}</Text>
-      <Text style={st.statLabel}>{label}</Text>
-    </Animated.View>
-  );
-}
+const WEATHER_ICONS: Record<string, string> = {
+  'sunny': 'sunny', 'partly-sunny': 'partly-sunny', 'cloudy': 'cloud',
+  'rainy': 'rainy', 'snow': 'snow', 'thunderstorm': 'thunderstorm',
+};
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const [data, setData] = useState<DashData | null>(null);
+  const [dash, setDash] = useState<any>(null);
+  const [weather, setWeather] = useState<any>(null);
+  const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionResp, setActionResp] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionResponse, setActionResponse] = useState<string | null>(null);
 
-  useFocusEffect(useCallback(() => { loadDash(); }, []));
+  useFocusEffect(useCallback(() => { loadAll(); }, []));
 
-  const loadDash = async () => {
+  const loadAll = async () => {
+    setLoading(true);
     try {
-      const r = await fetch(`${API}/api/dashboard`);
-      const d = await r.json();
-      setData(d);
+      const [d, w, n] = await Promise.all([
+        fetch(`${API}/api/dashboard`).then(r => r.json()),
+        fetch(`${API}/api/weather`).then(r => r.json()),
+        fetch(`${API}/api/news`).then(r => r.json()),
+      ]);
+      setDash(d); setWeather(w); setNews(n.articles || []);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  const executeAction = async (action: string) => {
-    setActionLoading(action); setActionResponse(null);
+  const quickAction = async (action: string) => {
+    setActionLoading(action); setActionResp(null);
     try {
       const r = await fetch(`${API}/api/quick-action`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
       const d = await r.json();
-      setActionResponse(d.response || 'Done!');
-    } catch { setActionResponse('Connection issue.'); } finally { setActionLoading(null); }
+      setActionResp(d.response || 'Done!');
+    } catch { setActionResp('Connection issue.'); } finally { setActionLoading(null); }
   };
 
   if (loading) return (
     <SafeAreaView style={st.container} edges={['top']}>
-      <View style={st.loadBox}><ActivityIndicator size="large" color={C.primary} /><Text style={st.loadText}>INITIALIZING...</Text></View>
+      <View style={st.center}><ActivityIndicator size="large" color={C.primary} /><Text style={st.loadText}>LOADING SYSTEMS...</Text></View>
     </SafeAreaView>
   );
 
-  const s = data?.stats;
+  const s = dash?.stats;
 
   return (
     <SafeAreaView style={st.container} edges={['top']}>
@@ -76,99 +64,123 @@ export default function DashboardScreen() {
         <Text style={st.hTitle}>DASHBOARD</Text>
         <Text style={st.hSub}>NUA COMMAND CENTER</Text>
       </View>
-      <ScrollView style={st.scroll} contentContainerStyle={st.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Stats Grid */}
-        <View style={st.statsGrid}>
-          <StatCard icon="chatbubbles" label="Chats" value={String(s?.conversations || 0)} color={C.primary} index={0} />
-          <StatCard icon="brain" label="Memories" value={String(s?.memories || 0)} color={C.accent} index={1} />
-          <StatCard icon="alarm" label="Reminders" value={String(s?.active_reminders || 0)} color={C.warn} index={2} />
-          <StatCard icon="wallet" label="Expenses" value={`$${(s?.total_expenses || 0).toFixed(0)}`} color={C.err} index={3} />
-        </View>
-
-        {/* Proactive Suggestions */}
-        {data?.suggestions && data.suggestions.length > 0 && (
-          <View style={st.section}>
-            <View style={st.secHeader}>
-              <Ionicons name="bulb" size={16} color={C.primary} />
-              <Text style={st.secTitle}>SUGGESTIONS</Text>
+      <ScrollView contentContainerStyle={st.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Weather Widget */}
+        {weather && !weather.error && (
+          <View testID="weather-widget" style={st.weatherCard}>
+            <View style={st.weatherRow}>
+              <View>
+                <Text style={st.weatherTemp}>{Math.round(weather.temperature)}°</Text>
+                <Text style={st.weatherDesc}>{weather.description}</Text>
+                <Text style={st.weatherMeta}>Feels {Math.round(weather.feels_like)}° • 💧{weather.humidity}% • 💨{weather.wind_speed}km/h</Text>
+              </View>
+              <Ionicons name={(WEATHER_ICONS[weather.icon] || 'cloud') as any} size={48} color={C.primary} />
             </View>
-            {data.suggestions.map((sug, i) => (
-              <TouchableOpacity key={i} testID={`sug-${i}`} style={st.sugCard}
-                onPress={() => { if (sug.query) router.push({ pathname: '/', params: { conversationId: '' } }); }}>
-                <Ionicons name="sparkles" size={14} color={C.primary} />
-                <Text style={st.sugText}>{sug.text}</Text>
-              </TouchableOpacity>
-            ))}
+            {weather.forecast && weather.forecast.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.forecastRow}>
+                {weather.forecast.slice(0, 5).map((f: any, i: number) => (
+                  <View key={i} style={st.forecastDay}>
+                    <Text style={st.forecastDate}>{f.date?.slice(5) || ''}</Text>
+                    <Ionicons name={(WEATHER_ICONS[f.icon] || 'cloud') as any} size={18} color={C.textSec} />
+                    <Text style={st.forecastTemp}>{Math.round(f.max)}°/{Math.round(f.min)}°</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
         )}
 
+        {/* Stats Row */}
+        <View style={st.statsRow}>
+          {[
+            { icon: 'chatbubbles', val: s?.conversations || 0, label: 'Chats', color: C.primary },
+            { icon: 'bulb', val: s?.memories || 0, label: 'Memory', color: C.accent },
+            { icon: 'alarm', val: s?.active_reminders || 0, label: 'Reminders', color: C.warn },
+            { icon: 'wallet', val: `$${(s?.total_expenses || 0).toFixed(0)}`, label: 'Spent', color: C.err },
+          ].map((item, i) => (
+            <View key={i} style={st.miniStat}>
+              <Ionicons name={item.icon as any} size={18} color={item.color} />
+              <Text style={st.miniVal}>{item.val}</Text>
+              <Text style={st.miniLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Quick Access */}
+        <View style={st.quickAccessRow}>
+          <TouchableOpacity testID="nav-smarthome" style={st.quickAccessBtn} onPress={() => router.push('/smarthome')}>
+            <Ionicons name="home" size={22} color="#06B6D4" />
+            <Text style={st.qaLabel}>Smart Home</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="nav-marketplace" style={st.quickAccessBtn} onPress={() => router.push('/marketplace')}>
+            <Ionicons name="storefront" size={22} color="#A855F7" />
+            <Text style={st.qaLabel}>Marketplace</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="nav-history" style={st.quickAccessBtn} onPress={() => router.push('/history')}>
+            <Ionicons name="time" size={22} color={C.primary} />
+            <Text style={st.qaLabel}>History</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Proactive Suggestions */}
+        {dash?.suggestions?.map((sug: any, i: number) => (
+          <TouchableOpacity key={i} testID={`sug-${i}`} style={st.sugCard}>
+            <Ionicons name="sparkles" size={14} color={C.primary} />
+            <Text style={st.sugText}>{sug.text}</Text>
+          </TouchableOpacity>
+        ))}
+
         {/* Quick Actions */}
         <View style={st.section}>
-          <View style={st.secHeader}>
-            <Ionicons name="flash" size={16} color={C.primary} />
-            <Text style={st.secTitle}>QUICK ACTIONS</Text>
-          </View>
-          {actionResponse && (
-            <View style={st.responseBox}>
-              <Text style={st.responseText}>{actionResponse}</Text>
-              <TouchableOpacity onPress={() => setActionResponse(null)}>
-                <Ionicons name="close-circle" size={18} color={C.textTer} />
-              </TouchableOpacity>
+          <Text style={st.secTitle}>QUICK ACTIONS</Text>
+          {actionResp && (
+            <View style={st.respBox}>
+              <Text style={st.respText}>{actionResp}</Text>
+              <TouchableOpacity onPress={() => setActionResp(null)}><Ionicons name="close-circle" size={16} color={C.textTer} /></TouchableOpacity>
             </View>
           )}
           <View style={st.actionsGrid}>
             {[
               { id: 'joke', icon: 'happy', label: 'Joke', color: C.primary },
-              { id: 'fact', icon: 'flask', label: 'Fun Fact', color: C.accent },
+              { id: 'fact', icon: 'flask', label: 'Fact', color: C.accent },
               { id: 'motivation', icon: 'rocket', label: 'Motivate', color: '#FF4500' },
               { id: 'trivia', icon: 'help-circle', label: 'Trivia', color: '#A855F7' },
               { id: 'wellness', icon: 'heart', label: 'Wellness', color: '#EC4899' },
               { id: 'code', icon: 'code-slash', label: 'Code', color: C.info },
             ].map(a => (
-              <TouchableOpacity key={a.id} testID={`qa-${a.id}`} style={st.actionBtn} onPress={() => executeAction(a.id)}>
-                {actionLoading === a.id ? <ActivityIndicator size="small" color={a.color} /> : <Ionicons name={a.icon as any} size={22} color={a.color} />}
+              <TouchableOpacity key={a.id} testID={`qa-${a.id}`} style={st.actionBtn} onPress={() => quickAction(a.id)}>
+                {actionLoading === a.id ? <ActivityIndicator size="small" color={a.color} /> : <Ionicons name={a.icon as any} size={20} color={a.color} />}
                 <Text style={st.actionLabel}>{a.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
 
-        {/* Upcoming Reminders */}
-        {data?.upcoming_reminders && data.upcoming_reminders.length > 0 && (
+        {/* News Headlines */}
+        {news.length > 0 && (
           <View style={st.section}>
-            <View style={st.secHeader}>
-              <Ionicons name="alarm" size={16} color={C.warn} />
-              <Text style={st.secTitle}>ACTIVE REMINDERS</Text>
-            </View>
-            {data.upcoming_reminders.map((r: any, i: number) => (
-              <View key={i} style={st.remCard}>
-                <View style={st.remDot} />
+            <Text style={st.secTitle}>NEWS HEADLINES</Text>
+            {news.slice(0, 5).map((a, i) => (
+              <TouchableOpacity key={i} testID={`news-${i}`} style={st.newsCard} onPress={() => a.link && Linking.openURL(a.link)}>
+                <View style={st.newsDot} />
                 <View style={{ flex: 1 }}>
-                  <Text style={st.remTitle}>{r.title}</Text>
-                  {r.due_date ? <Text style={st.remDate}>{r.due_date}</Text> : null}
+                  <Text style={st.newsTitle} numberOfLines={2}>{a.title}</Text>
+                  <Text style={st.newsMeta}>{a.source} • {a.published?.slice(0, 16) || ''}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
 
-        {/* Recent Conversations */}
-        {data?.recent_conversations && data.recent_conversations.length > 0 && (
+        {/* Reminders */}
+        {dash?.upcoming_reminders?.length > 0 && (
           <View style={st.section}>
-            <View style={st.secHeader}>
-              <Ionicons name="time" size={16} color={C.textSec} />
-              <Text style={st.secTitle}>RECENT CONVERSATIONS</Text>
-            </View>
-            {data.recent_conversations.map((conv: any, i: number) => (
-              <TouchableOpacity key={i} testID={`recent-${i}`} style={st.convCard}
-                onPress={() => router.push({ pathname: '/', params: { conversationId: conv.id } })}>
-                <View style={st.convIcon}><Ionicons name="chatbubble" size={14} color={C.primary} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={st.convTitle} numberOfLines={1}>{conv.title}</Text>
-                  <Text style={st.convMeta}>{conv.message_count} messages</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={C.textTer} />
-              </TouchableOpacity>
+            <Text style={st.secTitle}>ACTIVE REMINDERS</Text>
+            {dash.upcoming_reminders.map((r: any, i: number) => (
+              <View key={i} style={st.remCard}>
+                <View style={st.remDot} />
+                <Text style={st.remTitle}>{r.title}</Text>
+              </View>
             ))}
           </View>
         )}
@@ -180,34 +192,42 @@ export default function DashboardScreen() {
 
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  loadBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loadText: { marginTop: 12, fontSize: 10, color: C.textTer, letterSpacing: 2 },
   header: { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.surface },
   hTitle: { fontSize: 20, fontWeight: '800', color: C.primary, letterSpacing: 3 },
   hSub: { fontSize: 9, color: C.textTer, letterSpacing: 1.5, marginTop: 2 },
-  scroll: { flex: 1 },
   scrollContent: { padding: 16 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  statCard: { width: '48%', backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 14, minWidth: 150 },
-  statIcon: { width: 36, height: 36, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.02)', marginBottom: 10 },
-  statValue: { fontSize: 22, fontWeight: '800', color: C.text, marginBottom: 2 },
-  statLabel: { fontSize: 10, color: C.textTer, letterSpacing: 1, textTransform: 'uppercase' },
-  section: { marginBottom: 20 },
-  secHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  secTitle: { fontSize: 11, fontWeight: '700', color: C.textTer, letterSpacing: 2 },
-  sugCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,184,0,0.04)', borderWidth: 1, borderColor: C.hudBorder, borderRadius: 10, padding: 12, marginBottom: 8 },
-  sugText: { fontSize: 13, color: C.textSec, flex: 1 },
-  responseBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.hudBorder, borderRadius: 10, padding: 12, marginBottom: 10 },
-  responseText: { fontSize: 13, lineHeight: 20, color: C.text, flex: 1 },
-  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  actionBtn: { width: '31%', backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 14, alignItems: 'center', gap: 6, minWidth: 95 },
-  actionLabel: { fontSize: 10, color: C.textSec, fontWeight: '600' },
-  remCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, marginBottom: 6 },
+  weatherCard: { backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.hudBorder, borderRadius: 14, padding: 16, marginBottom: 14 },
+  weatherRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  weatherTemp: { fontSize: 42, fontWeight: '900', color: C.text },
+  weatherDesc: { fontSize: 14, color: C.primary, fontWeight: '600' },
+  weatherMeta: { fontSize: 11, color: C.textTer, marginTop: 4 },
+  forecastRow: { marginTop: 12, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12 },
+  forecastDay: { alignItems: 'center', marginRight: 20, gap: 4 },
+  forecastDate: { fontSize: 10, color: C.textTer },
+  forecastTemp: { fontSize: 10, color: C.textSec },
+  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  miniStat: { flex: 1, backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10, alignItems: 'center', gap: 4 },
+  miniVal: { fontSize: 16, fontWeight: '800', color: C.text },
+  miniLabel: { fontSize: 8, color: C.textTer, letterSpacing: 1, textTransform: 'uppercase' },
+  quickAccessRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  quickAccessBtn: { flex: 1, backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 14, alignItems: 'center', gap: 6 },
+  qaLabel: { fontSize: 10, color: C.textSec, fontWeight: '600' },
+  sugCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,184,0,0.03)', borderWidth: 1, borderColor: C.hudBorder, borderRadius: 10, padding: 12, marginBottom: 8 },
+  sugText: { fontSize: 12, color: C.textSec, flex: 1 },
+  section: { marginBottom: 16 },
+  secTitle: { fontSize: 10, fontWeight: '700', color: C.textTer, letterSpacing: 2, marginBottom: 10 },
+  respBox: { flexDirection: 'row', gap: 10, backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.hudBorder, borderRadius: 10, padding: 12, marginBottom: 10 },
+  respText: { fontSize: 13, lineHeight: 20, color: C.text, flex: 1 },
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  actionBtn: { width: '31%', backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, alignItems: 'center', gap: 4, minWidth: 95 },
+  actionLabel: { fontSize: 9, color: C.textSec, fontWeight: '600' },
+  newsCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, marginBottom: 6 },
+  newsDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.info, marginTop: 6 },
+  newsTitle: { fontSize: 13, color: C.text, fontWeight: '500', lineHeight: 18 },
+  newsMeta: { fontSize: 9, color: C.textTer, marginTop: 4 },
+  remCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.surfEl, borderRadius: 8, padding: 10, marginBottom: 4 },
   remDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.warn },
-  remTitle: { fontSize: 13, color: C.text, fontWeight: '500' },
-  remDate: { fontSize: 10, color: C.textTer, marginTop: 2 },
-  convCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, marginBottom: 6 },
-  convIcon: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: C.hudBorder, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,184,0,0.06)' },
-  convTitle: { fontSize: 13, color: C.text, fontWeight: '500' },
-  convMeta: { fontSize: 10, color: C.textTer, marginTop: 2 },
+  remTitle: { fontSize: 12, color: C.text },
 });
