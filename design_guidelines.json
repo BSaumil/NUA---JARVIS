@@ -1,0 +1,160 @@
+{
+  "theme": "DARK",
+  "archetype": "7 (Electric & Neon) - Tactical/HUD Variant",
+  "rationale": "The user explicitly requested an 'IRON MAN - JARVIS' style AI assistant with a dark futuristic HUD. To avoid the generic 'AI Teal/Purple' trope, we are using a 'Tactical HUD' aesthetic: Deep Obsidian Black mixed with Burnished Gold/Laser Amber. This provides a high-end, elite performance feel (Archetype 2 + 7 fusion) suited for a sassy, highly capable personal assistant.",
+  "platform": "React Native Expo (Android primary)",
+  "colors": {
+    "background": {
+      "main": "#050505",
+      "surface": "#121212",
+      "surface_elevated": "#1A1A18",
+      "overlay": "rgba(0, 0, 0, 0.7)"
+    },
+    "brand": {
+      "primary": "#FFB800",
+      "primary_glow": "rgba(255, 184, 0, 0.4)",
+      "secondary": "#FF4500",
+      "accent": "#00FFCC"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "tertiary": "#71717A",
+      "inverse": "#000000"
+    },
+    "border": {
+      "default": "#27272A",
+      "hud": "rgba(255, 184, 0, 0.2)",
+      "focus": "#FFB800"
+    },
+    "status": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "error": "#EF4444",
+      "info": "#3B82F6"
+    }
+  },
+  "typography": {
+    "font_family": {
+      "heading": "SpaceMono-Regular, monospace",
+      "body": "System",
+      "technical": "SpaceMono-Regular, monospace"
+    },
+    "sizes": {
+      "h1": { "fontSize": 32, "lineHeight": 40, "letterSpacing": -1, "fontWeight": "800" },
+      "h2": { "fontSize": 24, "lineHeight": 32, "letterSpacing": -0.5, "fontWeight": "700" },
+      "h3": { "fontSize": 20, "lineHeight": 28, "letterSpacing": 0, "fontWeight": "600" },
+      "body_lg": { "fontSize": 18, "lineHeight": 28, "letterSpacing": 0.15, "fontWeight": "400" },
+      "body": { "fontSize": 16, "lineHeight": 24, "letterSpacing": 0.15, "fontWeight": "400" },
+      "body_sm": { "fontSize": 14, "lineHeight": 20, "letterSpacing": 0.1, "fontWeight": "400" },
+      "overline": { "fontSize": 10, "lineHeight": 12, "letterSpacing": 2, "fontWeight": "700", "textTransform": "uppercase" }
+    }
+  },
+  "layout_and_spacing": {
+    "spacing_scale": {
+      "xs": 4,
+      "sm": 8,
+      "md": 16,
+      "lg": 24,
+      "xl": 32,
+      "2xl": 48,
+      "3xl": 64
+    },
+    "border_radius": {
+      "none": 0,
+      "sm": 4,
+      "md": 8,
+      "lg": 16,
+      "full": 9999
+    },
+    "containers": {
+      "screen_padding": 24,
+      "card_padding": 16
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": {
+        "backgroundColor": "#FFB800",
+        "borderRadius": 4,
+        "paddingVertical": 16,
+        "paddingHorizontal": 24,
+        "alignItems": "center",
+        "justifyContent": "center"
+      },
+      "hud_outline": {
+        "backgroundColor": "transparent",
+        "borderWidth": 1,
+        "borderColor": "rgba(255, 184, 0, 0.4)",
+        "borderRadius": 4,
+        "paddingVertical": 12,
+        "paddingHorizontal": 16
+      }
+    },
+    "chat_bubbles": {
+      "user": {
+        "backgroundColor": "#1A1A18",
+        "borderWidth": 1,
+        "borderColor": "#27272A",
+        "borderRadius": 16,
+        "borderBottomRightRadius": 4,
+        "padding": 16
+      },
+      "ai": {
+        "backgroundColor": "rgba(255, 184, 0, 0.05)",
+        "borderWidth": 1,
+        "borderColor": "rgba(255, 184, 0, 0.2)",
+        "borderRadius": 16,
+        "borderBottomLeftRadius": 4,
+        "padding": 16
+      }
+    },
+    "voice_waveform": {
+      "bar_width": 4,
+      "bar_spacing": 4,
+      "color_active": "#FFB800",
+      "color_inactive": "#27272A",
+      "min_height": 8,
+      "max_height": 48
+    },
+    "quick_actions_grid": {
+      "display": "flex",
+      "flexDirection": "row",
+      "flexWrap": "wrap",
+      "gap": 12
+    }
+  },
+  "motion_and_interactions": {
+    "typing_indicator": "Use 3 fading dots or a subtle pulsing glow on the AI's avatar ring using Animated APIs.",
+    "voice_activation": "Scale transform with Spring animation when mic is held down. The waveform should be driven by random or actual mic input amplitudes.",
+    "hud_reveal": "List items and chat messages should fade in and translate Y upwards by 10px on entry."
+  },
+  "media": {
+    "image_urls": {
+      "ai_core_avatar": {
+        "url": "https://static.prod-images.emergentagent.com/jobs/ceae6baf-490f-460b-9a34-025a5a688f4e/images/1e3e7449de5f53330eb060779a0eb9afe4cae35df891faff3ffc017133a51f73.png",
+        "description": "Abstract 3D glowing sphere made of intricate golden, amber, and neon orange geometric wireframes. Use as the central 'JARVIS' entity visualization, possibly spinning or pulsing.",
+        "category": "hero/avatar"
+      },
+      "dark_hud_background": {
+        "url": "https://static.prod-images.emergentagent.com/jobs/ceae6baf-490f-460b-9a34-025a5a688f4e/images/057373ca29356459f9e770c83feb95105a10d87644eb51db5058ad79cc9991e7.png",
+        "description": "Macro photography of black matte metal texture with a subtle glowing orange-red laser line. Use as the app's main background behind the ScrollView.",
+        "category": "background"
+      }
+    }
+  },
+  "accessibility_and_testing": {
+    "data_testid_requirement": "CRITICAL: All interactive elements (TouchableOpacity, Pressable, TextInput) and key informational elements MUST include a `testID` (React Native's equivalent to data-testid) attribute. Example: `testID=\"mic-button\"`.",
+    "contrast": "Ensure text meets 4.5:1 ratio against the dark backgrounds. The Amber (#FFB800) against Void Black (#050505) provides excellent contrast."
+  },
+  "instructions_to_main_agent": [
+    "Do NOT use HTML/CSS or Tailwind CSS. Use exclusively React Native components (View, Text, TouchableOpacity, ScrollView, TextInput, Animated) and StyleSheet.create().",
+    "Target Android primarily. Keep layouts flexible using Flexbox.",
+    "Use the 'ai_core_avatar' image as the centerpiece of the voice interaction screen, potentially wrapping it in an animated pulse ring.",
+    "For the chat interface, style it like a 'Terminal/HUD' log rather than a traditional iMessage app. Use the `technical` font for timestamps and metadata, adding 1px solid borders to components for a tactical look.",
+    "Implement the Voice Waveform component as a series of Animated.View bars that scale vertically.",
+    "Ensure the 'Sassy' personality is reflected in the placeholder texts, initial greeting, and system prompts.",
+    "Build out the multi-turn memory, conversation history, search functionalities, and quick actions mentioned in the requirements.",
+    "Remember to attach `testID` to all buttons, inputs, and major views to comply with the testing rule."
+  ]
+}

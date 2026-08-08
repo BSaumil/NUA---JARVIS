@@ -1,5 +1,18 @@
 # NUA
 
+This repo holds two independent implementations of NUA that were built in parallel and
+haven't been reconciled into one:
+
+- **`app/` — native Android app** (Kotlin, Jetpack Compose, Hilt/MVVM, Claude API
+  direct from the client). This is the actively developed one and everything below
+  documents it.
+- **`backend/` + `frontend/` — a separate build** (FastAPI + MongoDB backend, React
+  Native/Expo frontend) produced by the Emergent app-builder platform. See `backend/`
+  and `frontend/` directly; it doesn't share any code or docs with the Android app and
+  its own README is just a placeholder.
+
+---
+
 A personal AI assistant for Android (Kotlin, Jetpack Compose, Hilt/MVVM, Claude API).
 
 NUA is scoped in three tiers of increasing risk:
