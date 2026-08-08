@@ -135,11 +135,20 @@ needs to change, including the multi-keyword detection code in `NuaForegroundSer
 - `NuaAccessibilityService` is a structural skeleton only — the confirmation contract
   (per-action, in-the-moment, fail-loud via `NuaAccessibilityService.lastFailure`) is
   settled, but no concrete Tier 2 action is implemented.
-- This environment has no Android SDK and the outbound network policy blocks
-  `dl.google.com` (the only host that serves the Android Gradle Plugin and platform
-  artifacts), so the build could not be verified end-to-end with `./gradlew assembleDebug`
-  here. Every file was written and cross-checked by hand for import/package correctness;
-  it still needs a real build on a machine with the Android SDK before shipping.
+- The development sandbox this was built in has no Android SDK, and its outbound network
+  policy blocks `dl.google.com` (the only host that serves the Android Gradle Plugin and
+  platform artifacts — confirmed by direct probing, not a timeout/misconfiguration), so
+  `./gradlew assembleDebug` could never be run there. See **Continuous Integration**
+  below for how this is actually verified instead.
+
+## Continuous Integration
+
+`.github/workflows/android-build.yml` builds the app on GitHub's own runners (which have
+normal internet access, unlike the sandbox above) on every push and PR: it sets up the
+Android SDK, runs `./gradlew test`, then `./gradlew assembleDebug`, and uploads the debug
+APK and test reports as workflow artifacts. This is the real, end-to-end build
+verification for this project — check the Actions tab for current status rather than
+assuming a hand-reviewed diff compiles.
 
 ## Building
 
