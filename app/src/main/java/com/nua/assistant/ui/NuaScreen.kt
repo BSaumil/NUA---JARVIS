@@ -1,5 +1,9 @@
 package com.nua.assistant.ui
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -41,7 +46,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import com.nua.assistant.ai.PlannedStep
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.automation.NuaRouteResult
@@ -58,9 +65,12 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val briefingSchedule by viewModel.briefingSchedule.collectAsState()
     val voiceEnrolled by viewModel.voiceEnrolled.collectAsState()
     val enrollmentProgress by viewModel.enrollmentProgress.collectAsState()
+    val geofences by viewModel.geofences.collectAsState()
+    val usageThisMonth by viewModel.usageThisMonth.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
 
     if (showSettings) {
+        LaunchedEffect(Unit) { viewModel.refreshUsage() }
         SettingsScreen(
             facts = facts,
             onForgetFact = viewModel::forgetFact,
@@ -72,6 +82,10 @@ fun NuaScreen(viewModel: NuaViewModel) {
             enrollmentProgress = enrollmentProgress,
             onRecordEnrollmentClip = viewModel::recordVoiceEnrollmentClip,
             onResetVoiceEnrollment = viewModel::resetVoiceEnrollment,
+            geofences = geofences,
+            onAddGeofence = viewModel::addGeofence,
+            onRemoveGeofence = viewModel::removeGeofence,
+            usageThisMonth = usageThisMonth,
             onBack = { showSettings = false },
         )
         return
@@ -96,6 +110,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
                 onInputChanged = viewModel::onInputChanged,
                 onSend = { viewModel.sendMessage() },
                 onMicTap = viewModel::onWakeWordDetected,
+                onImageCaptured = viewModel::describeImage,
             )
         }
     }
@@ -127,8 +142,14 @@ private fun ChatColumn(
     onInputChanged: (String) -> Unit,
     onSend: () -> Unit,
     onMicTap: () -> Unit,
+    onImageCaptured: (Uri) -> Unit,
 ) {
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    var pendingImageUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) pendingImageUri?.let(onImageCaptured)
+    }
     LaunchedEffect(uiState.messages.size, uiState.streamingReply) {
         val lastIndex = uiState.messages.size + (if (uiState.streamingReply != null) 1 else 0) - 1
         if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
@@ -161,6 +182,13 @@ private fun ChatColumn(
                 placeholder = { Text("Ask NUA anything...") },
             )
             Spacer(modifier = Modifier.width(8.dp))
+            IconButton(onClick = {
+                val uri = createImageCaptureUri(context)
+                pendingImageUri = uri
+                cameraLauncher.launch(uri)
+            }) {
+                Icon(Icons.Filled.PhotoCamera, contentDescription = "Ask about a photo")
+            }
             IconButton(onClick = onMicTap) {
                 Icon(Icons.Filled.Mic, contentDescription = "Voice input")
             }
@@ -169,6 +197,13 @@ private fun ChatColumn(
             }
         }
     }
+}
+
+/** cacheDir/images/<timestamp>.jpg, exposed via FileProvider so the camera app can write to it. */
+private fun createImageCaptureUri(context: Context): Uri {
+    val imagesDir = java.io.File(context.cacheDir, "images").apply { mkdirs() }
+    val file = java.io.File(imagesDir, "capture_${System.currentTimeMillis()}.jpg")
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }
 
 @Composable

@@ -1,25 +1,33 @@
 package com.nua.assistant.ui
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeMessage
+import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.ClaudeStreamEvent
 import com.nua.assistant.ai.FactExtractor
 import com.nua.assistant.ai.FactRelevance
 import com.nua.assistant.ai.PersonalityEngine
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.ai.TaskPlanner
+import com.nua.assistant.ai.UsageSummary
+import com.nua.assistant.ai.UsageTracker
 import com.nua.assistant.automation.NuaIntentRouter
 import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.briefing.BriefingScheduleStore
 import com.nua.assistant.briefing.BriefingScheduler
+import com.nua.assistant.geofencing.GeofenceManager
+import com.nua.assistant.memory.GeofenceDao
+import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.MemoryDao
 import com.nua.assistant.memory.MessageEntity
 import com.nua.assistant.memory.MessageRole
 import com.nua.assistant.memory.SecureKeyRepository
 import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.network.ConnectivityMonitor
 import com.nua.assistant.notifications.NotificationReplySender
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.notifications.NotificationSummary
@@ -29,6 +37,9 @@ import com.nua.assistant.voice.NuaLanguage
 import com.nua.assistant.voice.OwnerEnrollment
 import com.nua.assistant.voice.OwnerVerifier
 import com.nua.assistant.voice.VoiceManager
+import com.nua.assistant.voice.VoiceProsody
+import com.nua.assistant.voice.VoiceTone
+import com.nua.assistant.vision.ImageEncoder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,6 +81,11 @@ class NuaViewModel @Inject constructor(
     private val briefingScheduler: BriefingScheduler,
     private val ownerEnrollment: OwnerEnrollment,
     private val ownerVerifier: OwnerVerifier,
+    private val connectivityMonitor: ConnectivityMonitor,
+    private val imageEncoder: ImageEncoder,
+    private val geofenceManager: GeofenceManager,
+    private val geofenceDao: GeofenceDao,
+    private val usageTracker: UsageTracker,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -87,11 +103,17 @@ class NuaViewModel @Inject constructor(
     private val _enrollmentProgress = MutableStateFlow<Int?>(null)
     val enrollmentProgress: StateFlow<Int?> = _enrollmentProgress.asStateFlow()
 
+    private val _usageThisMonth = MutableStateFlow<UsageSummary?>(null)
+    val usageThisMonth: StateFlow<UsageSummary?> = _usageThisMonth.asStateFlow()
+
     val notificationSummary: StateFlow<NotificationSummary> = notificationRepository.notifications
         .map { notificationRepository.summary() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotificationSummary(emptyList(), emptyList()))
 
     val facts: StateFlow<List<UserFactEntity>> = memoryDao.observeFacts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val geofences: StateFlow<List<GeofenceEntity>> = geofenceDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // Continuous conversation mode: once woken by voice, keep listening for a few
@@ -101,6 +123,11 @@ class NuaViewModel @Inject constructor(
     private var voiceSessionActive = false
     private var voiceFollowUpCount = 0
 
+    // Set right before a voice turn's transcript comes back (see VoiceProsody), consumed
+    // once by the next replyConversationally() call and cleared — a typed follow-up in
+    // the same session shouldn't carry a stale spoken tone forward.
+    private var lastVoiceTone: VoiceTone? = null
+
     init {
         viewModelScope.launch {
             _uiState.update { it.copy(needsApiKey = !secureKeyRepository.hasApiKey()) }
@@ -108,6 +135,7 @@ class NuaViewModel @Inject constructor(
             _uiState.update { it.copy(messages = recent.map { m -> ChatMessage(m.role, m.content) }) }
         }
         voiceManager.setOnFinalSpeechDoneListener { onReplyFinishedSpeaking() }
+        viewModelScope.launch { geofenceManager.registerAll() }
     }
 
     fun onInputChanged(text: String) {
@@ -140,6 +168,7 @@ class NuaViewModel @Inject constructor(
             language = _pinnedLanguage.value ?: NuaLanguage.ENGLISH,
             onResult = { heard -> sendMessage(heard, isVoiceTurn = true) },
             onError = { voiceSessionActive = false },
+            onTone = { tone -> lastVoiceTone = tone },
         )
     }
 
@@ -165,12 +194,19 @@ class NuaViewModel @Inject constructor(
     }
 
     private suspend fun replyConversationally(userMessage: String) {
+        if (!connectivityMonitor.isOnline()) {
+            respond(offlineMessage(), extractFacts = false)
+            return
+        }
+
         val relevantFacts = FactRelevance.rank(memoryDao.getAllFacts(), userMessage)
         val turnCount = memoryDao.countUserMessages()
         val history = memoryDao.getRecentMessages(CONVERSATION_HISTORY_LIMIT).asReversed().map {
             ClaudeMessage(role = if (it.role == MessageRole.USER) "user" else "assistant", content = it.content)
         }
-        val system = personalityEngine.systemPrompt(relevantFacts, turnCount, _pinnedLanguage.value)
+        val toneDirective = VoiceProsody.directiveFor(lastVoiceTone ?: VoiceTone.NEUTRAL)
+        lastVoiceTone = null
+        val system = personalityEngine.systemPrompt(relevantFacts, turnCount, _pinnedLanguage.value, toneDirective)
         val language = _pinnedLanguage.value ?: NuaLanguage.ENGLISH
 
         val fullText = StringBuilder()
@@ -243,6 +279,35 @@ class NuaViewModel @Inject constructor(
         }
     }
 
+    /** Sends a just-captured photo to Claude's vision and speaks/shows the response like any other reply. */
+    fun describeImage(uri: Uri) {
+        if (_uiState.value.isProcessing) return
+        _uiState.update {
+            it.copy(isProcessing = true, messages = it.messages + ChatMessage(MessageRole.USER, "[Photo]"))
+        }
+        viewModelScope.launch {
+            if (!connectivityMonitor.isOnline()) {
+                respond("No connection right now — can't look at that photo until you're back online.", extractFacts = false)
+                return@launch
+            }
+            val encoded = imageEncoder.encode(uri)
+            if (encoded == null) {
+                respond("Couldn't read that photo.", extractFacts = false)
+                return@launch
+            }
+            val result = claudeApiClient.describeImage(
+                imageBase64 = encoded.base64,
+                mediaType = encoded.mediaType,
+                prompt = "Describe what's in this photo in a couple of sentences, and mention anything the user might want to know or act on.",
+            )
+            val text = when (result) {
+                is ClaudeResult.Success -> result.text
+                is ClaudeResult.Failure -> "Couldn't process that photo — ${result.message}"
+            }
+            respond(text, extractFacts = false)
+        }
+    }
+
     fun confirmPendingPlan() {
         val plan = _uiState.value.pendingPlan ?: return
         viewModelScope.launch {
@@ -311,6 +376,19 @@ class NuaViewModel @Inject constructor(
         }
     }
 
+    fun addGeofence(name: String, latitude: Double, longitude: Double, message: String) {
+        viewModelScope.launch { geofenceManager.addGeofence(name, latitude, longitude, GEOFENCE_DEFAULT_RADIUS_METERS, message) }
+    }
+
+    fun removeGeofence(id: Long) {
+        viewModelScope.launch { geofenceManager.removeGeofence(id) }
+    }
+
+    /** Called when Settings opens — usage isn't worth keeping live-updated, just fresh on view. */
+    fun refreshUsage() {
+        viewModelScope.launch { _usageThisMonth.value = usageTracker.summaryThisMonth() }
+    }
+
     fun resetVoiceEnrollment() {
         ownerEnrollment.resetEnrollment()
         _voiceEnrolled.value = false
@@ -325,8 +403,16 @@ class NuaViewModel @Inject constructor(
         const val RECENT_MESSAGE_LIMIT = 30
         const val CONVERSATION_HISTORY_LIMIT = 20
         const val MAX_VOICE_FOLLOW_UPS = 4
+        const val GEOFENCE_DEFAULT_RADIUS_METERS = 150f
 
         private val SENTENCE_END_CHARS = charArrayOf('.', '!', '?', '\n')
+
+        /** No network for the Claude round trip that CHAT-fallthrough always needs — surfaced immediately instead of timing out. */
+        fun offlineMessage(): String {
+            val time = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date())
+            return "No connection right now, so I can't think that through — it's $time here if that helps. " +
+                "Opening apps, media controls, and reading notifications still work offline."
+        }
 
         /** Furthest index in [text] (from [from] onward) that ends a complete sentence, or [from] if none yet. */
         fun spokenSentenceBoundary(text: StringBuilder, from: Int): Int {

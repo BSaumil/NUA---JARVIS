@@ -17,6 +17,7 @@ enum class NuaActionType {
     MORNING_BRIEFING,
     PLAN_TASK,
     SMART_HOME,
+    EMAIL,
     /** No concrete action fits — fall through to a normal conversational reply. */
     CHAT,
 }
@@ -57,6 +58,7 @@ private val CLASSIFIER_SYSTEM_PROMPT = """
       from a short plan (e.g. "I'm going camping tomorrow"). parameters: {"activity": "..."}
     - SMART_HOME: user wants to control a smart-home device (lights, thermostat, plugs,
       locks). parameters: {"device": "<device/room name>", "action": "on|off|<other>"}
+    - EMAIL: user wants their email checked or read ("any new emails?", "check my inbox").
     - CHAT: nothing above fits, or the request is purely conversational — this includes
       mood/vibe statements with no obvious action ("I'm bored", "I had a rough day")
       unless they clearly imply one of the actions above (e.g. "I'm bored" alone is

@@ -39,6 +39,7 @@ class ClaudeApiClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val json: Json,
     private val secureKeyRepository: SecureKeyRepository,
+    private val usageTracker: UsageTracker,
 ) {
 
     suspend fun sendMessage(
@@ -63,6 +64,7 @@ class ClaudeApiClient @Inject constructor(
                     return@withContext ClaudeResult.Failure(parseErrorMessage(bodyString, response.code))
                 }
                 val parsed = json.decodeFromString(ClaudeResponse.serializer(), bodyString)
+                usageTracker.record(model, parsed.usage)
                 ClaudeResult.Success(parsed.text())
             }
         } catch (t: Exception) {
@@ -108,12 +110,25 @@ class ClaudeApiClient @Inject constructor(
         val requestBody = buildRequest(messages, system, model, maxTokens, temperature, stream = true)
         val request = requestBuilder(apiKey, requestBody).build()
         val fullText = StringBuilder()
+        var inputTokens = 0
+        var outputTokens = 0
+        val producerScope = this
 
         val eventSource = EventSources.createFactory(okHttpClient).newEventSource(
             request,
             object : EventSourceListener() {
                 override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
                     when (type) {
+                        "message_start" -> {
+                            inputTokens = runCatching {
+                                json.decodeFromString(ClaudeStreamMessageStart.serializer(), data)
+                            }.getOrNull()?.message?.usage?.inputTokens ?: 0
+                        }
+                        "message_delta" -> {
+                            outputTokens = runCatching {
+                                json.decodeFromString(ClaudeStreamMessageDelta.serializer(), data)
+                            }.getOrNull()?.usage?.outputTokens ?: outputTokens
+                        }
                         "content_block_delta" -> {
                             val delta = runCatching {
                                 json.decodeFromString(ClaudeStreamEventBody.serializer(), data)
@@ -124,6 +139,7 @@ class ClaudeApiClient @Inject constructor(
                             }
                         }
                         "message_stop" -> {
+                            producerScope.launch { usageTracker.record(model, ClaudeUsage(inputTokens, outputTokens)) }
                             trySend(ClaudeStreamEvent.Done(fullText.toString()))
                             close()
                         }
@@ -145,6 +161,53 @@ class ClaudeApiClient @Inject constructor(
         awaitClose { eventSource.cancel() }
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * Sends a single image plus a text prompt to Claude's vision. A separate request
+     * shape from [sendMessage] (its `ClaudeMessage.content` is a plain string, no room
+     * for an image block) rather than widening that type for every text-only caller.
+     */
+    suspend fun describeImage(
+        imageBase64: String,
+        mediaType: String,
+        prompt: String,
+        system: String? = null,
+    ): ClaudeResult = withContext(Dispatchers.IO) {
+        val apiKey = secureKeyRepository.getApiKey()
+        if (apiKey.isNullOrBlank()) {
+            return@withContext ClaudeResult.Failure("No Claude API key configured yet.")
+        }
+
+        val body = ClaudeMultimodalRequest(
+            model = CLAUDE_MODEL_CONVERSATION,
+            maxTokens = 1024,
+            system = system?.takeIf { it.isNotBlank() }?.let { listOf(ClaudeSystemBlock(text = it)) },
+            messages = listOf(
+                ClaudeMultimodalMessage(
+                    role = "user",
+                    content = listOf(
+                        ClaudeMultimodalBlock(type = "image", source = ClaudeImageSource(mediaType = mediaType, data = imageBase64)),
+                        ClaudeMultimodalBlock(type = "text", text = prompt),
+                    ),
+                ),
+            ),
+        )
+        val request = requestBuilder(apiKey, json.encodeToString(ClaudeMultimodalRequest.serializer(), body)).build()
+
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    return@withContext ClaudeResult.Failure(parseErrorMessage(bodyString, response.code))
+                }
+                val parsed = json.decodeFromString(ClaudeResponse.serializer(), bodyString)
+                usageTracker.record(CLAUDE_MODEL_CONVERSATION, parsed.usage)
+                ClaudeResult.Success(parsed.text())
+            }
+        } catch (t: Exception) {
+            ClaudeResult.Failure(t.message ?: "Claude request failed", t)
+        }
+    }
+
     private fun buildRequest(
         messages: List<ClaudeMessage>,
         system: String?,
@@ -161,13 +224,16 @@ class ClaudeApiClient @Inject constructor(
         stream = stream,
     )
 
-    private fun requestBuilder(apiKey: String, body: ClaudeRequest) = Request.Builder()
+    private fun requestBuilder(apiKey: String, body: ClaudeRequest) =
+        requestBuilder(apiKey, json.encodeToString(ClaudeRequest.serializer(), body))
+
+    private fun requestBuilder(apiKey: String, bodyJson: String) = Request.Builder()
         .url(ANTHROPIC_ENDPOINT)
         .addHeader("x-api-key", apiKey)
         .addHeader("anthropic-version", ANTHROPIC_VERSION)
         .addHeader("anthropic-beta", "prompt-caching-2024-07-31")
         .addHeader("content-type", "application/json")
-        .post(json.encodeToString(ClaudeRequest.serializer(), body).toRequestBody(JSON_MEDIA_TYPE))
+        .post(bodyJson.toRequestBody(JSON_MEDIA_TYPE))
 
     private fun parseErrorMessage(body: String, httpCode: Int): String = runCatching {
         json.decodeFromString(ClaudeErrorEnvelope.serializer(), body).error.message

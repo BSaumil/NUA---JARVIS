@@ -95,6 +95,51 @@ data class ClaudeStreamEventBody(
     val delta: ClaudeStreamDelta? = null,
 )
 
+@Serializable
+data class ClaudeStreamMessageStartInner(
+    val usage: ClaudeUsage = ClaudeUsage(),
+)
+
+@Serializable
+data class ClaudeStreamMessageStart(
+    val message: ClaudeStreamMessageStartInner = ClaudeStreamMessageStartInner(),
+)
+
+@Serializable
+data class ClaudeStreamMessageDelta(
+    val usage: ClaudeUsage = ClaudeUsage(),
+)
+
+// --- Multimodal (vision) ---
+
+@Serializable
+data class ClaudeImageSource(
+    val type: String = "base64",
+    @SerialName("media_type") val mediaType: String,
+    val data: String,
+)
+
+@Serializable
+data class ClaudeMultimodalBlock(
+    val type: String,
+    val text: String? = null,
+    val source: ClaudeImageSource? = null,
+)
+
+@Serializable
+data class ClaudeMultimodalMessage(
+    val role: String,
+    val content: List<ClaudeMultimodalBlock>,
+)
+
+@Serializable
+data class ClaudeMultimodalRequest(
+    val model: String,
+    @SerialName("max_tokens") val maxTokens: Int,
+    val system: List<ClaudeSystemBlock>? = null,
+    val messages: List<ClaudeMultimodalMessage>,
+)
+
 sealed class ClaudeStreamEvent {
     data class TextDelta(val text: String) : ClaudeStreamEvent()
     data class Done(val fullText: String) : ClaudeStreamEvent()

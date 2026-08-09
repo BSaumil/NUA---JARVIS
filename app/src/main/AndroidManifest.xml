@@ -4,12 +4,21 @@
 
     <!-- Tier 1: official APIs -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <!-- Coarse is enough for a city-level weather lookup; no fine location needed. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Geofencing (geofencing/GeofenceManager.kt) needs fine location, and background
+         location on API 29+ for transitions to fire while NUA isn't in the foreground.
+         Neither is requested unless the user actually adds a location reminder in
+         Settings. Google Play requires a background-location declaration form before
+         a build using this permission can be published — not yet filed, since this is
+         still pre-release scaffolding. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Lets Settings screen ask the user to exempt NUA from battery optimization, needed
@@ -85,6 +94,41 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/nua_widget_info" />
         </receiver>
+
+        <!-- Android Auto entry point (Tier 1: Car App Library). "IOT" is the closest
+             official category to a general voice assistant; Google Play requires
+             category-specific review before a build using this can be published. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+        <service
+            android:name=".car.NuaCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.IOT" />
+            </intent-filter>
+        </service>
+
+        <!-- Geofence ENTER transitions (Tier 1: Play Services Geofencing API). -->
+        <receiver
+            android:name=".geofencing.NuaGeofenceBroadcastReceiver"
+            android:exported="false" />
+
+        <!-- Vision input: hands a cache-dir photo URI to the system camera app and
+             back (see ui/NuaScreen.kt, vision/ImageEncoder.kt). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Disable WorkManager's default on-demand initializer: it runs via a
              ContentProvider before Hilt has field-injected NuaApplication.workerFactory.

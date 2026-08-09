@@ -110,6 +110,12 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
+    // Geofenced proactive suggestions (geofencing/GeofenceManager.kt)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // Android Auto entry point (car/NuaCarAppService.kt)
+    implementation("androidx.car.app:app:1.4.0")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

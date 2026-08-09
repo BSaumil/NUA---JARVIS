@@ -88,8 +88,18 @@ class VoiceManager @Inject constructor(
         textToSpeech?.stop()
     }
 
-    /** [language] is a recognition hint, not a filter — SpeechRecognizer needs one locale to bias toward per call. */
-    fun startListening(language: NuaLanguage = NuaLanguage.ENGLISH, onResult: (String) -> Unit, onError: (String) -> Unit) {
+    /**
+     * [language] is a recognition hint, not a filter — SpeechRecognizer needs one
+     * locale to bias toward per call. [onTone] fires once, right before [onResult],
+     * with a coarse read of the utterance's energy/variance (see VoiceProsody) — not
+     * used for anything unless the caller wires it into a directive.
+     */
+    fun startListening(
+        language: NuaLanguage = NuaLanguage.ENGLISH,
+        onResult: (String) -> Unit,
+        onError: (String) -> Unit,
+        onTone: (VoiceTone) -> Unit = {},
+    ) {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             onError("Speech recognition isn't available on this device.")
             return
@@ -104,8 +114,11 @@ class VoiceManager @Inject constructor(
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, language.speechTag)
         }
 
+        val rmsSamples = mutableListOf<Float>()
+
         recognizer.setRecognitionListener(object : RecognitionListener {
             override fun onResults(results: Bundle?) {
+                onTone(VoiceProsody.classify(rmsSamples))
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
                 if (text != null) onResult(text) else onError("Didn't catch that.")
             }
@@ -116,7 +129,9 @@ class VoiceManager @Inject constructor(
 
             override fun onReadyForSpeech(params: Bundle?) = Unit
             override fun onBeginningOfSpeech() = Unit
-            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onRmsChanged(rmsdB: Float) {
+                rmsSamples.add(rmsdB)
+            }
             override fun onBufferReceived(buffer: ByteArray?) = Unit
             override fun onEndOfSpeech() = Unit
             override fun onPartialResults(partialResults: Bundle?) = Unit
