@@ -99,7 +99,7 @@ dependencies {
     implementation("ai.picovoice:porcupine-android:3.0.3")
 
     // Voice owner verification (voice/OwnerVerifier.kt) — separate Picovoice product/entitlement from Porcupine
-    implementation("ai.picovoice:eagle-android:1.0.4")
+    implementation("ai.picovoice:eagle-android:3.0.2")
 
     // Proactive scheduled briefings (briefing/MorningBriefingWorker.kt)
     implementation("androidx.work:work-runtime-ktx:2.10.0")

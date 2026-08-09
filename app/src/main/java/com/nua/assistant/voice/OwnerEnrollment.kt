@@ -15,8 +15,10 @@ import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private const val CLIP_SECONDS = 3
+
 sealed class EnrollmentStep {
-    data class Progress(val percentage: Int, val feedback: String) : EnrollmentStep()
+    data class Progress(val percentage: Int) : EnrollmentStep()
     data object Complete : EnrollmentStep()
     data class Failed(val reason: String) : EnrollmentStep()
 }
@@ -24,16 +26,18 @@ sealed class EnrollmentStep {
 /**
  * Wraps Picovoice Eagle's enrollment flow — a separate product/entitlement from
  * Porcupine (wake word), possibly needing its own enablement in the Picovoice console
- * even though it reuses the same PICOVOICE_ACCESS_KEY build property. Records one short
- * mic clip per call and feeds it to EagleProfiler; the caller (see NuaViewModel) calls
- * this repeatedly until it reports Complete, matching how Eagle enrollment actually
- * works (it needs several clips from different moments, not one long recording).
+ * even though it reuses the same PICOVOICE_ACCESS_KEY build property. Eagle accumulates
+ * enrollment progress inside a single EagleProfiler instance across many short audio
+ * clips, so the profiler here is kept alive between enrollOneClip() calls instead of
+ * being rebuilt each time (that would silently discard all prior progress). The caller
+ * (see NuaViewModel) calls enrollOneClip() repeatedly until it reports Complete.
  */
 @Singleton
 class OwnerEnrollment @Inject constructor(
     @ApplicationContext private val context: Context,
     private val profileStore: OwnerVoiceProfileStore,
 ) {
+    private var profiler: EagleProfiler? = null
 
     suspend fun enrollOneClip(): EnrollmentStep = withContext(Dispatchers.IO) {
         if (BuildConfig.PICOVOICE_ACCESS_KEY.isBlank()) {
@@ -45,53 +49,66 @@ class OwnerEnrollment @Inject constructor(
             return@withContext EnrollmentStep.Failed("Microphone permission not granted.")
         }
 
-        var profiler: EagleProfiler? = null
         var audioRecord: AudioRecord? = null
         try {
-            profiler = EagleProfiler.Builder().setAccessKey(BuildConfig.PICOVOICE_ACCESS_KEY).build(context)
+            val eagleProfiler = profiler ?: EagleProfiler.Builder()
+                .setAccessKey(BuildConfig.PICOVOICE_ACCESS_KEY)
+                .build(context)
+                .also { profiler = it }
 
+            val frameLength = eagleProfiler.frameLength
+            val sampleRate = eagleProfiler.sampleRate
             val minBufferSize = AudioRecord.getMinBufferSize(
-                profiler.sampleRate,
+                sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
             )
             audioRecord = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
-                profiler.sampleRate,
+                sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
-                maxOf(minBufferSize, profiler.minEnrollSamples * 2),
+                maxOf(minBufferSize, frameLength * 4),
             )
             audioRecord.startRecording()
 
-            val pcm = ShortArray(profiler.minEnrollSamples)
-            var offset = 0
-            while (offset < pcm.size) {
-                val read = audioRecord.read(pcm, offset, pcm.size - offset)
-                if (read <= 0) break
-                offset += read
+            val frame = ShortArray(frameLength)
+            var percentage = 0f
+            val framesPerClip = (sampleRate * CLIP_SECONDS) / frameLength
+            for (i in 0 until framesPerClip) {
+                var offset = 0
+                while (offset < frame.size) {
+                    val read = audioRecord.read(frame, offset, frame.size - offset)
+                    if (read <= 0) break
+                    offset += read
+                }
+                percentage = eagleProfiler.enroll(frame)
+                if (percentage >= 100f) break
             }
             audioRecord.stop()
 
-            val result = profiler.enroll(pcm)
-            val percentage = result.percentage.toInt()
-
-            if (percentage >= 100) {
-                val profile = profiler.export()
-                profileStore.saveProfileBytes(profile.bytes)
+            if (percentage >= 100f) {
+                val exported = eagleProfiler.export()
+                profileStore.saveProfileBytes(exported.bytes)
+                exported.delete()
+                eagleProfiler.delete()
+                profiler = null
                 EnrollmentStep.Complete
             } else {
-                EnrollmentStep.Progress(percentage, result.feedback.name)
+                EnrollmentStep.Progress(percentage.toInt())
             }
         } catch (t: Exception) {
+            profiler?.delete()
+            profiler = null
             EnrollmentStep.Failed(t.message ?: "Enrollment failed")
         } finally {
             audioRecord?.release()
-            profiler?.delete()
         }
     }
 
     fun resetEnrollment() {
+        profiler?.delete()
+        profiler = null
         profileStore.clear()
     }
 }
