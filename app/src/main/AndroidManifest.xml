@@ -73,6 +73,34 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- Home-screen widget: next calendar event, weather, notification summary. -->
+        <receiver
+            android:name=".widget.NuaWidgetReceiver"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/nua_widget_info" />
+        </receiver>
+
+        <!-- Disable WorkManager's default on-demand initializer: it runs via a
+             ContentProvider before Hilt has field-injected NuaApplication.workerFactory.
+             WorkManager.initialize() is called manually in NuaApplication.onCreate()
+             instead, once that injection has actually happened. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup.InitializationProvider"
+                tools:node="remove" />
+        </provider>
+
     </application>
 
 </manifest>

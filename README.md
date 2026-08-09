@@ -21,23 +21,28 @@ NUA is scoped in three tiers of increasing risk:
 
 ```
 app/src/main/java/com/nua/assistant/
-  NuaApplication.kt        → @HiltAndroidApp entry point
+  NuaApplication.kt        → @HiltAndroidApp entry point, WorkManager+Hilt wiring
   MainActivity.kt           → Compose host, permission requests, wake-word broadcast receiver
-  ai/                        → ClaudeApiClient, PersonalityEngine, and Phase 3 intelligence:
-                                IntentClassifier, FactExtractor, TaskPlanner
+  ai/                        → ClaudeApiClient (streaming + prompt caching), PersonalityEngine,
+                                IntentClassifier, FactExtractor, FactRelevance, TaskPlanner
   voice/                     → VoiceManager (STT/TTS wrapper), NuaLanguage (10-language
-                                catalog), LanguagePreferenceStore (pinned language)
+                                catalog), LanguagePreferenceStore (pinned language),
+                                OwnerEnrollment/OwnerVerifier (Picovoice Eagle, scaffold)
   automation/                → AppLauncher (Tier 1), NuaIntentRouter (keyword + Claude-fallback
                                 routing), NuaAccessibilityService (Tier 2 skeleton)
-  weather/                   → WeatherRepository (Open-Meteo, no API key)
+  weather/                   → WeatherRepository (Open-Meteo, no API key, TTL-cached)
   calendar/                  → CalendarReader (on-device CalendarContract, read + confirmed-plan
                                 reminder writes, no OAuth)
   memory/                    → MemoryStore.kt (Room: messages + user_facts),
                                 SecureKeyRepository (encrypted Claude API key storage)
   notifications/              → NuaNotificationListenerService, NotificationRepository,
-                                NotificationPriorityScorer, NotificationStatsStore
+                                NotificationPriorityScorer, NotificationStatsStore,
+                                NotificationReplySender (Tier 1 quick-reply)
   media/                     → MediaControlManager (MediaSessionManager-based)
-  briefing/                  → MorningBriefing (assembles facts, hands to Claude for phrasing)
+  briefing/                  → MorningBriefing, MorningBriefingWorker + BriefingScheduler
+                                (WorkManager-based proactive scheduling)
+  smarthome/                 → SmartHomeRepository extension point (Matter/Google Home, scaffold)
+  widget/                    → NuaWidget (Jetpack Glance home-screen widget)
   services/                  → NuaForegroundService (multi-phrase wake-word listening via
                                 Porcupine), WakePhrase (extensible wake-word catalog)
   di/                        → AppModule (Hilt module for Room, OkHttp, JSON)
@@ -65,6 +70,57 @@ app/src/main/java/com/nua/assistant/
    declared priority, messaging/phone apps, and apps the user has historically dismissed
    quickly (tracked in `NotificationStatsStore`), and phrases the result plainly
    ("two need attention, eight can wait") instead of reading everything with equal weight.
+
+## Phase 4 — performance and reach
+
+1. **Streaming replies.** `ClaudeApiClient.streamMessage` uses server-sent events
+   instead of waiting for the full response; `NuaViewModel` speaks completed sentences
+   as they arrive (via `VoiceManager.speak(..., flush = false)` for queued chunks) and
+   renders a live-updating bubble (`NuaUiState.streamingReply`), instead of a spinner
+   until the whole reply is ready.
+2. **Prompt caching.** Every Claude call now sends its system prompt as a single
+   `cache_control: ephemeral` block (`ClaudeSystemBlock`). The static utility prompts
+   (`IntentClassifier`, `FactExtractor`) hit cache most often since they're identical
+   call to call; the main chat's system prompt varies with facts/tone so it hits less,
+   but costs nothing extra when it misses.
+3. **TTL cache on weather.** `WeatherRepository` caches the last snapshot for 10 minutes
+   per ~1km location bucket — asking about the weather twice in a row doesn't re-hit
+   Open-Meteo.
+4. **Relevance-scoped facts.** `FactRelevance` ranks `user_facts` by keyword overlap
+   with the current message plus recency and caps what goes into the system prompt
+   (12 by default) instead of dumping the whole table every turn — lexical, not
+   semantic/embedding search (bundling an embedding model on-device wasn't
+   proportionate to what this solves), but enough to bound prompt size as it grows.
+5. **Continuous conversation mode.** After a reply finishes speaking
+   (`VoiceManager.markReplyComplete` → `setOnFinalSpeechDoneListener`), NUA listens
+   again for a follow-up without repeating the wake word — up to `MAX_VOICE_FOLLOW_UPS`
+   times, ended immediately by typed input, a listening error/timeout, or the cap, so
+   the mic is never left hot indefinitely.
+6. **Proactive scheduled briefings.** `MorningBriefingWorker` (WorkManager, Hilt-injected
+   via `NuaApplication`) runs `MorningBriefing.generate()` at a user-chosen time and
+   posts it as a notification (and saves it into the conversation) — deliberately *not*
+   read aloud unprompted, since playing audio from a background worker with no user
+   interaction in progress felt more surprising than helpful. Configured in
+   Settings → Proactive morning briefing.
+7. **Notification quick-reply.** `NotificationReplySender` replies through a
+   notification's own built-in `RemoteInput` action — the same official mechanism a
+   wearable uses — no Tier 2/accessibility involved. Sending a message on the user's
+   behalf is sensitive, so it always goes through a confirmation dialog
+   (`NuaRouteResult.ReplyProposed`) before anything sends.
+8. **Smart home extension point.** `SmartHomeRepository` + `NuaActionType.SMART_HOME`
+   are fully wired into the router, but the only binding shipped
+   (`UnconfiguredSmartHomeRepository`) always reports not-configured. Google's Home APIs
+   are limited-access and need a provisioned Google Cloud project plus real device
+   commissioning outside the app — swap the Hilt binding in `smarthome/SmartHomeModule.kt`
+   once that setup exists.
+9. **Home-screen widget.** `NuaWidget` (Jetpack Glance) shows the next calendar event,
+   current weather, and notification summary, refreshed on Android's own widget update
+   cycle (`nua_widget_info.xml`, 30-minute minimum).
+10. **Voice owner verification.** `OwnerEnrollment`/`OwnerVerifier` wrap Picovoice Eagle
+    (speaker recognition — a separate product/entitlement from Porcupine) for a future
+    Tier 2 action to gate on "is this actually the owner's voice." Nothing calls
+    `OwnerVerifier` yet since there's no concrete Tier 2 action to gate; Settings →
+    Voice ID lets you enroll ahead of that.
 
 ## Languages
 
@@ -113,9 +169,20 @@ needs to change, including the multi-keyword detection code in `NuaForegroundSer
 
 - Test coverage is limited to the pure-logic pieces that don't need a live Android
   runtime: `KeywordIntentMatcher`, `FactExtractor.shouldConsider`'s gating heuristic,
-  `NotificationPriorityScorer`, and `extractJsonPayload`. Nothing exercises the Room DAO,
-  `ClaudeApiClient`'s HTTP layer, or Compose UI yet — those would need Robolectric or
+  `NotificationPriorityScorer`, `FactRelevance`, and `extractJsonPayload`. Nothing
+  exercises the Room DAO, `ClaudeApiClient`'s HTTP/streaming layer, WorkManager
+  scheduling, the Glance widget, or Compose UI yet — those would need Robolectric or
   instrumented tests.
+- `OwnerEnrollment`/`OwnerVerifier` (Picovoice Eagle) were written from documentation
+  recall, not against the actual SDK artifact — class/method names (`EagleProfiler`,
+  `EagleRecognizer`, `EagleProfile`, `.minEnrollSamples`, `.export().bytes`, etc.) need
+  verification against `ai.picovoice:eagle-android:1.0.4` once this actually builds; the
+  surrounding architecture (encrypted profile storage, per-clip enrollment progress,
+  Settings UI) should hold up even if some call signatures need adjusting.
+- The WorkManager + Hilt wiring (`NuaApplication.Configuration.Provider`, the disabled
+  `WorkManagerInitializer` in the manifest, `@HiltWorker` on `MorningBriefingWorker`)
+  follows the documented Google pattern for this combination but is, like everything
+  else in this list, unverified against a real build until CI (or a real device) confirms it.
 - The settings screen covers viewing/forgetting facts and Tier 2 / battery-optimization
   status, but there's still no way to adjust the fact-extraction cadence or rotate the
   Claude API key from within the app (Tier 2 itself stays toggle-only via Android
@@ -154,7 +221,9 @@ assuming a hand-reviewed diff compiles.
 
 Requires the Android SDK (compileSdk 35) and a JDK 17+. Set your Claude API key at
 runtime through the in-app dialog (stored via `SecureKeyRepository`, never in a build
-file). Optionally pass a Picovoice access key for wake-word support:
+file). Optionally pass a Picovoice access key for wake-word support — the same key is
+reused for Eagle voice enrollment (Settings → Voice ID), though Eagle may need its own
+product enablement in the Picovoice console depending on your plan:
 
 ```
 ./gradlew assembleDebug -PPICOVOICE_ACCESS_KEY=your_key_here

@@ -7,7 +7,10 @@ import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.ai.TaskPlanner
 import com.nua.assistant.briefing.MorningBriefing
 import com.nua.assistant.media.MediaControlManager
+import com.nua.assistant.notifications.NotificationEntry
 import com.nua.assistant.notifications.NotificationRepository
+import com.nua.assistant.smarthome.SmartHomeRepository
+import com.nua.assistant.smarthome.SmartHomeResult
 import com.nua.assistant.voice.NuaLanguage
 import com.nua.assistant.weather.WeatherRepository
 import javax.inject.Inject
@@ -19,6 +22,8 @@ private const val CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.6
 sealed class NuaRouteResult {
     data class ActionTaken(val message: String) : NuaRouteResult()
     data class PlanProposed(val plan: TaskPlan) : NuaRouteResult()
+    /** Sending a message on the user's behalf is sensitive — always confirmed before NotificationReplySender fires. */
+    data class ReplyProposed(val notification: NotificationEntry, val message: String) : NuaRouteResult()
     data object FallThroughToChat : NuaRouteResult()
 }
 
@@ -36,6 +41,7 @@ class NuaIntentRouter @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val taskPlanner: TaskPlanner,
     private val intentClassifier: IntentClassifier,
+    private val smartHomeRepository: SmartHomeRepository,
 ) {
 
     suspend fun route(utterance: String, pinnedLanguage: NuaLanguage? = null): NuaRouteResult {
@@ -88,6 +94,23 @@ class NuaIntentRouter @Inject constructor(
             NuaRouteResult.ActionTaken(notificationRepository.summary().spokenSummary)
         }
 
+        NuaActionType.REPLY_TO_NOTIFICATION -> {
+            val target = intent.parameters["target"]
+            val message = intent.parameters["message"]
+            if (target.isNullOrBlank() || message.isNullOrBlank()) {
+                NuaRouteResult.FallThroughToChat
+            } else {
+                when (val notification = notificationRepository.findByTarget(target)) {
+                    null -> NuaRouteResult.ActionTaken("I don't see a recent notification from \"$target\" to reply to.")
+                    else -> if (notification.replyAction == null) {
+                        NuaRouteResult.ActionTaken("That notification from ${notification.title} doesn't have a quick-reply NUA can use.")
+                    } else {
+                        NuaRouteResult.ReplyProposed(notification, message)
+                    }
+                }
+            }
+        }
+
         NuaActionType.GET_WEATHER -> {
             val snapshot = weatherRepository.currentSnapshot().getOrNull()
             val message = snapshot?.let { ActionCopy.weather(it.condition, it.currentTempC, it.highTempC, it.precipitationChancePercent) }
@@ -103,6 +126,21 @@ class NuaIntentRouter @Inject constructor(
             val activity = intent.parameters["activity"] ?: originalUtterance
             val plan = taskPlanner.propose(activity, pinnedLanguage)
             if (plan != null) NuaRouteResult.PlanProposed(plan) else NuaRouteResult.FallThroughToChat
+        }
+
+        NuaActionType.SMART_HOME -> {
+            val device = intent.parameters["device"]
+            val action = intent.parameters["action"]
+            if (device.isNullOrBlank() || action.isNullOrBlank()) {
+                NuaRouteResult.FallThroughToChat
+            } else {
+                val message = when (val result = smartHomeRepository.controlDevice(device, action)) {
+                    is SmartHomeResult.Success -> result.message
+                    is SmartHomeResult.NotConfigured -> result.reason
+                    is SmartHomeResult.Failure -> "Couldn't do that — ${result.message}"
+                }
+                NuaRouteResult.ActionTaken(message)
+            }
         }
 
         NuaActionType.CHAT -> NuaRouteResult.FallThroughToChat

@@ -20,12 +20,30 @@ data class ClaudeMessage(
 )
 
 @Serializable
+data class ClaudeCacheControl(val type: String = "ephemeral")
+
+/**
+ * The system prompt as a single cacheable block. Every call marks it cache_control —
+ * harmless on a miss (content changed since last call), a real latency/cost win on a
+ * hit (the static utility prompts in IntentClassifier/FactExtractor especially, since
+ * those are identical across calls where the main chat's system prompt varies with
+ * facts/tone and hits less often).
+ */
+@Serializable
+data class ClaudeSystemBlock(
+    val type: String = "text",
+    val text: String,
+    @SerialName("cache_control") val cacheControl: ClaudeCacheControl = ClaudeCacheControl(),
+)
+
+@Serializable
 data class ClaudeRequest(
     val model: String,
     @SerialName("max_tokens") val maxTokens: Int,
-    val system: String? = null,
+    val system: List<ClaudeSystemBlock>? = null,
     val messages: List<ClaudeMessage>,
     val temperature: Double? = null,
+    val stream: Boolean = false,
 )
 
 @Serializable
@@ -62,3 +80,23 @@ data class ClaudeErrorEnvelope(
     val type: String = "",
     val error: ClaudeErrorBody = ClaudeErrorBody(),
 )
+
+// --- Streaming (Messages API server-sent events) ---
+
+@Serializable
+data class ClaudeStreamDelta(
+    val type: String = "",
+    val text: String = "",
+)
+
+@Serializable
+data class ClaudeStreamEventBody(
+    val type: String = "",
+    val delta: ClaudeStreamDelta? = null,
+)
+
+sealed class ClaudeStreamEvent {
+    data class TextDelta(val text: String) : ClaudeStreamEvent()
+    data class Done(val fullText: String) : ClaudeStreamEvent()
+    data class Error(val message: String) : ClaudeStreamEvent()
+}

@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.nua.assistant.ai.PlannedStep
 import com.nua.assistant.ai.TaskPlan
+import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.memory.MessageRole
 import com.nua.assistant.notifications.NotificationSummary
 
@@ -54,6 +55,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val notificationSummary by viewModel.notificationSummary.collectAsState()
     val facts by viewModel.facts.collectAsState()
     val pinnedLanguage by viewModel.pinnedLanguage.collectAsState()
+    val briefingSchedule by viewModel.briefingSchedule.collectAsState()
+    val voiceEnrolled by viewModel.voiceEnrolled.collectAsState()
+    val enrollmentProgress by viewModel.enrollmentProgress.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
 
     if (showSettings) {
@@ -62,6 +66,12 @@ fun NuaScreen(viewModel: NuaViewModel) {
             onForgetFact = viewModel::forgetFact,
             pinnedLanguage = pinnedLanguage,
             onLanguageSelected = viewModel::setPinnedLanguage,
+            briefingSchedule = briefingSchedule,
+            onBriefingScheduleChanged = viewModel::setBriefingSchedule,
+            voiceEnrolled = voiceEnrolled,
+            enrollmentProgress = enrollmentProgress,
+            onRecordEnrollmentClip = viewModel::recordVoiceEnrollmentClip,
+            onResetVoiceEnrollment = viewModel::resetVoiceEnrollment,
             onBack = { showSettings = false },
         )
         return
@@ -101,6 +111,14 @@ fun NuaScreen(viewModel: NuaViewModel) {
             onDismiss = viewModel::dismissPendingPlan,
         )
     }
+
+    uiState.pendingReply?.let { pending ->
+        ReplyConfirmationDialog(
+            pending = pending,
+            onConfirm = viewModel::confirmPendingReply,
+            onDismiss = viewModel::dismissPendingReply,
+        )
+    }
 }
 
 @Composable
@@ -111,8 +129,9 @@ private fun ChatColumn(
     onMicTap: () -> Unit,
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty()) listState.animateScrollToItem(uiState.messages.lastIndex)
+    LaunchedEffect(uiState.messages.size, uiState.streamingReply) {
+        val lastIndex = uiState.messages.size + (if (uiState.streamingReply != null) 1 else 0) - 1
+        if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -123,7 +142,10 @@ private fun ChatColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(uiState.messages) { message -> MessageBubble(message) }
-            if (uiState.isProcessing) {
+            val streaming = uiState.streamingReply
+            if (streaming != null) {
+                item { MessageBubble(ChatMessage(MessageRole.ASSISTANT, streaming)) }
+            } else if (uiState.isProcessing) {
                 item { CircularProgressIndicator(modifier = Modifier.padding(8.dp)) }
             }
         }
@@ -191,6 +213,17 @@ private fun ApiKeyDialog(onSave: (String) -> Unit) {
                 Text("Save")
             }
         },
+    )
+}
+
+@Composable
+private fun ReplyConfirmationDialog(pending: NuaRouteResult.ReplyProposed, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reply to ${pending.notification.title}?") },
+        text = { Text("\"${pending.message}\"") },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Send") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 

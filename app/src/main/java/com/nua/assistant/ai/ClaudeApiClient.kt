@@ -4,12 +4,20 @@ import com.nua.assistant.memory.SecureKeyRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSourceListener
+import okhttp3.sse.EventSources
 
 private const val ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
 private const val ANTHROPIC_VERSION = "2023-06-01"
@@ -45,30 +53,14 @@ class ClaudeApiClient @Inject constructor(
             return@withContext ClaudeResult.Failure("No Claude API key configured yet.")
         }
 
-        val requestBody = ClaudeRequest(
-            model = model,
-            maxTokens = maxTokens,
-            system = system,
-            messages = messages,
-            temperature = temperature,
-        )
-
-        val request = Request.Builder()
-            .url(ANTHROPIC_ENDPOINT)
-            .addHeader("x-api-key", apiKey)
-            .addHeader("anthropic-version", ANTHROPIC_VERSION)
-            .addHeader("content-type", "application/json")
-            .post(json.encodeToString(ClaudeRequest.serializer(), requestBody).toRequestBody(JSON_MEDIA_TYPE))
-            .build()
+        val requestBody = buildRequest(messages, system, model, maxTokens, temperature, stream = false)
+        val request = requestBuilder(apiKey, requestBody).build()
 
         try {
             okHttpClient.newCall(request).execute().use { response ->
                 val bodyString = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    val message = runCatching {
-                        json.decodeFromString(ClaudeErrorEnvelope.serializer(), bodyString).error.message
-                    }.getOrDefault("HTTP ${response.code}")
-                    return@withContext ClaudeResult.Failure(message)
+                    return@withContext ClaudeResult.Failure(parseErrorMessage(bodyString, response.code))
                 }
                 val parsed = json.decodeFromString(ClaudeResponse.serializer(), bodyString)
                 ClaudeResult.Success(parsed.text())
@@ -91,4 +83,93 @@ class ClaudeApiClient @Inject constructor(
         maxTokens = maxTokens,
         temperature = 0.0,
     )
+
+    /**
+     * Streams the reply as it's generated instead of waiting for the full response —
+     * used for the main chat turn so NUA can start speaking/displaying the first
+     * sentence while the rest is still generating. Emits [ClaudeStreamEvent.TextDelta]
+     * per chunk, a final [ClaudeStreamEvent.Done] with the full text, or
+     * [ClaudeStreamEvent.Error] on failure. The flow completes after Done or Error.
+     */
+    fun streamMessage(
+        messages: List<ClaudeMessage>,
+        system: String? = null,
+        model: String = CLAUDE_MODEL_CONVERSATION,
+        maxTokens: Int = 1024,
+        temperature: Double? = null,
+    ): Flow<ClaudeStreamEvent> = callbackFlow {
+        val apiKey = secureKeyRepository.getApiKey()
+        if (apiKey.isNullOrBlank()) {
+            trySend(ClaudeStreamEvent.Error("No Claude API key configured yet."))
+            close()
+            return@callbackFlow
+        }
+
+        val requestBody = buildRequest(messages, system, model, maxTokens, temperature, stream = true)
+        val request = requestBuilder(apiKey, requestBody).build()
+        val fullText = StringBuilder()
+
+        val eventSource = EventSources.createFactory(okHttpClient).newEventSource(
+            request,
+            object : EventSourceListener() {
+                override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+                    when (type) {
+                        "content_block_delta" -> {
+                            val delta = runCatching {
+                                json.decodeFromString(ClaudeStreamEventBody.serializer(), data)
+                            }.getOrNull()?.delta?.text
+                            if (!delta.isNullOrEmpty()) {
+                                fullText.append(delta)
+                                trySend(ClaudeStreamEvent.TextDelta(delta))
+                            }
+                        }
+                        "message_stop" -> {
+                            trySend(ClaudeStreamEvent.Done(fullText.toString()))
+                            close()
+                        }
+                        "error" -> {
+                            trySend(ClaudeStreamEvent.Error(parseErrorMessage(data, -1)))
+                            close()
+                        }
+                    }
+                }
+
+                override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                    val message = t?.message ?: response?.let { "HTTP ${it.code}" } ?: "Stream failed"
+                    trySend(ClaudeStreamEvent.Error(message))
+                    close()
+                }
+            },
+        )
+
+        awaitClose { eventSource.cancel() }
+    }.flowOn(Dispatchers.IO)
+
+    private fun buildRequest(
+        messages: List<ClaudeMessage>,
+        system: String?,
+        model: String,
+        maxTokens: Int,
+        temperature: Double?,
+        stream: Boolean,
+    ) = ClaudeRequest(
+        model = model,
+        maxTokens = maxTokens,
+        system = system?.takeIf { it.isNotBlank() }?.let { listOf(ClaudeSystemBlock(text = it)) },
+        messages = messages,
+        temperature = temperature,
+        stream = stream,
+    )
+
+    private fun requestBuilder(apiKey: String, body: ClaudeRequest) = Request.Builder()
+        .url(ANTHROPIC_ENDPOINT)
+        .addHeader("x-api-key", apiKey)
+        .addHeader("anthropic-version", ANTHROPIC_VERSION)
+        .addHeader("anthropic-beta", "prompt-caching-2024-07-31")
+        .addHeader("content-type", "application/json")
+        .post(json.encodeToString(ClaudeRequest.serializer(), body).toRequestBody(JSON_MEDIA_TYPE))
+
+    private fun parseErrorMessage(body: String, httpCode: Int): String = runCatching {
+        json.decodeFromString(ClaudeErrorEnvelope.serializer(), body).error.message
+    }.getOrDefault(if (httpCode >= 0) "HTTP $httpCode" else "Stream error")
 }

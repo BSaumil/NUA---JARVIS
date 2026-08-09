@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.nua.assistant.automation.NuaAccessibilityService
+import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.memory.UserFactEntity
 import com.nua.assistant.services.WakePhrases
 import com.nua.assistant.services.isAvailable
@@ -55,6 +57,12 @@ fun SettingsScreen(
     onForgetFact: (Long) -> Unit,
     pinnedLanguage: NuaLanguage?,
     onLanguageSelected: (NuaLanguage?) -> Unit,
+    briefingSchedule: BriefingSchedule,
+    onBriefingScheduleChanged: (BriefingSchedule) -> Unit,
+    voiceEnrolled: Boolean,
+    enrollmentProgress: Int?,
+    onRecordEnrollmentClip: () -> Unit,
+    onResetVoiceEnrollment: () -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -75,7 +83,9 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { LanguageCard(pinnedLanguage, onLanguageSelected) }
+            item { BriefingScheduleCard(briefingSchedule, onBriefingScheduleChanged) }
             item { WakeWordsCard() }
+            item { VoiceIdCard(voiceEnrolled, enrollmentProgress, onRecordEnrollmentClip, onResetVoiceEnrollment) }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -132,6 +142,78 @@ private fun LanguageCard(pinnedLanguage: NuaLanguage?, onLanguageSelected: (NuaL
                         label = { Text(language.displayName) },
                     )
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BriefingScheduleCard(schedule: BriefingSchedule, onChanged: (BriefingSchedule) -> Unit) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Proactive morning briefing", style = MaterialTheme.typography.titleSmall)
+                Switch(
+                    checked = schedule.enabled,
+                    onCheckedChange = { enabled -> onChanged(schedule.copy(enabled = enabled)) },
+                )
+            }
+            Text(
+                text = "Delivered as a notification (and saved to the conversation) at the time below — " +
+                    "not read aloud unprompted.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (schedule.enabled) {
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BRIEFING_HOUR_PRESETS.forEach { hour ->
+                        FilterChip(
+                            selected = schedule.hour == hour,
+                            onClick = { onChanged(schedule.copy(hour = hour, minute = 0)) },
+                            label = { Text(displayHour(hour)) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val BRIEFING_HOUR_PRESETS = listOf(5, 6, 7, 8, 9, 10)
+
+private fun displayHour(hour24: Int): String {
+    val period = if (hour24 < 12) "AM" else "PM"
+    val hour12 = when (val h = hour24 % 12) { 0 -> 12; else -> h }
+    return "$hour12:00 $period"
+}
+
+@Composable
+private fun VoiceIdCard(
+    enrolled: Boolean,
+    enrollmentProgress: Int?,
+    onRecordClip: () -> Unit,
+    onReset: () -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Voice ID (experimental)", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Not used by anything yet — infrastructure for a future Tier 2 action to " +
+                    "confirm it's really you before it acts. Needs a few short voice clips to enroll.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            when {
+                enrolled -> TextButton(onClick = onReset) { Text("Forget voice enrollment") }
+                enrollmentProgress != null -> Column {
+                    Text("Enrolling: $enrollmentProgress% — keep recording clips", style = MaterialTheme.typography.labelSmall)
+                    TextButton(onClick = onRecordClip) { Text("Record another clip") }
+                }
+                else -> TextButton(onClick = onRecordClip) { Text("Start voice enrollment") }
             }
         }
     }

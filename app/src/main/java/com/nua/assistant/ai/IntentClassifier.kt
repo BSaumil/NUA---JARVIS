@@ -12,9 +12,11 @@ enum class NuaActionType {
     PLAY_MEDIA,
     MEDIA_CONTROL,
     READ_NOTIFICATIONS,
+    REPLY_TO_NOTIFICATION,
     GET_WEATHER,
     MORNING_BRIEFING,
     PLAN_TASK,
+    SMART_HOME,
     /** No concrete action fits — fall through to a normal conversational reply. */
     CHAT,
 }
@@ -44,10 +46,17 @@ private val CLASSIFIER_SYSTEM_PROMPT = """
     - MEDIA_CONTROL: play/pause/skip/volume on whatever is already playing.
       parameters: {"command": "play|pause|next|previous"}
     - READ_NOTIFICATIONS: user wants their notifications read or summarized.
+    - REPLY_TO_NOTIFICATION: user wants to reply to a specific message notification
+      (e.g. "reply to Sam saying I'm on my way"). parameters: {"target": "<who/what the
+      notification is from, e.g. a name or app>", "message": "<reply text, in the same
+      language/wording the user used>"}. Only use this when there's a clear target and
+      message; otherwise CHAT.
     - GET_WEATHER: user wants a weather check.
     - MORNING_BRIEFING: user wants their morning rundown.
     - PLAN_TASK: user described an upcoming activity/trip/event that would benefit
       from a short plan (e.g. "I'm going camping tomorrow"). parameters: {"activity": "..."}
+    - SMART_HOME: user wants to control a smart-home device (lights, thermostat, plugs,
+      locks). parameters: {"device": "<device/room name>", "action": "on|off|<other>"}
     - CHAT: nothing above fits, or the request is purely conversational — this includes
       mood/vibe statements with no obvious action ("I'm bored", "I had a rough day")
       unless they clearly imply one of the actions above (e.g. "I'm bored" alone is
