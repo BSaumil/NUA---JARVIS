@@ -21,8 +21,11 @@ import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.briefing.BriefingScheduleStore
 import com.nua.assistant.briefing.BriefingScheduler
 import com.nua.assistant.geofencing.GeofenceManager
+import com.nua.assistant.goals.GoalRepository
 import com.nua.assistant.memory.GeofenceDao
 import com.nua.assistant.memory.GeofenceEntity
+import com.nua.assistant.memory.GoalEntity
+import com.nua.assistant.memory.GoalObservationEntity
 import com.nua.assistant.memory.MemoryDao
 import com.nua.assistant.memory.MessageEntity
 import com.nua.assistant.memory.MessageRole
@@ -94,6 +97,7 @@ class NuaViewModel @Inject constructor(
     private val geofenceDao: GeofenceDao,
     private val usageTracker: UsageTracker,
     private val trustRepository: TrustRepository,
+    private val goalRepository: GoalRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -134,6 +138,12 @@ class NuaViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val geofences: StateFlow<List<GeofenceEntity>> = geofenceDao.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val goals: StateFlow<List<GoalEntity>> = goalRepository.observeGoals()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val goalObservations: StateFlow<List<GoalObservationEntity>> = goalRepository.observeObservations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // Continuous conversation mode: once woken by voice, keep listening for a few
@@ -479,6 +489,15 @@ class NuaViewModel @Inject constructor(
 
     fun removeGeofence(id: Long) {
         viewModelScope.launch { geofenceManager.removeGeofence(id) }
+    }
+
+    fun addGoal(text: String) {
+        if (text.isBlank()) return
+        viewModelScope.launch { goalRepository.addGoal(text.trim()) }
+    }
+
+    fun removeGoal(id: Long) {
+        viewModelScope.launch { goalRepository.deactivateGoal(id) }
     }
 
     /** Called when Settings opens — usage isn't worth keeping live-updated, just fresh on view. */

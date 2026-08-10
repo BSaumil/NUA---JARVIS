@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.nua.assistant.memory.ActionOutcomeDao
 import com.nua.assistant.memory.AutonomyPreferenceDao
 import com.nua.assistant.memory.GeofenceDao
+import com.nua.assistant.memory.GoalDao
 import com.nua.assistant.memory.MemoryDao
 import com.nua.assistant.memory.NuaDatabase
 import com.nua.assistant.memory.TrustLedgerDao
@@ -51,6 +52,9 @@ object AppModule {
 
     @Provides
     fun provideAutonomyPreferenceDao(database: NuaDatabase): AutonomyPreferenceDao = database.autonomyPreferenceDao()
+
+    @Provides
+    fun provideGoalDao(database: NuaDatabase): GoalDao = database.goalDao()
 
     @Provides
     @Singleton

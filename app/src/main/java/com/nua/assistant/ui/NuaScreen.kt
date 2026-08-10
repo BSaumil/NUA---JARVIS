@@ -71,6 +71,8 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val trustLedger by viewModel.trustLedger.collectAsState()
     val actionOutcomes by viewModel.actionOutcomes.collectAsState()
     val autonomySuggestions by viewModel.autonomySuggestions.collectAsState()
+    val goals by viewModel.goals.collectAsState()
+    val goalObservations by viewModel.goalObservations.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
 
     if (showSettings) {
@@ -98,6 +100,10 @@ fun NuaScreen(viewModel: NuaViewModel) {
             actionOutcomes = actionOutcomes,
             autonomySuggestions = autonomySuggestions,
             onEnableAutoApprove = viewModel::enableAutoApprove,
+            goals = goals,
+            goalObservations = goalObservations,
+            onAddGoal = viewModel::addGoal,
+            onRemoveGoal = viewModel::removeGoal,
             onBack = { showSettings = false },
         )
         return

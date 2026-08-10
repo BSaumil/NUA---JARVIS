@@ -185,6 +185,48 @@ interface AutonomyPreferenceDao {
     suspend fun setAutoApprove(actionType: String, enabled: Boolean)
 }
 
+/** A durable goal the user has set — see goals/GoalRepository.kt. */
+@Entity(tableName = "goals")
+data class GoalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val text: String,
+    val active: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/** One NUA-generated observation/proposal against a goal — see goals/GoalReviewWorker.kt. */
+@Entity(tableName = "goal_observations")
+data class GoalObservationEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val goalId: Long,
+    val text: String,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface GoalDao {
+    @Insert
+    suspend fun insertGoal(goal: GoalEntity): Long
+
+    @Query("SELECT * FROM goals WHERE active = 1 ORDER BY createdAt DESC")
+    suspend fun getActiveGoals(): List<GoalEntity>
+
+    @Query("SELECT * FROM goals ORDER BY createdAt DESC")
+    fun observeAllGoals(): Flow<List<GoalEntity>>
+
+    @Query("UPDATE goals SET active = 0 WHERE id = :goalId")
+    suspend fun deactivateGoal(goalId: Long)
+
+    @Insert
+    suspend fun insertObservation(observation: GoalObservationEntity)
+
+    @Query("SELECT * FROM goal_observations WHERE goalId = :goalId ORDER BY timestamp DESC LIMIT 1")
+    suspend fun latestObservation(goalId: Long): GoalObservationEntity?
+
+    @Query("SELECT * FROM goal_observations ORDER BY timestamp DESC")
+    fun observeAllObservations(): Flow<List<GoalObservationEntity>>
+}
+
 @Dao
 interface MemoryDao {
 
@@ -274,8 +316,9 @@ interface MemoryDao {
     entities = [
         MessageEntity::class, UserFactEntity::class, UsageLogEntity::class, GeofenceEntity::class,
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
+        GoalEntity::class, GoalObservationEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -285,4 +328,5 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun trustLedgerDao(): TrustLedgerDao
     abstract fun actionOutcomeDao(): ActionOutcomeDao
     abstract fun autonomyPreferenceDao(): AutonomyPreferenceDao
+    abstract fun goalDao(): GoalDao
 }

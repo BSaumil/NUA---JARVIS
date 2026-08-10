@@ -58,6 +58,8 @@ import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.memory.GeofenceEntity
+import com.nua.assistant.memory.GoalEntity
+import com.nua.assistant.memory.GoalObservationEntity
 import com.nua.assistant.memory.TrustLedgerEntity
 import com.nua.assistant.memory.UserFactEntity
 import com.nua.assistant.services.WakePhrases
@@ -86,6 +88,10 @@ fun SettingsScreen(
     actionOutcomes: List<ActionOutcomeEntity>,
     autonomySuggestions: List<AutonomyPreferenceEntity>,
     onEnableAutoApprove: (NuaActionType) -> Unit,
+    goals: List<GoalEntity>,
+    goalObservations: List<GoalObservationEntity>,
+    onAddGoal: (String) -> Unit,
+    onRemoveGoal: (Long) -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -113,6 +119,7 @@ fun SettingsScreen(
             item { UsageCard(usageThisMonth) }
             item { TrustCard(trustScore, trustLedger, autonomySuggestions, onEnableAutoApprove) }
             item { AuditTrailCard(actionOutcomes) }
+            item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -493,6 +500,77 @@ private fun AuditTrailCard(actionOutcomes: List<ActionOutcomeEntity>) {
             }
         }
     }
+}
+
+@Composable
+private fun GoalsCard(
+    goals: List<GoalEntity>,
+    observations: List<GoalObservationEntity>,
+    onAdd: (String) -> Unit,
+    onRemove: (Long) -> Unit,
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Goals", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Durable things you're trying to do, not one-off requests. Once a week, " +
+                    "NUA checks each one against your current situation and says something only " +
+                    "if it actually has something worth saying.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            goals.forEach { goal ->
+                val latest = observations.filter { it.goalId == goal.id }.maxByOrNull { it.timestamp }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(goal.text, style = MaterialTheme.typography.bodyMedium)
+                        if (latest != null) {
+                            Text(latest.text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    IconButton(onClick = { onRemove(goal.id) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Remove goal")
+                    }
+                }
+            }
+            TextButton(onClick = { showAddDialog = true }) { Text("Add a goal") }
+        }
+    }
+
+    if (showAddDialog) {
+        AddGoalDialog(
+            onConfirm = { text ->
+                onAdd(text)
+                showAddDialog = false
+            },
+            onDismiss = { showAddDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun AddGoalDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New goal") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("e.g. \"Get my mornings under control\"") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { if (text.isNotBlank()) onConfirm(text) }, enabled = text.isNotBlank()) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
