@@ -13,11 +13,12 @@ class EmailSkill @Inject constructor(
 ) : NuaSkill {
 
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
-        val message = when (val result = emailRepository.checkInbox()) {
+        val result = emailRepository.checkInbox()
+        val message = when (result) {
             is EmailResult.Success -> result.message
             is EmailResult.NotConfigured -> result.reason
             is EmailResult.Failure -> "Couldn't check email — ${result.message}"
         }
-        return NuaRouteResult.ActionTaken(message)
+        return NuaRouteResult.ActionTaken(message, succeeded = result is EmailResult.Success)
     }
 }

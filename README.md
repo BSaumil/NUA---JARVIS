@@ -87,8 +87,14 @@ app/src/main/java/com/nua/assistant/
   geofencing/                → GeofenceManager (Play Services Geofencing), Geofence
                                 BroadcastReceiver, Room-backed saved geofences
   memory/                    → MemoryStore.kt (Room: messages + user_facts + usage_logs +
-                                geofences), MemoryConsolidationWorker (summarizes and prunes
-                                old messages), SecureKeyRepository (encrypted API key storage)
+                                geofences + trust_ledger + action_outcomes +
+                                autonomy_preferences), MemoryType (identity/episodic/semantic/
+                                behavioral/emotional/relationship), MemoryConsolidationWorker
+                                (summarizes and prunes old messages), SecureKeyRepository
+                                (encrypted API key storage)
+  trust/                     → TrustRepository (audit trail, curated mistake ledger, adaptive
+                                autonomy, rate-limited self-report), TrustScoreEngine,
+                                AutonomyTier (T0-T5 firewall), TrustEventType
   network/                   → ConnectivityMonitor (offline detection before a Claude call)
   vision/                    → ImageEncoder (camera capture → base64 for Claude vision)
   notifications/              → NuaNotificationListenerService, NotificationRepository,
@@ -231,6 +237,33 @@ wear/src/main/java/com/nua/assistant/wear/
     Adding a new capability is a new skill class and one new `@Binds` line, not another
     router branch.
 
+## Phase 6 — Trust & Autonomy Core
+
+The start of NUA's "AI operating system" layer — see `ROADMAP.md` for the full 45-point
+spec this and every future phase is scoped against, and why the phases are sequenced the
+way they are.
+
+1. **Autonomy Firewall (T0–T5).** `AutonomyTier` replaces the old README-only Tier 1/2/3
+   description with a real per-action mapping (`autonomyTierFor(NuaActionType)`), and
+   every dispatch is tagged with it in the audit trail.
+2. **Action Audit Trail.** Every Tier action `NuaIntentRouter` dispatches, and every
+   plan/reply the user confirms or declines, is logged to `ActionOutcomeEntity` — what,
+   which tier, whether it worked, when. Visible in Settings.
+3. **Trust Score.** `TrustScoreEngine` computes a 0-100 score from the audit trail alone
+   (a declined proposal counts as half a failure, an execution failure as a full one) —
+   nothing here is asserted, only computed from what NUA actually logged.
+4. **Adaptive autonomy.** `AutonomyPreferenceEntity` tracks how many times you've
+   approved a given action type; once it crosses a threshold, Settings offers a one-tap
+   "always allow automatically" toggle instead of NUA proposing it mid-conversation.
+5. **Trust Ledger self-report.** At the `ESTABLISHED` familiarity tier, rate-limited to
+   at most once every 14 days and only when there's something to say, NUA now reports
+   unprompted on what it's gotten wrong since the last report — the inverse of how most
+   assistants behave.
+6. **Memory OS typing (partial).** `UserFactEntity` gained a `MemoryType` (identity /
+   episodic / semantic / behavioral / emotional / relationship), a `source` ("why do you
+   remember this"), and `lastUsedAt` (now actually touched on every relevant-fact
+   lookup, not just schema). Full per-fact drill-down UI is Phase 8.
+
 ## Languages
 
 NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,
@@ -304,6 +337,11 @@ needs to change, including the multi-keyword detection code in `NuaForegroundSer
 - The usage/cost dashboard (`UsageTracker`) estimates cost from published list pricing
   hardcoded in `UsageTracker.kt` — it will drift if Anthropic's pricing changes and
   doesn't reflect any organization-specific discount.
+- The Trust Score (`TrustScoreEngine`) is a straightforward, documented formula over
+  logged outcomes — it hasn't been validated against real usage patterns over time, and
+  the "5 approvals" adaptive-autonomy threshold is a starting guess, not a tuned value.
+  The database version bump this phase needed (3 → 4) uses the same destructive-migration
+  fallback as prior phases — fine pre-release, not something to carry into a real release.
 - The WorkManager + Hilt wiring (`NuaApplication.Configuration.Provider`, the disabled
   `WorkManagerInitializer` in the manifest, `@HiltWorker` on `MorningBriefingWorker`)
   follows the documented Google pattern for this combination but is, like everything

@@ -51,10 +51,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
+import com.nua.assistant.memory.ActionOutcomeEntity
+import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.memory.GeofenceEntity
+import com.nua.assistant.memory.TrustLedgerEntity
 import com.nua.assistant.memory.UserFactEntity
 import com.nua.assistant.services.WakePhrases
 import com.nua.assistant.services.isAvailable
@@ -77,6 +81,11 @@ fun SettingsScreen(
     onAddGeofence: (name: String, latitude: Double, longitude: Double, message: String) -> Unit,
     onRemoveGeofence: (Long) -> Unit,
     usageThisMonth: UsageSummary?,
+    trustScore: Int?,
+    trustLedger: List<TrustLedgerEntity>,
+    actionOutcomes: List<ActionOutcomeEntity>,
+    autonomySuggestions: List<AutonomyPreferenceEntity>,
+    onEnableAutoApprove: (NuaActionType) -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -102,6 +111,8 @@ fun SettingsScreen(
             item { VoiceIdCard(voiceEnrolled, enrollmentProgress, onRecordEnrollmentClip, onResetVoiceEnrollment) }
             item { GeofenceCard(geofences, onAddGeofence, onRemoveGeofence) }
             item { UsageCard(usageThisMonth) }
+            item { TrustCard(trustScore, trustLedger, autonomySuggestions, onEnableAutoApprove) }
+            item { AuditTrailCard(actionOutcomes) }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -124,7 +135,25 @@ private fun FactRow(fact: UserFactEntity, onForget: () -> Unit) {
         ) {
             Column {
                 Text(text = fact.value, style = MaterialTheme.typography.bodyMedium)
-                Text(text = fact.category, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = "${fact.category} · ${fact.memoryType.name.lowercase()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                if (fact.source != null) {
+                    Text(
+                        text = "Why: ${fact.source}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (fact.lastUsedAt != null) {
+                    Text(
+                        text = "Last used ${relativeDaysAgo(fact.lastUsedAt)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             IconButton(onClick = onForget) {
                 Icon(Icons.Filled.Delete, contentDescription = "Forget this")
@@ -358,6 +387,108 @@ private fun UsageCard(usageThisMonth: UsageSummary?) {
                             "estimated from published list pricing, not your actual bill.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrustCard(
+    trustScore: Int?,
+    trustLedger: List<TrustLedgerEntity>,
+    autonomySuggestions: List<AutonomyPreferenceEntity>,
+    onEnableAutoApprove: (NuaActionType) -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Trust", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "How much autonomy NUA has earned, based only on what actually happened — " +
+                    "successful actions, failures, and proposals you've turned down.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = if (trustScore != null) "$trustScore%" else "Loading…",
+                style = MaterialTheme.typography.headlineSmall,
+            )
+
+            if (autonomySuggestions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                autonomySuggestions.forEach { suggestion ->
+                    val actionType = runCatching { NuaActionType.valueOf(suggestion.actionType) }.getOrNull()
+                    if (actionType != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = "You've approved ${displayActionType(actionType)} ${suggestion.approvedCount} times.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { onEnableAutoApprove(actionType) }) { Text("Always allow") }
+                        }
+                    }
+                }
+            }
+
+            if (trustLedger.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Recently", style = MaterialTheme.typography.labelMedium)
+                trustLedger.take(5).forEach { entry ->
+                    Text("• ${entry.description}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+private fun relativeDaysAgo(timestampMillis: Long): String {
+    val days = (System.currentTimeMillis() - timestampMillis) / (24 * 60 * 60 * 1000)
+    return when {
+        days <= 0 -> "today"
+        days == 1L -> "yesterday"
+        else -> "$days days ago"
+    }
+}
+
+private fun displayActionType(actionType: NuaActionType): String = when (actionType) {
+    NuaActionType.REPLY_TO_NOTIFICATION -> "replying to notifications"
+    NuaActionType.PLAN_TASK -> "confirming task plans"
+    else -> actionType.name.lowercase().replace('_', ' ')
+}
+
+@Composable
+private fun AuditTrailCard(actionOutcomes: List<ActionOutcomeEntity>) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Recent actions", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Every action NUA has taken, what tier it's authorized at, and whether it worked.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (actionOutcomes.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Nothing logged yet.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+                actionOutcomes.take(8).forEach { outcome ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(outcome.summary, style = MaterialTheme.typography.bodySmall)
+                            Text(outcome.tier.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Text(
+                            text = if (outcome.succeeded) "OK" else if (outcome.wasRejection) "Declined" else "Failed",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (outcome.succeeded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
         }

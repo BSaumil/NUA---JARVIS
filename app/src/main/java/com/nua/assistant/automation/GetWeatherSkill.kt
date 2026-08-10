@@ -15,6 +15,6 @@ class GetWeatherSkill @Inject constructor(
         val snapshot = weatherRepository.currentSnapshot().getOrNull()
         val message = snapshot?.let { ActionCopy.weather(it.condition, it.currentTempC, it.highTempC, it.precipitationChancePercent) }
             ?: "Couldn't get a weather reading — check that location access is granted."
-        return NuaRouteResult.ActionTaken(message)
+        return NuaRouteResult.ActionTaken(message, succeeded = snapshot != null)
     }
 }

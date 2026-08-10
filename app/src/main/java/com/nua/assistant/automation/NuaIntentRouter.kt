@@ -5,6 +5,8 @@ import com.nua.assistant.ai.IntentClassifier
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.notifications.NotificationEntry
+import com.nua.assistant.trust.TrustRepository
+import com.nua.assistant.trust.autonomyTierFor
 import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -13,7 +15,8 @@ import javax.inject.Singleton
 private const val CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.6
 
 sealed class NuaRouteResult {
-    data class ActionTaken(val message: String) : NuaRouteResult()
+    /** [succeeded] feeds the Trust Engine's audit trail and score — see trust/TrustRepository.kt. */
+    data class ActionTaken(val message: String, val succeeded: Boolean = true) : NuaRouteResult()
     data class PlanProposed(val plan: TaskPlan) : NuaRouteResult()
     /** Sending a message on the user's behalf is sensitive — always confirmed before NotificationReplySender fires. */
     data class ReplyProposed(val notification: NotificationEntry, val message: String) : NuaRouteResult()
@@ -31,6 +34,7 @@ sealed class NuaRouteResult {
 class NuaIntentRouter @Inject constructor(
     private val intentClassifier: IntentClassifier,
     private val skills: Map<NuaActionType, @JvmSuppressWildcards NuaSkill>,
+    private val trustRepository: TrustRepository,
 ) {
 
     suspend fun route(utterance: String, pinnedLanguage: NuaLanguage? = null): NuaRouteResult {
@@ -45,6 +49,17 @@ class NuaIntentRouter @Inject constructor(
 
     private suspend fun dispatch(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val skill = skills[intent.action] ?: return NuaRouteResult.FallThroughToChat
-        return skill.execute(intent, originalUtterance, pinnedLanguage)
+        val result = skill.execute(intent, originalUtterance, pinnedLanguage)
+        // Only ActionTaken resolves immediately — proposals (Plan/Reply) are logged by the
+        // ViewModel once the user actually confirms or declines them.
+        if (result is NuaRouteResult.ActionTaken) {
+            trustRepository.recordOutcome(
+                actionType = intent.action.name,
+                tier = autonomyTierFor(intent.action),
+                summary = result.message,
+                succeeded = result.succeeded,
+            )
+        }
+        return result
     }
 }

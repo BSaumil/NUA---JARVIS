@@ -17,7 +17,7 @@ class OpenAppSkill @Inject constructor(
         } else if (appLauncher.launch(app)) {
             NuaRouteResult.ActionTaken(ActionCopy.appOpened(app))
         } else {
-            NuaRouteResult.ActionTaken(ActionCopy.appNotFound(app))
+            NuaRouteResult.ActionTaken(ActionCopy.appNotFound(app), succeeded = false)
         }
     }
 }

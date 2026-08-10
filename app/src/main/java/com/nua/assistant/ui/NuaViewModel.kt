@@ -9,6 +9,7 @@ import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.ClaudeStreamEvent
 import com.nua.assistant.ai.FactExtractor
 import com.nua.assistant.ai.FactRelevance
+import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.PersonalityEngine
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.ai.TaskPlanner
@@ -25,12 +26,18 @@ import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.MemoryDao
 import com.nua.assistant.memory.MessageEntity
 import com.nua.assistant.memory.MessageRole
+import com.nua.assistant.memory.MemoryType
 import com.nua.assistant.memory.SecureKeyRepository
 import com.nua.assistant.memory.UserFactEntity
 import com.nua.assistant.network.ConnectivityMonitor
 import com.nua.assistant.notifications.NotificationReplySender
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.notifications.NotificationSummary
+import com.nua.assistant.trust.AutonomyTier
+import com.nua.assistant.trust.TrustRepository
+import com.nua.assistant.memory.ActionOutcomeEntity
+import com.nua.assistant.memory.AutonomyPreferenceEntity
+import com.nua.assistant.memory.TrustLedgerEntity
 import com.nua.assistant.voice.EnrollmentStep
 import com.nua.assistant.voice.LanguagePreferenceStore
 import com.nua.assistant.voice.NuaLanguage
@@ -86,6 +93,7 @@ class NuaViewModel @Inject constructor(
     private val geofenceManager: GeofenceManager,
     private val geofenceDao: GeofenceDao,
     private val usageTracker: UsageTracker,
+    private val trustRepository: TrustRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -105,6 +113,18 @@ class NuaViewModel @Inject constructor(
 
     private val _usageThisMonth = MutableStateFlow<UsageSummary?>(null)
     val usageThisMonth: StateFlow<UsageSummary?> = _usageThisMonth.asStateFlow()
+
+    private val _trustScore = MutableStateFlow<Int?>(null)
+    val trustScore: StateFlow<Int?> = _trustScore.asStateFlow()
+
+    private val _trustLedger = MutableStateFlow<List<TrustLedgerEntity>>(emptyList())
+    val trustLedger: StateFlow<List<TrustLedgerEntity>> = _trustLedger.asStateFlow()
+
+    private val _actionOutcomes = MutableStateFlow<List<ActionOutcomeEntity>>(emptyList())
+    val actionOutcomes: StateFlow<List<ActionOutcomeEntity>> = _actionOutcomes.asStateFlow()
+
+    private val _autonomySuggestions = MutableStateFlow<List<AutonomyPreferenceEntity>>(emptyList())
+    val autonomySuggestions: StateFlow<List<AutonomyPreferenceEntity>> = _autonomySuggestions.asStateFlow()
 
     val notificationSummary: StateFlow<NotificationSummary> = notificationRepository.notifications
         .map { notificationRepository.summary() }
@@ -136,6 +156,21 @@ class NuaViewModel @Inject constructor(
         }
         voiceManager.setOnFinalSpeechDoneListener { onReplyFinishedSpeaking() }
         viewModelScope.launch { geofenceManager.registerAll() }
+        viewModelScope.launch { maybeShowSelfReport() }
+    }
+
+    /**
+     * At the highest familiarity tier, NUA occasionally reports on itself unprompted — see
+     * TrustRepository.pendingSelfReport. Appended silently like the morning briefing (not
+     * spoken aloud unprompted), since this fires on ordinary app open, not a voice turn.
+     */
+    private suspend fun maybeShowSelfReport() {
+        val turnCount = memoryDao.countUserMessages()
+        val factCount = memoryDao.countFacts()
+        val tier = personalityEngine.familiarityTier(turnCount, factCount)
+        val report = trustRepository.pendingSelfReport(tier) ?: return
+        memoryDao.insertMessage(MessageEntity(role = MessageRole.ASSISTANT, content = report))
+        _uiState.update { it.copy(messages = it.messages + ChatMessage(MessageRole.ASSISTANT, report)) }
     }
 
     fun onInputChanged(text: String) {
@@ -186,8 +221,20 @@ class NuaViewModel @Inject constructor(
 
             when (val routed = intentRouter.route(message, _pinnedLanguage.value)) {
                 is NuaRouteResult.ActionTaken -> respond(routed.message, extractFacts = false)
-                is NuaRouteResult.PlanProposed -> _uiState.update { it.copy(isProcessing = false, pendingPlan = routed.plan) }
-                is NuaRouteResult.ReplyProposed -> _uiState.update { it.copy(isProcessing = false, pendingReply = routed) }
+                is NuaRouteResult.PlanProposed -> {
+                    if (trustRepository.isAutoApproved(NuaActionType.PLAN_TASK)) {
+                        executeConfirmedPlan(routed.plan)
+                    } else {
+                        _uiState.update { it.copy(isProcessing = false, pendingPlan = routed.plan) }
+                    }
+                }
+                is NuaRouteResult.ReplyProposed -> {
+                    if (trustRepository.isAutoApproved(NuaActionType.REPLY_TO_NOTIFICATION)) {
+                        executeConfirmedReply(routed)
+                    } else {
+                        _uiState.update { it.copy(isProcessing = false, pendingReply = routed) }
+                    }
+                }
                 NuaRouteResult.FallThroughToChat -> replyConversationally(message)
             }
         }
@@ -200,6 +247,8 @@ class NuaViewModel @Inject constructor(
         }
 
         val relevantFacts = FactRelevance.rank(memoryDao.getAllFacts(), userMessage)
+        val usedAt = System.currentTimeMillis()
+        relevantFacts.forEach { fact -> memoryDao.touchFactUsage(fact.key, usedAt) }
         val turnCount = memoryDao.countUserMessages()
         val history = memoryDao.getRecentMessages(CONVERSATION_HISTORY_LIMIT).asReversed().map {
             ClaudeMessage(role = if (it.role == MessageRole.USER) "user" else "assistant", content = it.content)
@@ -275,7 +324,13 @@ class NuaViewModel @Inject constructor(
         if (!FactExtractor.shouldConsider(userMessage, turnIndex)) return
 
         factExtractor.extractFacts(userMessage, assistantReply).forEach { fact ->
-            memoryDao.upsertFact(key = fact.key, value = fact.value, category = fact.category)
+            memoryDao.upsertFact(
+                key = fact.key,
+                value = fact.value,
+                category = fact.category,
+                memoryType = memoryTypeForCategory(fact.category),
+                source = "said in conversation",
+            )
         }
     }
 
@@ -311,33 +366,75 @@ class NuaViewModel @Inject constructor(
     fun confirmPendingPlan() {
         val plan = _uiState.value.pendingPlan ?: return
         viewModelScope.launch {
-            taskPlanner.confirmPlan(plan)
             _uiState.update { it.copy(pendingPlan = null) }
-            respond("Done — I've added reminders for that.", extractFacts = false)
+            trustRepository.recordApproval(NuaActionType.PLAN_TASK)
+            executeConfirmedPlan(plan)
         }
     }
 
+    private suspend fun executeConfirmedPlan(plan: TaskPlan) {
+        taskPlanner.confirmPlan(plan)
+        trustRepository.recordOutcome(
+            actionType = NuaActionType.PLAN_TASK.name,
+            tier = AutonomyTier.T4,
+            summary = "Confirmed plan: ${plan.summary}",
+            succeeded = true,
+        )
+        respond("Done — I've added reminders for that.", extractFacts = false)
+    }
+
     fun dismissPendingPlan() {
+        val plan = _uiState.value.pendingPlan ?: return
         _uiState.update { it.copy(pendingPlan = null) }
+        viewModelScope.launch {
+            trustRepository.recordOutcome(
+                actionType = NuaActionType.PLAN_TASK.name,
+                tier = AutonomyTier.T4,
+                summary = "Declined plan: ${plan.summary}",
+                succeeded = false,
+                wasRejection = true,
+            )
+        }
     }
 
     fun confirmPendingReply() {
         val pending = _uiState.value.pendingReply ?: return
         viewModelScope.launch {
-            val replyAction = pending.notification.replyAction
-            val sent = replyAction != null && notificationReplySender.sendReply(replyAction, pending.message)
             _uiState.update { it.copy(pendingReply = null) }
-            val confirmation = if (sent) {
-                "Sent — replied to ${pending.notification.title}."
-            } else {
-                "That reply didn't go through — the notification may have been dismissed."
-            }
-            respond(confirmation, extractFacts = false)
+            trustRepository.recordApproval(NuaActionType.REPLY_TO_NOTIFICATION)
+            executeConfirmedReply(pending)
         }
     }
 
+    private suspend fun executeConfirmedReply(pending: NuaRouteResult.ReplyProposed) {
+        val replyAction = pending.notification.replyAction
+        val sent = replyAction != null && notificationReplySender.sendReply(replyAction, pending.message)
+        val confirmation = if (sent) {
+            "Sent — replied to ${pending.notification.title}."
+        } else {
+            "That reply didn't go through — the notification may have been dismissed."
+        }
+        trustRepository.recordOutcome(
+            actionType = NuaActionType.REPLY_TO_NOTIFICATION.name,
+            tier = AutonomyTier.T3,
+            summary = confirmation,
+            succeeded = sent,
+        )
+        respond(confirmation, extractFacts = false)
+    }
+
     fun dismissPendingReply() {
+        val pending = _uiState.value.pendingReply ?: return
         _uiState.update { it.copy(pendingReply = null) }
+        viewModelScope.launch {
+            trustRepository.recordOutcome(
+                actionType = NuaActionType.REPLY_TO_NOTIFICATION.name,
+                tier = AutonomyTier.T3,
+                summary = "Declined proposed reply to ${pending.notification.title}",
+                succeeded = false,
+                wasRejection = true,
+            )
+        }
     }
 
     fun saveApiKey(apiKey: String) {
@@ -389,6 +486,23 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch { _usageThisMonth.value = usageTracker.summaryThisMonth() }
     }
 
+    /** Called when Settings opens — same reasoning as [refreshUsage]. */
+    fun refreshTrust() {
+        viewModelScope.launch {
+            _trustScore.value = trustRepository.scoreSnapshot()
+            _trustLedger.value = trustRepository.recentLedger()
+            _actionOutcomes.value = trustRepository.recentOutcomes()
+            _autonomySuggestions.value = trustRepository.autonomySuggestions()
+        }
+    }
+
+    fun enableAutoApprove(actionType: NuaActionType) {
+        viewModelScope.launch {
+            trustRepository.setAutoApprove(actionType, enabled = true)
+            _autonomySuggestions.value = trustRepository.autonomySuggestions()
+        }
+    }
+
     fun resetVoiceEnrollment() {
         ownerEnrollment.resetEnrollment()
         _voiceEnrolled.value = false
@@ -421,6 +535,15 @@ class NuaViewModel @Inject constructor(
                 if (text[i] in SENTENCE_END_CHARS) lastBoundary = i + 1
             }
             return lastBoundary
+        }
+
+        /** FactExtractor's free-text category (Claude-generated) mapped onto the fixed MemoryType taxonomy. */
+        fun memoryTypeForCategory(category: String): MemoryType = when (category.lowercase()) {
+            "name" -> MemoryType.IDENTITY
+            "relationship" -> MemoryType.RELATIONSHIP
+            "routine" -> MemoryType.BEHAVIORAL
+            "preference" -> MemoryType.SEMANTIC
+            else -> MemoryType.SEMANTIC
         }
     }
 }

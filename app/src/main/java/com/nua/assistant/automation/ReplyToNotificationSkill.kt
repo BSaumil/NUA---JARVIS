@@ -17,9 +17,12 @@ class ReplyToNotificationSkill @Inject constructor(
         if (target.isNullOrBlank() || message.isNullOrBlank()) return NuaRouteResult.FallThroughToChat
 
         return when (val notification = notificationRepository.findByTarget(target)) {
-            null -> NuaRouteResult.ActionTaken("I don't see a recent notification from \"$target\" to reply to.")
+            null -> NuaRouteResult.ActionTaken("I don't see a recent notification from \"$target\" to reply to.", succeeded = false)
             else -> if (notification.replyAction == null) {
-                NuaRouteResult.ActionTaken("That notification from ${notification.title} doesn't have a quick-reply NUA can use.")
+                NuaRouteResult.ActionTaken(
+                    "That notification from ${notification.title} doesn't have a quick-reply NUA can use.",
+                    succeeded = false,
+                )
             } else {
                 NuaRouteResult.ReplyProposed(notification, message)
             }
