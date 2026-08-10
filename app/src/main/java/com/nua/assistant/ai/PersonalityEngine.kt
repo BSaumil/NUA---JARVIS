@@ -37,6 +37,7 @@ class PersonalityEngine @Inject constructor() {
         knownFacts: List<UserFactEntity> = emptyList(),
         turnCount: Int = 0,
         pinnedLanguage: NuaLanguage? = null,
+        toneDirective: String? = null,
     ): String {
         val sections = mutableListOf(
             basePersona,
@@ -44,6 +45,7 @@ class PersonalityEngine @Inject constructor() {
             NuaLanguage.mirrorDirective(),
         )
         if (pinnedLanguage != null) sections += NuaLanguage.pinnedDirective(pinnedLanguage)
+        if (toneDirective != null) sections += toneDirective
 
         if (knownFacts.isNotEmpty()) {
             val factLines = knownFacts.joinToString("\n") { "- ${it.value}" }

@@ -50,6 +50,18 @@ class NuaNotificationListenerService : NotificationListenerService() {
             postTimeMillis = postTime,
             category = notification.category,
             priority = notification.priority,
+            replyAction = notification.findReplyAction(),
         )
+    }
+
+    /** The first action with a free-text RemoteInput — e.g. WhatsApp/Messages' inline "Reply" action. */
+    private fun Notification.findReplyAction(): NotificationReplyAction? {
+        actions?.forEach { action ->
+            val resultKey = action.remoteInputs?.firstOrNull { !it.resultKey.isNullOrBlank() }?.resultKey
+            if (resultKey != null) {
+                return NotificationReplyAction(pendingIntent = action.actionIntent, remoteInputResultKey = resultKey)
+            }
+        }
+        return null
     }
 }

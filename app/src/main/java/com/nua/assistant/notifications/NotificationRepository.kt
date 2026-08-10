@@ -1,11 +1,22 @@
 package com.nua.assistant.notifications
 
+import android.app.PendingIntent
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+
+/**
+ * A notification's built-in quick-reply action (RemoteInput), when it has one — official
+ * Android API, e.g. what a wearable or Assistant uses to reply to a message notification
+ * without opening the app. See NotificationReplySender.
+ */
+data class NotificationReplyAction(
+    val pendingIntent: PendingIntent,
+    val remoteInputResultKey: String,
+)
 
 data class NotificationEntry(
     val key: String,
@@ -15,6 +26,7 @@ data class NotificationEntry(
     val postTimeMillis: Long,
     val category: String?,
     val priority: Int,
+    val replyAction: NotificationReplyAction? = null,
 )
 
 data class NotificationSummary(
@@ -56,6 +68,15 @@ class NotificationRepository @Inject constructor(
 
     fun replaceAll(entries: List<NotificationEntry>) {
         _notifications.value = entries
+    }
+
+    /** Best-effort match against a sender/app name mentioned in a "reply to X" request — most recent match wins. */
+    fun findByTarget(target: String): NotificationEntry? {
+        val needle = target.trim().lowercase()
+        if (needle.isBlank()) return null
+        return _notifications.value
+            .sortedByDescending { it.postTimeMillis }
+            .firstOrNull { needle in it.title.lowercase() || needle in it.packageName.lowercase() }
     }
 
     fun summary(): NotificationSummary {

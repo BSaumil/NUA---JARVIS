@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Required by the Car App Library for Android Auto (projected) distribution.
+     "template" declares this as a template-based app (the only kind the library
+     supports outside Android Automotive OS). -->
+<automotiveApp>
+    <uses name="template" />
+</automotiveApp>

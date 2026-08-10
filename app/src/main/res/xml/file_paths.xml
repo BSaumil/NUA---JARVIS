@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Camera captures for vision input (ui/NuaScreen.kt) land in cacheDir/images and
+         are handed to the system camera app via a content:// URI, never a file:// path. -->
+    <cache-path name="images" path="images/" />
+</paths>

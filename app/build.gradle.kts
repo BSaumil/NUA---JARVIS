@@ -84,6 +84,7 @@ dependencies {
 
     // Networking (Claude API, Open-Meteo)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
@@ -94,8 +95,26 @@ dependencies {
     // Secure storage for the Claude API key
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // Wake-word detection ("Jarvis" built-in keyword)
+    // Wake-word detection (services/WakePhrase.kt catalog)
     implementation("ai.picovoice:porcupine-android:3.0.3")
+
+    // Voice owner verification (voice/OwnerVerifier.kt) — separate Picovoice product/entitlement from Porcupine
+    implementation("ai.picovoice:eagle-android:3.0.2")
+
+    // Proactive scheduled briefings (briefing/MorningBriefingWorker.kt)
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+    ksp("androidx.hilt:hilt-compiler:1.2.0")
+
+    // Home-screen widget (widget/NuaWidget.kt)
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.glance:glance-material3:1.1.1")
+
+    // Geofenced proactive suggestions (geofencing/GeofenceManager.kt)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // Android Auto entry point (car/NuaCarAppService.kt)
+    implementation("androidx.car.app:app:1.4.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")

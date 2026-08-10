@@ -1,4 +1,4 @@
-# NUA
+# NUA — Neural Understanding Ally
 
 This repo holds two independent implementations of NUA that were built in parallel and
 haven't been reconciled into one:
@@ -14,6 +14,37 @@ haven't been reconciled into one:
 ---
 
 A personal AI assistant for Android (Kotlin, Jetpack Compose, Hilt/MVVM, Claude API).
+
+## Beyond JARVIS
+
+JARVIS is fiction's shorthand for "an AI that just handles it" — but the fictional
+version never has to answer *how*: what it's allowed to do without asking, where your
+data actually lives, or what happens when it's wrong. NUA is scoped to answer those
+questions for real, and that's the actual differentiator, not a longer feature list:
+
+- **A real permission model, not a vibe.** Every capability in this app is labeled
+  Tier 1 (official API), Tier 2 (opt-in automation, confirmed per action, never
+  scheduled or chained), or Tier 3 (not implemented, on purpose) — see the tiers below.
+  JARVIS-in-fiction has no such boundary; NUA's is load-bearing in the code, not just
+  in this README.
+- **Local-first memory.** Facts, conversation history, and API keys live in on-device
+  Room storage and `EncryptedSharedPreferences` — nothing is mirrored to a NUA-run
+  server, because there isn't one. The tradeoff is real (no cross-device sync yet — see
+  Known gaps) and stated plainly rather than glossed over.
+- **Consent is structural, not a checkbox.** Tier 2 actions fail loudly
+  (`NuaAccessibilityService.lastFailure`) rather than silently degrading, notification
+  replies and calendar writes always route through an explicit confirmation dialog, and
+  nothing — not a scheduled briefing, not a proactive geofence notification — speaks
+  out loud or takes an irreversible action without the user in the loop at that moment.
+- **Multilingual as a first-class citizen, not a bolt-on.** Ten languages across four
+  script families, with an explicit mirroring directive baked into every Claude call
+  (not a separate translation pass) — see Languages below.
+- **Personality that actually tracks rapport.** `PersonalityEngine`'s familiarity tiers
+  are driven by facts learned and turns exchanged, not calendar days since install —
+  NUA gets more decisive as it actually knows you, not as a subscription ages.
+- **Honest about what isn't real yet.** Every scaffold in this repo — smart home,
+  email, Android Auto, Wear OS — says so directly in its own file and in Known gaps,
+  instead of a demo that fakes capability it doesn't have.
 
 NUA is scoped in three tiers of increasing risk:
 
@@ -34,27 +65,48 @@ NUA is scoped in three tiers of increasing risk:
 
 ```
 app/src/main/java/com/nua/assistant/
-  NuaApplication.kt        → @HiltAndroidApp entry point
+  NuaApplication.kt        → @HiltAndroidApp entry point, WorkManager+Hilt wiring
   MainActivity.kt           → Compose host, permission requests, wake-word broadcast receiver
-  ai/                        → ClaudeApiClient, PersonalityEngine, and Phase 3 intelligence:
-                                IntentClassifier, FactExtractor, TaskPlanner
+  ai/                        → ClaudeApiClient (streaming + prompt caching + vision),
+                                PersonalityEngine, IntentClassifier, FactExtractor,
+                                FactRelevance, TaskPlanner, UsageTracker (cost dashboard)
   voice/                     → VoiceManager (STT/TTS wrapper), NuaLanguage (10-language
-                                catalog), LanguagePreferenceStore (pinned language)
+                                catalog), LanguagePreferenceStore (pinned language),
+                                OwnerEnrollment/OwnerVerifier (Picovoice Eagle),
+                                VoiceProsody (tone heuristic off SpeechRecognizer RMS)
   automation/                → AppLauncher (Tier 1), NuaIntentRouter (keyword + Claude-fallback
-                                routing), NuaAccessibilityService (Tier 2 skeleton)
-  weather/                   → WeatherRepository (Open-Meteo, no API key)
+                                routing, dispatches through NuaSkill map), NuaSkill + one
+                                file per Tier 1 action (OpenAppSkill, PlayMediaSkill, ...),
+                                SkillModule (Hilt multibinding), NuaAccessibilityService
+                                (Tier 2 skeleton)
+  weather/                   → WeatherRepository (Open-Meteo, no API key, TTL-cached)
   calendar/                  → CalendarReader (on-device CalendarContract, read + confirmed-plan
                                 reminder writes, no OAuth)
-  memory/                    → MemoryStore.kt (Room: messages + user_facts),
-                                SecureKeyRepository (encrypted Claude API key storage)
+  email/                     → EmailRepository extension point (Gmail API, scaffold — see
+                                Known gaps)
+  geofencing/                → GeofenceManager (Play Services Geofencing), Geofence
+                                BroadcastReceiver, Room-backed saved geofences
+  memory/                    → MemoryStore.kt (Room: messages + user_facts + usage_logs +
+                                geofences), MemoryConsolidationWorker (summarizes and prunes
+                                old messages), SecureKeyRepository (encrypted API key storage)
+  network/                   → ConnectivityMonitor (offline detection before a Claude call)
+  vision/                    → ImageEncoder (camera capture → base64 for Claude vision)
   notifications/              → NuaNotificationListenerService, NotificationRepository,
-                                NotificationPriorityScorer, NotificationStatsStore
+                                NotificationPriorityScorer, NotificationStatsStore,
+                                NotificationReplySender (Tier 1 quick-reply)
   media/                     → MediaControlManager (MediaSessionManager-based)
-  briefing/                  → MorningBriefing (assembles facts, hands to Claude for phrasing)
+  briefing/                  → MorningBriefing, MorningBriefingWorker + BriefingScheduler
+                                (WorkManager-based proactive scheduling)
+  smarthome/                 → SmartHomeRepository extension point (Matter/Google Home, scaffold)
+  widget/                    → NuaWidget (Jetpack Glance home-screen widget)
+  car/                       → NuaCarAppService (Android Auto entry point, Car App Library)
   services/                  → NuaForegroundService (multi-phrase wake-word listening via
                                 Porcupine), WakePhrase (extensible wake-word catalog)
   di/                        → AppModule (Hilt module for Room, OkHttp, JSON)
   ui/                        → NuaScreen (Compose), NuaViewModel (@HiltViewModel), NuaTheme
+
+wear/src/main/java/com/nua/assistant/wear/
+  NuaTileService.kt          → Wear OS status tile (separate Gradle module, see Known gaps)
 ```
 
 ## Phase 3 — what's new
@@ -78,6 +130,106 @@ app/src/main/java/com/nua/assistant/
    declared priority, messaging/phone apps, and apps the user has historically dismissed
    quickly (tracked in `NotificationStatsStore`), and phrases the result plainly
    ("two need attention, eight can wait") instead of reading everything with equal weight.
+
+## Phase 4 — performance and reach
+
+1. **Streaming replies.** `ClaudeApiClient.streamMessage` uses server-sent events
+   instead of waiting for the full response; `NuaViewModel` speaks completed sentences
+   as they arrive (via `VoiceManager.speak(..., flush = false)` for queued chunks) and
+   renders a live-updating bubble (`NuaUiState.streamingReply`), instead of a spinner
+   until the whole reply is ready.
+2. **Prompt caching.** Every Claude call now sends its system prompt as a single
+   `cache_control: ephemeral` block (`ClaudeSystemBlock`). The static utility prompts
+   (`IntentClassifier`, `FactExtractor`) hit cache most often since they're identical
+   call to call; the main chat's system prompt varies with facts/tone so it hits less,
+   but costs nothing extra when it misses.
+3. **TTL cache on weather.** `WeatherRepository` caches the last snapshot for 10 minutes
+   per ~1km location bucket — asking about the weather twice in a row doesn't re-hit
+   Open-Meteo.
+4. **Relevance-scoped facts.** `FactRelevance` ranks `user_facts` by keyword overlap
+   with the current message plus recency and caps what goes into the system prompt
+   (12 by default) instead of dumping the whole table every turn — lexical, not
+   semantic/embedding search (bundling an embedding model on-device wasn't
+   proportionate to what this solves), but enough to bound prompt size as it grows.
+5. **Continuous conversation mode.** After a reply finishes speaking
+   (`VoiceManager.markReplyComplete` → `setOnFinalSpeechDoneListener`), NUA listens
+   again for a follow-up without repeating the wake word — up to `MAX_VOICE_FOLLOW_UPS`
+   times, ended immediately by typed input, a listening error/timeout, or the cap, so
+   the mic is never left hot indefinitely.
+6. **Proactive scheduled briefings.** `MorningBriefingWorker` (WorkManager, Hilt-injected
+   via `NuaApplication`) runs `MorningBriefing.generate()` at a user-chosen time and
+   posts it as a notification (and saves it into the conversation) — deliberately *not*
+   read aloud unprompted, since playing audio from a background worker with no user
+   interaction in progress felt more surprising than helpful. Configured in
+   Settings → Proactive morning briefing.
+7. **Notification quick-reply.** `NotificationReplySender` replies through a
+   notification's own built-in `RemoteInput` action — the same official mechanism a
+   wearable uses — no Tier 2/accessibility involved. Sending a message on the user's
+   behalf is sensitive, so it always goes through a confirmation dialog
+   (`NuaRouteResult.ReplyProposed`) before anything sends.
+8. **Smart home extension point.** `SmartHomeRepository` + `NuaActionType.SMART_HOME`
+   are fully wired into the router, but the only binding shipped
+   (`UnconfiguredSmartHomeRepository`) always reports not-configured. Google's Home APIs
+   are limited-access and need a provisioned Google Cloud project plus real device
+   commissioning outside the app — swap the Hilt binding in `smarthome/SmartHomeModule.kt`
+   once that setup exists.
+9. **Home-screen widget.** `NuaWidget` (Jetpack Glance) shows the next calendar event,
+   current weather, and notification summary, refreshed on Android's own widget update
+   cycle (`nua_widget_info.xml`, 30-minute minimum).
+10. **Voice owner verification.** `OwnerEnrollment`/`OwnerVerifier` wrap Picovoice Eagle
+    (speaker recognition — a separate product/entitlement from Porcupine) for a future
+    Tier 2 action to gate on "is this actually the owner's voice." Nothing calls
+    `OwnerVerifier` yet since there's no concrete Tier 2 action to gate; Settings →
+    Voice ID lets you enroll ahead of that.
+
+## Phase 5 — offline resilience, senses, and reach
+
+1. **Offline fallback.** `ConnectivityMonitor` checks reachability before every chat
+   round trip; offline, NUA answers immediately with a local message (including the
+   current time) instead of waiting out a connect timeout. Keyword-routed Tier 1
+   actions (open app, media control, read notifications) already worked offline since
+   they never call Claude — this closes the gap for the conversational fallback path.
+2. **Memory consolidation.** `MemoryConsolidationWorker` (daily WorkManager job) keeps
+   the `messages` table from growing unbounded: once raw history passes 300 rows, the
+   oldest 100 are summarized into one `user_facts` entry (category
+   `conversation_summary`) via Claude Haiku, then deleted. Named facts and recent
+   history are untouched.
+3. **Vision input.** A camera button in the chat input row captures a photo
+   (`ActivityResultContracts.TakePicture` + a `FileProvider`-scoped cache file),
+   `ImageEncoder` base64-encodes it, and `ClaudeApiClient.describeImage` sends it to
+   Claude's vision as a normal reply — no new model, just multimodal content blocks.
+4. **Voice prosody heuristic.** `VoiceProsody` classifies each utterance's rough
+   energy/variance off `SpeechRecognizer`'s existing `onRmsChanged` stream (no extra
+   mic capture) into `NEUTRAL`/`LOW_ENERGY`/`HIGH_INTENSITY`, and folds a one-line
+   directive into that turn's system prompt. It's a DSP heuristic on decibel samples,
+   not a trained emotion model — good enough to nudge tone, not to diagnose anything.
+5. **Android Auto.** `NuaCarAppService` (Car App Library) gives NUA a minimal,
+   driving-safe status screen in Android Auto's app list. No car-specific voice
+   trigger — the same background wake-word listening that works everywhere else covers
+   it — deliberately not a chat UI while driving.
+6. **Wear OS companion.** A new `:wear` Gradle module (`NuaTileService`) adds a status
+   tile to the watch face carousel using the classic Wear Tiles API. Static text for
+   now — no Wearable Data Layer connection to the phone app yet (see Known gaps).
+7. **API usage/cost dashboard.** Every Claude call (streamed and non-streamed) logs its
+   token usage (`UsageTracker` → `usage_logs` table); Settings shows an estimated
+   monthly cost against published list pricing — not your actual bill, a budgeting
+   signal.
+8. **Geofenced proactive suggestions.** `GeofenceManager` (Play Services Geofencing)
+   lets you save a named location + radius + message in Settings; NUA notifies you on
+   arrival. Real Tier 1 API usage, gated on `ACCESS_FINE_LOCATION` +
+   `ACCESS_BACKGROUND_LOCATION`, neither requested until you actually add one.
+9. **Calendar & email.** Calendar was already real (Phase 3's `CalendarReader`, no
+   OAuth). Email gets the same `NuaActionType`/router treatment as smart home:
+   `EmailRepository` is fully wired in, but the shipped binding
+   (`UnconfiguredEmailRepository`) always reports not-configured — email has no
+   on-device content-provider equivalent to calendar, so it genuinely needs a Gmail API
+   project + OAuth consent outside the app before a real binding can exist.
+10. **Pluggable skill architecture.** Every Tier 1 action used to live as a branch in
+    `NuaIntentRouter`'s `when`. It's now a `NuaSkill` implementation
+    (`automation/*Skill.kt`) registered into a `Map<NuaActionType, NuaSkill>` via Hilt
+    multibinding (`SkillModule.kt`); the router just does a map lookup and dispatches.
+    Adding a new capability is a new skill class and one new `@Binds` line, not another
+    router branch.
 
 ## Languages
 
@@ -126,9 +278,36 @@ needs to change, including the multi-keyword detection code in `NuaForegroundSer
 
 - Test coverage is limited to the pure-logic pieces that don't need a live Android
   runtime: `KeywordIntentMatcher`, `FactExtractor.shouldConsider`'s gating heuristic,
-  `NotificationPriorityScorer`, and `extractJsonPayload`. Nothing exercises the Room DAO,
-  `ClaudeApiClient`'s HTTP layer, or Compose UI yet — those would need Robolectric or
+  `NotificationPriorityScorer`, `FactRelevance`, and `extractJsonPayload`. Nothing
+  exercises the Room DAO, `ClaudeApiClient`'s HTTP/streaming layer, WorkManager
+  scheduling, the Glance widget, or Compose UI yet — those would need Robolectric or
   instrumented tests.
+- `OwnerEnrollment`/`OwnerVerifier` (Picovoice Eagle, `ai.picovoice:eagle-android:3.0.2`)
+  were verified against the SDK's own demo app source after the first version (written
+  from recall, pinned to a nonexistent 1.0.4 artifact) failed CI — the real API turned
+  out to use a plain `Eagle` class for recognition (not `EagleRecognizer`) and requires
+  `EagleProfiler` to stay alive across enrollment calls to keep its progress. Still not
+  exercised against a real device or the actual Picovoice service, just the SDK's
+  published source.
+- Android Auto (`car/NuaCarAppService.kt`) and the Wear OS tile (`:wear` module) are
+  both real usage of their respective official libraries (Car App Library, classic Wear
+  Tiles API) but neither has been tested on a head unit, the Desktop Head Unit
+  emulator, a Wear OS device, or the Wear emulator — CI only confirms they compile.
+  `HostValidator.ALLOW_ALL_HOSTS_VALIDATOR` and `IOT` as the declared category are both
+  things to revisit before any real Play Store submission.
+- The Wear tile has no connection to the phone app's data (calendar, weather,
+  notifications) — it's static text. Wiring that up needs the Wearable Data Layer API
+  (`DataClient`/`MessageClient`), which isn't built yet.
+- Geofencing needs `ACCESS_BACKGROUND_LOCATION`, which Google Play gates behind a
+  separate declaration form before a build using it can be published — filing that is
+  out of scope for this repo's current pre-release state.
+- The usage/cost dashboard (`UsageTracker`) estimates cost from published list pricing
+  hardcoded in `UsageTracker.kt` — it will drift if Anthropic's pricing changes and
+  doesn't reflect any organization-specific discount.
+- The WorkManager + Hilt wiring (`NuaApplication.Configuration.Provider`, the disabled
+  `WorkManagerInitializer` in the manifest, `@HiltWorker` on `MorningBriefingWorker`)
+  follows the documented Google pattern for this combination but is, like everything
+  else in this list, unverified against a real build until CI (or a real device) confirms it.
 - The settings screen covers viewing/forgetting facts and Tier 2 / battery-optimization
   status, but there's still no way to adjust the fact-extraction cadence or rotate the
   Claude API key from within the app (Tier 2 itself stays toggle-only via Android
@@ -167,7 +346,9 @@ assuming a hand-reviewed diff compiles.
 
 Requires the Android SDK (compileSdk 35) and a JDK 17+. Set your Claude API key at
 runtime through the in-app dialog (stored via `SecureKeyRepository`, never in a build
-file). Optionally pass a Picovoice access key for wake-word support:
+file). Optionally pass a Picovoice access key for wake-word support — the same key is
+reused for Eagle voice enrollment (Settings → Voice ID), though Eagle may need its own
+product enablement in the Picovoice console depending on your plan:
 
 ```
 ./gradlew assembleDebug -PPICOVOICE_ACCESS_KEY=your_key_here

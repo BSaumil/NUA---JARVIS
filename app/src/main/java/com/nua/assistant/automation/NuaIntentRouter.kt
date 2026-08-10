@@ -4,12 +4,8 @@ import com.nua.assistant.ai.ClassifiedIntent
 import com.nua.assistant.ai.IntentClassifier
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.TaskPlan
-import com.nua.assistant.ai.TaskPlanner
-import com.nua.assistant.briefing.MorningBriefing
-import com.nua.assistant.media.MediaControlManager
-import com.nua.assistant.notifications.NotificationRepository
+import com.nua.assistant.notifications.NotificationEntry
 import com.nua.assistant.voice.NuaLanguage
-import com.nua.assistant.weather.WeatherRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,23 +15,22 @@ private const val CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.6
 sealed class NuaRouteResult {
     data class ActionTaken(val message: String) : NuaRouteResult()
     data class PlanProposed(val plan: TaskPlan) : NuaRouteResult()
+    /** Sending a message on the user's behalf is sensitive — always confirmed before NotificationReplySender fires. */
+    data class ReplyProposed(val notification: NotificationEntry, val message: String) : NuaRouteResult()
     data object FallThroughToChat : NuaRouteResult()
 }
 
 /**
  * Routes a user utterance to a concrete action. Keyword matching (free, no API call)
  * is tried first; only utterances it misses go to Claude-based classification
- * (IntentClassifier), so unambiguous requests never pay for a round trip.
+ * (IntentClassifier), so unambiguous requests never pay for a round trip. Dispatch
+ * itself is a lookup into [skills] (see NuaSkill.kt) — this class knows nothing about
+ * any specific Tier 1 capability, just how to pick the right one and fall back to chat.
  */
 @Singleton
 class NuaIntentRouter @Inject constructor(
-    private val appLauncher: AppLauncher,
-    private val mediaControlManager: MediaControlManager,
-    private val weatherRepository: WeatherRepository,
-    private val morningBriefing: MorningBriefing,
-    private val notificationRepository: NotificationRepository,
-    private val taskPlanner: TaskPlanner,
     private val intentClassifier: IntentClassifier,
+    private val skills: Map<NuaActionType, @JvmSuppressWildcards NuaSkill>,
 ) {
 
     suspend fun route(utterance: String, pinnedLanguage: NuaLanguage? = null): NuaRouteResult {
@@ -48,98 +43,8 @@ class NuaIntentRouter @Inject constructor(
         return dispatch(classified, utterance, pinnedLanguage)
     }
 
-    private suspend fun dispatch(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult = when (intent.action) {
-        NuaActionType.OPEN_APP -> {
-            val app = intent.parameters["app"]
-            if (app.isNullOrBlank()) {
-                NuaRouteResult.FallThroughToChat
-            } else if (appLauncher.launch(app)) {
-                NuaRouteResult.ActionTaken(ActionCopy.appOpened(app))
-            } else {
-                NuaRouteResult.ActionTaken(ActionCopy.appNotFound(app))
-            }
-        }
-
-        NuaActionType.PLAY_MEDIA -> {
-            val query = intent.parameters["query"] ?: originalUtterance
-            if (mediaControlManager.playByQuery(query)) {
-                NuaRouteResult.ActionTaken(ActionCopy.mediaStarted(query))
-            } else {
-                NuaRouteResult.ActionTaken("No music app on here picked that up — is one actually installed?")
-            }
-        }
-
-        NuaActionType.MEDIA_CONTROL -> {
-            val handled = when (intent.parameters["command"]) {
-                "play" -> mediaControlManager.play()
-                "pause" -> mediaControlManager.pause()
-                "next" -> mediaControlManager.next()
-                "previous" -> mediaControlManager.previous()
-                else -> false
-            }
-            if (handled) {
-                NuaRouteResult.ActionTaken(ActionCopy.mediaControlHandled())
-            } else {
-                NuaRouteResult.ActionTaken("Nothing's playing right now — nothing to control.")
-            }
-        }
-
-        NuaActionType.READ_NOTIFICATIONS -> {
-            NuaRouteResult.ActionTaken(notificationRepository.summary().spokenSummary)
-        }
-
-        NuaActionType.GET_WEATHER -> {
-            val snapshot = weatherRepository.currentSnapshot().getOrNull()
-            val message = snapshot?.let { ActionCopy.weather(it.condition, it.currentTempC, it.highTempC, it.precipitationChancePercent) }
-                ?: "Couldn't get a weather reading — check that location access is granted."
-            NuaRouteResult.ActionTaken(message)
-        }
-
-        NuaActionType.MORNING_BRIEFING -> {
-            NuaRouteResult.ActionTaken(morningBriefing.generate(originalUtterance, pinnedLanguage))
-        }
-
-        NuaActionType.PLAN_TASK -> {
-            val activity = intent.parameters["activity"] ?: originalUtterance
-            val plan = taskPlanner.propose(activity, pinnedLanguage)
-            if (plan != null) NuaRouteResult.PlanProposed(plan) else NuaRouteResult.FallThroughToChat
-        }
-
-        NuaActionType.CHAT -> NuaRouteResult.FallThroughToChat
-    }
-}
-
-/**
- * Varied phrasing for the fast keyword/classification path, so action confirmations
- * carry a bit of NUA's voice without paying for a Claude call just to phrase "Done."
- * Picking randomly among a few options also keeps repeated actions from reading as
- * canned — the fast path can't evolve tone with familiarity the way chat replies do
- * (see PersonalityEngine), but it doesn't have to sound like a fixed script either.
- */
-private object ActionCopy {
-    fun appOpened(app: String): String = listOf(
-        "Opening $app.",
-        "On it — launching $app.",
-        "$app, coming right up.",
-    ).random()
-
-    fun appNotFound(app: String): String =
-        "Couldn't find anything called \"$app\" on here — mistyped, or not installed?"
-
-    fun mediaStarted(query: String): String = listOf(
-        "Cueing up \"$query\" for you.",
-        "Starting something for \"$query\".",
-    ).random()
-
-    fun mediaControlHandled(): String = listOf("Done.", "Handled.", "There you go.").random()
-
-    fun weather(condition: String, currentTempC: Double, highTempC: Double, precipitationChancePercent: Int): String {
-        val base = "It's $condition and ${currentTempC.toInt()}°C, high of ${highTempC.toInt()}°C today with a $precipitationChancePercent% chance of rain."
-        val remark = when {
-            precipitationChancePercent >= 60 -> " Bring an umbrella."
-            precipitationChancePercent <= 10 && currentTempC >= 22 -> " Good excuse to get outside."
-            else -> ""
-        }
-        return base + remark
+    private suspend fun dispatch(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
+        val skill = skills[intent.action] ?: return NuaRouteResult.FallThroughToChat
+        return skill.execute(intent, originalUtterance, pinnedLanguage)
     }
 }

@@ -23,6 +23,7 @@ object KeywordIntentMatcher {
                 ClassifiedIntent(NuaActionType.MEDIA_CONTROL, 1.0, mapOf("command" to "previous"))
             "weather" in lower -> ClassifiedIntent(NuaActionType.GET_WEATHER, 1.0)
             "notification" in lower -> ClassifiedIntent(NuaActionType.READ_NOTIFICATIONS, 1.0)
+            "email" in lower && ("check" in lower || "any new" in lower || "inbox" in lower) -> ClassifiedIntent(NuaActionType.EMAIL, 1.0)
             "morning briefing" in lower || "brief me" in lower -> ClassifiedIntent(NuaActionType.MORNING_BRIEFING, 1.0)
             else -> null
         }

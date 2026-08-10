@@ -42,6 +42,55 @@ data class UserFactEntity(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
+/** One Claude API call's token usage, for the cost dashboard (see ai/UsageTracker.kt). */
+@Entity(tableName = "usage_logs")
+data class UsageLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val model: String,
+    val inputTokens: Int,
+    val outputTokens: Int,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface UsageDao {
+    @Insert
+    suspend fun insert(entry: UsageLogEntity)
+
+    @Query("SELECT * FROM usage_logs WHERE timestamp >= :sinceMillis")
+    suspend fun since(sinceMillis: Long): List<UsageLogEntity>
+}
+
+/** A user-defined location trigger — see geofencing/GeofenceManager.kt. */
+@Entity(tableName = "geofences")
+data class GeofenceEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val radiusMeters: Float,
+    val message: String,
+    val notifyOnEnter: Boolean = true,
+)
+
+@Dao
+interface GeofenceDao {
+    @Insert
+    suspend fun insert(entity: GeofenceEntity): Long
+
+    @Query("SELECT * FROM geofences")
+    suspend fun getAll(): List<GeofenceEntity>
+
+    @Query("SELECT * FROM geofences")
+    fun observeAll(): Flow<List<GeofenceEntity>>
+
+    @Query("SELECT * FROM geofences WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): GeofenceEntity?
+
+    @Query("DELETE FROM geofences WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 @Dao
 interface MemoryDao {
 
@@ -56,6 +105,15 @@ interface MemoryDao {
 
     @Query("SELECT COUNT(*) FROM messages WHERE role = 'USER'")
     suspend fun countUserMessages(): Int
+
+    @Query("SELECT COUNT(*) FROM messages")
+    suspend fun countMessages(): Int
+
+    @Query("SELECT * FROM messages ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun getOldestMessages(limit: Int): List<MessageEntity>
+
+    @Query("DELETE FROM messages WHERE id IN (:ids)")
+    suspend fun deleteMessagesByIds(ids: List<Long>)
 
     @Query("SELECT * FROM user_facts ORDER BY updatedAt DESC")
     fun observeFacts(): Flow<List<UserFactEntity>>
@@ -96,10 +154,12 @@ interface MemoryDao {
 }
 
 @Database(
-    entities = [MessageEntity::class, UserFactEntity::class],
-    version = 1,
+    entities = [MessageEntity::class, UserFactEntity::class, UsageLogEntity::class, GeofenceEntity::class],
+    version = 3,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
     abstract fun memoryDao(): MemoryDao
+    abstract fun usageDao(): UsageDao
+    abstract fun geofenceDao(): GeofenceDao
 }

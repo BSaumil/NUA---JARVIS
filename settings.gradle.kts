@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NUA"
 include(":app")
+include(":wear")

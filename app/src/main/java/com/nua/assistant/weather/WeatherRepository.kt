@@ -58,6 +58,13 @@ private fun describeWeatherCode(code: Int): String = when (code) {
     else -> "unsettled"
 }
 
+private data class CachedSnapshot(
+    val snapshot: WeatherSnapshot,
+    val cachedAtMillis: Long,
+    val latKey: Double,
+    val lonKey: Double,
+)
+
 /**
  * Weather via Open-Meteo — no API key required. Location comes from the last known
  * fix on-device (coarse permission only); this never calls into Google Play Services.
@@ -69,9 +76,22 @@ class WeatherRepository @Inject constructor(
     private val json: Json,
 ) {
 
+    @Volatile
+    private var cache: CachedSnapshot? = null
+
     suspend fun currentSnapshot(): Result<WeatherSnapshot> = withContext(Dispatchers.IO) {
         val location = lastKnownLocation()
             ?: return@withContext Result.failure(IllegalStateException("No location fix available yet."))
+
+        val latKey = roundForCache(location.latitude)
+        val lonKey = roundForCache(location.longitude)
+
+        cache?.let { cached ->
+            val fresh = System.currentTimeMillis() - cached.cachedAtMillis < CACHE_TTL_MILLIS
+            if (fresh && cached.latKey == latKey && cached.lonKey == lonKey) {
+                return@withContext Result.success(cached.snapshot)
+            }
+        }
 
         val url = "https://api.open-meteo.com/v1/forecast" +
             "?latitude=${location.latitude}&longitude=${location.longitude}" +
@@ -87,20 +107,23 @@ class WeatherRepository @Inject constructor(
                 }
                 val body = response.body?.string().orEmpty()
                 val parsed = json.decodeFromString(OpenMeteoResponse.serializer(), body)
-                Result.success(
-                    WeatherSnapshot(
-                        currentTempC = parsed.current.temperature2m,
-                        condition = describeWeatherCode(parsed.current.weatherCode),
-                        precipitationChancePercent = parsed.daily.precipitationProbabilityMax.firstOrNull() ?: 0,
-                        highTempC = parsed.daily.temperature2mMax.firstOrNull() ?: parsed.current.temperature2m,
-                        lowTempC = parsed.daily.temperature2mMin.firstOrNull() ?: parsed.current.temperature2m,
-                    ),
+                val snapshot = WeatherSnapshot(
+                    currentTempC = parsed.current.temperature2m,
+                    condition = describeWeatherCode(parsed.current.weatherCode),
+                    precipitationChancePercent = parsed.daily.precipitationProbabilityMax.firstOrNull() ?: 0,
+                    highTempC = parsed.daily.temperature2mMax.firstOrNull() ?: parsed.current.temperature2m,
+                    lowTempC = parsed.daily.temperature2mMin.firstOrNull() ?: parsed.current.temperature2m,
                 )
+                cache = CachedSnapshot(snapshot, System.currentTimeMillis(), latKey, lonKey)
+                Result.success(snapshot)
             }
         } catch (t: Exception) {
             Result.failure(t)
         }
     }
+
+    /** ~1km precision — plenty for "did the location change enough to matter for weather." */
+    private fun roundForCache(value: Double): Double = kotlin.math.round(value * 100) / 100.0
 
     private fun lastKnownLocation(): Location? {
         val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
@@ -112,5 +135,9 @@ class WeatherRepository @Inject constructor(
             .filter { locationManager.isProviderEnabled(it) }
             .mapNotNull { runCatching { locationManager.getLastKnownLocation(it) }.getOrNull() }
             .maxByOrNull { it.time }
+    }
+
+    private companion object {
+        const val CACHE_TTL_MILLIS = 10 * 60 * 1000L
     }
 }
