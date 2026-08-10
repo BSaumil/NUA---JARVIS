@@ -108,6 +108,9 @@ app/src/main/java/com/nua/assistant/
                                 WhatNowAdvisor ("what should I do now?" entry point)
   goals/                     → GoalRepository (durable user goals), GoalReviewWorker
                                 (weekly, checks each goal against ContextEngine via Claude)
+  dreams/                    → DreamRepository, DreamSynthesisWorker (weekly, one
+                                cross-referenced insight across facts/goals/trust ledger
+                                or nothing), DreamCategory
   smarthome/                 → SmartHomeRepository extension point (Matter/Google Home, scaffold)
   widget/                    → NuaWidget (Jetpack Glance home-screen widget)
   car/                       → NuaCarAppService (Android Auto entry point, Car App Library)
@@ -288,6 +291,23 @@ way they are.
    (`NuaViewModel.whatShouldIDoNow()`) asks `WhatNowAdvisor` for exactly one concrete next
    action given the current `ContextSnapshot` and active goals, shown as a normal chat
    reply — the zero-typing entry point into everything this phase built.
+
+## Phase 8 — NUA Dreams 2.0 (partial)
+
+**NUA Dreams.** `DreamSynthesisWorker` runs at most once a week and looks across known
+facts, recent goal observations, and the trust ledger together for exactly one insight
+that connects at least two of them — explicitly instructed to reject anything that's
+just a repackaged summary, and to say nothing at all rather than force an insight into
+existence. Gated on a minimum amount of logged history so it can't hallucinate
+connections out of a near-empty database. Ten categories (`DreamCategory`): opportunity,
+pattern, reminder, concern, optimization, relationship, finance, productivity, learning,
+business. Surfaced once per app open the same way the Trust self-report is ("Something
+occurred to me...") and kept visible as a history in Settings.
+
+Still open from Phase 8's full scope in `ROADMAP.md`: a Decision Journal, a dedicated
+Second Brain search UI (today's chat already surfaces relevant facts via
+`FactRelevance`, but there's no standalone search), a Timeline view, and the full
+per-fact Memory OS inspector.
 
 ## Languages
 

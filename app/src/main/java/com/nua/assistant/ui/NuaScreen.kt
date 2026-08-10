@@ -74,6 +74,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val autonomySuggestions by viewModel.autonomySuggestions.collectAsState()
     val goals by viewModel.goals.collectAsState()
     val goalObservations by viewModel.goalObservations.collectAsState()
+    val dreams by viewModel.dreams.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
 
     if (showSettings) {
@@ -105,6 +106,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
             goalObservations = goalObservations,
             onAddGoal = viewModel::addGoal,
             onRemoveGoal = viewModel::removeGoal,
+            dreams = dreams,
             onBack = { showSettings = false },
         )
         return

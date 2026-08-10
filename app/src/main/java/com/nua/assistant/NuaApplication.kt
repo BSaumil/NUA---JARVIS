@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.nua.assistant.dreams.DreamSynthesisWorker
 import com.nua.assistant.goals.GoalReviewWorker
 import com.nua.assistant.memory.MemoryConsolidationWorker
 import dagger.hilt.android.HiltAndroidApp
@@ -14,6 +15,7 @@ import javax.inject.Inject
 
 private const val MEMORY_CONSOLIDATION_WORK_NAME = "nua_memory_consolidation"
 private const val GOAL_REVIEW_WORK_NAME = "nua_goal_review"
+private const val DREAM_SYNTHESIS_WORK_NAME = "nua_dream_synthesis"
 
 @HiltAndroidApp
 class NuaApplication : Application(), Configuration.Provider {
@@ -44,6 +46,13 @@ class NuaApplication : Application(), Configuration.Provider {
             GOAL_REVIEW_WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             goalReviewRequest,
+        )
+
+        val dreamSynthesisRequest = PeriodicWorkRequestBuilder<DreamSynthesisWorker>(7, TimeUnit.DAYS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            DREAM_SYNTHESIS_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            dreamSynthesisRequest,
         )
     }
 }
