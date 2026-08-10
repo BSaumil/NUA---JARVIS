@@ -6,12 +6,14 @@ import androidx.work.Configuration
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.nua.assistant.goals.GoalReviewWorker
 import com.nua.assistant.memory.MemoryConsolidationWorker
 import dagger.hilt.android.HiltAndroidApp
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 private const val MEMORY_CONSOLIDATION_WORK_NAME = "nua_memory_consolidation"
+private const val GOAL_REVIEW_WORK_NAME = "nua_goal_review"
 
 @HiltAndroidApp
 class NuaApplication : Application(), Configuration.Provider {
@@ -35,6 +37,13 @@ class NuaApplication : Application(), Configuration.Provider {
             MEMORY_CONSOLIDATION_WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             consolidationRequest,
+        )
+
+        val goalReviewRequest = PeriodicWorkRequestBuilder<GoalReviewWorker>(7, TimeUnit.DAYS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            GOAL_REVIEW_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            goalReviewRequest,
         )
     }
 }

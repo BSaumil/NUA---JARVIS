@@ -17,7 +17,7 @@ back to the source conversation.
 
 ---
 
-## Phase 6 — Trust & Autonomy Core ✅ shipped this session
+## Phase 6 — Trust & Autonomy Core ✅ shipped
 
 The highest-leverage slice: extends the Trust Ledger concept already planned pre-session,
 stays entirely in the data/backend layer (no UI framework rewrite to get wrong), and
@@ -46,18 +46,21 @@ gives every later phase something to build on.
   Full memory-control UI (per-fact "why do you remember this" drill-down, forget-by-type)
   is Phase 8.
 
-## Phase 7 — Goals & Proactive Context Engine
+## Phase 7 — Goals & Proactive Context Engine 🟡 partially shipped
 
-- **NUA Goals** (`#6`) — durable goals the user sets ("get my mornings under control"),
-  broken into observations and proposals rather than one-shot commands.
-- **Context Engine** (`#9`) — formalizes the existing geofencing/weather/calendar signals
-  into one queryable "current situation" object other features (goals, dreams, briefing)
-  can read from, instead of each feature independently polling its own source.
-- **Daily Briefing rewrite** (`#35`) — morning/evening briefings restructured around the
-  Context Engine instead of the current fixed weather+calendar template.
-- **"What should I do now?" button** (`#36`) — one action, backed entirely by the Context
-  Engine and Goals; no new intelligence, just a new entry point into what Phase 7 already
-  builds.
+- ✅ **Context Engine** (`#9`) — `ContextEngine.currentSnapshot()` formalizes the existing
+  weather/calendar/connectivity/notification signals into one queryable `ContextSnapshot`
+  with a `describe()` renderer for Claude prompts. `GoalReviewWorker` is the first
+  consumer.
+- ✅ **NUA Goals** (`#6`) — durable goals via `GoalRepository`/`GoalDao`, editable in
+  Settings. `GoalReviewWorker` (weekly) checks each active goal against a fresh
+  `ContextSnapshot` and asks Claude for at most one concrete observation, or nothing.
+- ⬜ **Daily Briefing rewrite** (`#35`) — morning/evening briefings restructured around
+  the Context Engine instead of the current fixed weather+calendar template. Not started;
+  `MorningBriefing` still gathers its own weather/calendar directly.
+- ⬜ **"What should I do now?" button** (`#36`) — one action, backed entirely by the
+  Context Engine and Goals; no new intelligence needed, just a new entry point into what
+  this phase already builds. Not started.
 
 ## Phase 8 — Dreams 2.0 & Second Brain
 

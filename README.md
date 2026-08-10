@@ -103,6 +103,10 @@ app/src/main/java/com/nua/assistant/
   media/                     → MediaControlManager (MediaSessionManager-based)
   briefing/                  → MorningBriefing, MorningBriefingWorker + BriefingScheduler
                                 (WorkManager-based proactive scheduling)
+  context/                   → ContextEngine (queryable "current situation": weather,
+                                next calendar event, connectivity, notifications)
+  goals/                     → GoalRepository (durable user goals), GoalReviewWorker
+                                (weekly, checks each goal against ContextEngine via Claude)
   smarthome/                 → SmartHomeRepository extension point (Matter/Google Home, scaffold)
   widget/                    → NuaWidget (Jetpack Glance home-screen widget)
   car/                       → NuaCarAppService (Android Auto entry point, Car App Library)
@@ -263,6 +267,25 @@ way they are.
    episodic / semantic / behavioral / emotional / relationship), a `source` ("why do you
    remember this"), and `lastUsedAt` (now actually touched on every relevant-fact
    lookup, not just schema). Full per-fact drill-down UI is Phase 8.
+
+## Phase 7 — Goals & Context Engine (partial)
+
+1. **Context Engine.** `ContextEngine.currentSnapshot()` formalizes signals
+   `MorningBriefing` and geofencing already gathered independently (weather, next
+   calendar event, connectivity, notification summary) into one queryable
+   `ContextSnapshot`, with a `describe()` renderer meant to drop straight into a Claude
+   prompt. `GoalReviewWorker` is the first consumer; the daily briefing itself hasn't
+   been rewritten to use it yet (see ROADMAP.md).
+2. **NUA Goals.** Durable goals ("get my mornings under control"), distinct from a
+   one-shot `TaskPlanner` request — CRUD via `GoalRepository`, editable in Settings.
+   `GoalReviewWorker` (weekly WorkManager job) checks each active goal against a fresh
+   `ContextSnapshot` and asks Claude for at most one concrete, non-generic observation —
+   explicitly instructed to say nothing rather than force a proposal, same discipline as
+   `MemoryConsolidationWorker`'s summarization prompt.
+
+Still open from the full Phase 7 scope in `ROADMAP.md`: rewriting the daily briefing
+itself around the Context Engine, and the "what should I do now?" entry point — both
+build directly on what's here, not blocked on anything new.
 
 ## Languages
 
