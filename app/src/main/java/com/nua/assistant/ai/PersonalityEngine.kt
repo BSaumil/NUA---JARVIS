@@ -59,7 +59,8 @@ class PersonalityEngine @Inject constructor() {
         return sections.joinToString("\n\n")
     }
 
-    private fun familiarityTier(turnCount: Int, factCount: Int): FamiliarityTier {
+    /** Public so callers outside the system-prompt path (e.g. the Trust self-report) can gate on the same tier. */
+    fun familiarityTier(turnCount: Int, factCount: Int): FamiliarityTier {
         // Facts count for more than raw turn count — actually knowing something about
         // someone builds rapport faster than volume of small talk.
         val rapportScore = turnCount + factCount * FACT_RAPPORT_WEIGHT

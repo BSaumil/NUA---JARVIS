@@ -16,7 +16,7 @@ class PlayMediaSkill @Inject constructor(
         return if (mediaControlManager.playByQuery(query)) {
             NuaRouteResult.ActionTaken(ActionCopy.mediaStarted(query))
         } else {
-            NuaRouteResult.ActionTaken("No music app on here picked that up — is one actually installed?")
+            NuaRouteResult.ActionTaken("No music app on here picked that up — is one actually installed?", succeeded = false)
         }
     }
 }

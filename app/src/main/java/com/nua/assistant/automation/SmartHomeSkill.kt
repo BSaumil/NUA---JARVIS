@@ -17,11 +17,12 @@ class SmartHomeSkill @Inject constructor(
         val action = intent.parameters["action"]
         if (device.isNullOrBlank() || action.isNullOrBlank()) return NuaRouteResult.FallThroughToChat
 
-        val message = when (val result = smartHomeRepository.controlDevice(device, action)) {
+        val result = smartHomeRepository.controlDevice(device, action)
+        val message = when (result) {
             is SmartHomeResult.Success -> result.message
             is SmartHomeResult.NotConfigured -> result.reason
             is SmartHomeResult.Failure -> "Couldn't do that — ${result.message}"
         }
-        return NuaRouteResult.ActionTaken(message)
+        return NuaRouteResult.ActionTaken(message, succeeded = result is SmartHomeResult.Success)
     }
 }

@@ -55,6 +55,8 @@ class MemoryConsolidationWorker @AssistedInject constructor(
                 key = "conversation_summary_${batch.last().timestamp}",
                 value = summary,
                 category = "conversation_summary",
+                memoryType = MemoryType.EPISODIC,
+                source = "consolidated from ${batch.size} older messages",
             )
         }
         memoryDao.deleteMessagesByIds(batch.map { it.id })

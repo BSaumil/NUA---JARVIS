@@ -67,10 +67,17 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val enrollmentProgress by viewModel.enrollmentProgress.collectAsState()
     val geofences by viewModel.geofences.collectAsState()
     val usageThisMonth by viewModel.usageThisMonth.collectAsState()
+    val trustScore by viewModel.trustScore.collectAsState()
+    val trustLedger by viewModel.trustLedger.collectAsState()
+    val actionOutcomes by viewModel.actionOutcomes.collectAsState()
+    val autonomySuggestions by viewModel.autonomySuggestions.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
 
     if (showSettings) {
-        LaunchedEffect(Unit) { viewModel.refreshUsage() }
+        LaunchedEffect(Unit) {
+            viewModel.refreshUsage()
+            viewModel.refreshTrust()
+        }
         SettingsScreen(
             facts = facts,
             onForgetFact = viewModel::forgetFact,
@@ -86,6 +93,11 @@ fun NuaScreen(viewModel: NuaViewModel) {
             onAddGeofence = viewModel::addGeofence,
             onRemoveGeofence = viewModel::removeGeofence,
             usageThisMonth = usageThisMonth,
+            trustScore = trustScore,
+            trustLedger = trustLedger,
+            actionOutcomes = actionOutcomes,
+            autonomySuggestions = autonomySuggestions,
+            onEnableAutoApprove = viewModel::enableAutoApprove,
             onBack = { showSettings = false },
         )
         return

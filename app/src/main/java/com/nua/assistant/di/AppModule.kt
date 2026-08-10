@@ -2,9 +2,12 @@ package com.nua.assistant.di
 
 import android.content.Context
 import androidx.room.Room
+import com.nua.assistant.memory.ActionOutcomeDao
+import com.nua.assistant.memory.AutonomyPreferenceDao
 import com.nua.assistant.memory.GeofenceDao
 import com.nua.assistant.memory.MemoryDao
 import com.nua.assistant.memory.NuaDatabase
+import com.nua.assistant.memory.TrustLedgerDao
 import com.nua.assistant.memory.UsageDao
 import dagger.Module
 import dagger.Provides
@@ -39,6 +42,15 @@ object AppModule {
 
     @Provides
     fun provideGeofenceDao(database: NuaDatabase): GeofenceDao = database.geofenceDao()
+
+    @Provides
+    fun provideTrustLedgerDao(database: NuaDatabase): TrustLedgerDao = database.trustLedgerDao()
+
+    @Provides
+    fun provideActionOutcomeDao(database: NuaDatabase): ActionOutcomeDao = database.actionOutcomeDao()
+
+    @Provides
+    fun provideAutonomyPreferenceDao(database: NuaDatabase): AutonomyPreferenceDao = database.autonomyPreferenceDao()
 
     @Provides
     @Singleton
