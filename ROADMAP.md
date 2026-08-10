@@ -46,21 +46,21 @@ gives every later phase something to build on.
   Full memory-control UI (per-fact "why do you remember this" drill-down, forget-by-type)
   is Phase 8.
 
-## Phase 7 — Goals & Proactive Context Engine 🟡 partially shipped
+## Phase 7 — Goals & Proactive Context Engine ✅ shipped
 
 - ✅ **Context Engine** (`#9`) — `ContextEngine.currentSnapshot()` formalizes the existing
   weather/calendar/connectivity/notification signals into one queryable `ContextSnapshot`
-  with a `describe()` renderer for Claude prompts. `GoalReviewWorker` is the first
-  consumer.
+  with a `describe()` renderer for Claude prompts.
 - ✅ **NUA Goals** (`#6`) — durable goals via `GoalRepository`/`GoalDao`, editable in
   Settings. `GoalReviewWorker` (weekly) checks each active goal against a fresh
   `ContextSnapshot` and asks Claude for at most one concrete observation, or nothing.
-- ⬜ **Daily Briefing rewrite** (`#35`) — morning/evening briefings restructured around
-  the Context Engine instead of the current fixed weather+calendar template. Not started;
-  `MorningBriefing` still gathers its own weather/calendar directly.
-- ⬜ **"What should I do now?" button** (`#36`) — one action, backed entirely by the
-  Context Engine and Goals; no new intelligence needed, just a new entry point into what
-  this phase already builds. Not started.
+- ✅ **Daily Briefing rewrite** (`#35`) — `MorningBriefing` now reads from
+  `ContextEngine.currentSnapshot()` instead of independently querying weather and
+  calendar, so both share one source of truth for "the current situation."
+- ✅ **"What should I do now?" button** (`#36`) — a lightbulb icon in the top bar
+  (`NuaViewModel.whatShouldIDoNow()`) asks `WhatNowAdvisor` for exactly one concrete next
+  action given the current `ContextSnapshot` and active goals — no new intelligence, a
+  dedicated prompt shape over data Context Engine and Goals already produce.
 
 ## Phase 8 — Dreams 2.0 & Second Brain
 

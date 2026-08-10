@@ -22,9 +22,13 @@ data class ContextSnapshot(
     val timestampMillis: Long,
     val isOnline: Boolean,
     val weather: WeatherSnapshot?,
-    val nextEventToday: CalendarEvent?,
+    /** Every event on today's calendar, not just the next one — see [nextEventToday] for that. */
+    val eventsToday: List<CalendarEvent>,
     val notificationSummary: NotificationSummary,
-)
+) {
+    val nextEventToday: CalendarEvent?
+        get() = eventsToday.filter { it.startTimeMillis >= timestampMillis }.minByOrNull { it.startTimeMillis }
+}
 
 /** A plain-English rendering of a snapshot, meant to be dropped straight into a Claude prompt. */
 fun ContextSnapshot.describe(): String {
@@ -39,8 +43,9 @@ fun ContextSnapshot.describe(): String {
                 ),
         )
         appendLine(
-            "Next calendar event today: " + (
-                nextEventToday?.let { "${it.title} at ${timeFormat.format(it.startTimeMillis)}" } ?: "none"
+            "Today's calendar: " + (
+                if (eventsToday.isEmpty()) "nothing scheduled"
+                else eventsToday.joinToString("; ") { "${it.title} at ${timeFormat.format(it.startTimeMillis)}" }
                 ),
         )
         val attention = notificationSummary.needsAttention.size
@@ -59,13 +64,13 @@ class ContextEngine @Inject constructor(
     suspend fun currentSnapshot(): ContextSnapshot {
         val now = System.currentTimeMillis()
         val startOfDay = startOfTodayMillis()
-        val todayEvents = calendarReader.eventsBetween(now, startOfDay + ONE_DAY_MS)
+        val todayEvents = calendarReader.eventsBetween(startOfDay, startOfDay + ONE_DAY_MS)
 
         return ContextSnapshot(
             timestampMillis = now,
             isOnline = connectivityMonitor.isOnline(),
             weather = weatherRepository.currentSnapshot().getOrNull(),
-            nextEventToday = todayEvents.minByOrNull { it.startTimeMillis },
+            eventsToday = todayEvents,
             notificationSummary = notificationRepository.summary(),
         )
     }
