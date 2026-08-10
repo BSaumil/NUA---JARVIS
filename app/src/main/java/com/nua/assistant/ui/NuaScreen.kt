@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
@@ -115,6 +116,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
                 title = { Text("NUA") },
                 actions = {
                     NotificationSummaryChip(notificationSummary)
+                    IconButton(onClick = viewModel::whatShouldIDoNow, enabled = !uiState.isProcessing) {
+                        Icon(Icons.Filled.Lightbulb, contentDescription = "What should I do now?")
+                    }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }

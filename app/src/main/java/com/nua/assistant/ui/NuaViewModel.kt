@@ -20,6 +20,7 @@ import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.briefing.BriefingScheduleStore
 import com.nua.assistant.briefing.BriefingScheduler
+import com.nua.assistant.context.WhatNowAdvisor
 import com.nua.assistant.geofencing.GeofenceManager
 import com.nua.assistant.goals.GoalRepository
 import com.nua.assistant.memory.GeofenceDao
@@ -98,6 +99,7 @@ class NuaViewModel @Inject constructor(
     private val usageTracker: UsageTracker,
     private val trustRepository: TrustRepository,
     private val goalRepository: GoalRepository,
+    private val whatNowAdvisor: WhatNowAdvisor,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -489,6 +491,24 @@ class NuaViewModel @Inject constructor(
 
     fun removeGeofence(id: Long) {
         viewModelScope.launch { geofenceManager.removeGeofence(id) }
+    }
+
+    /** The "What should I do now?" entry point — same chat surface, no typing required. */
+    fun whatShouldIDoNow() {
+        if (_uiState.value.isProcessing) return
+        val prompt = "What should I do now?"
+        _uiState.update {
+            it.copy(isProcessing = true, messages = it.messages + ChatMessage(MessageRole.USER, prompt))
+        }
+        viewModelScope.launch {
+            memoryDao.insertMessage(MessageEntity(role = MessageRole.USER, content = prompt))
+            if (!connectivityMonitor.isOnline()) {
+                respond(offlineMessage(), extractFacts = false)
+                return@launch
+            }
+            val recommendation = whatNowAdvisor.recommend(_pinnedLanguage.value)
+            respond(recommendation, extractFacts = false)
+        }
     }
 
     fun addGoal(text: String) {
