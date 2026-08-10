@@ -74,11 +74,11 @@ gives every later phase something to build on.
   per app open the same way the Trust self-report is ("Something occurred to me..."),
   and visible as a history in Settings.
 - ⬜ **Decision Journal** (`#32`) — not started.
-- ⬜ **Second Brain search** (`#33`) — not started as a dedicated search UI. Partially
-  covered today only in the sense that `replyConversationally`'s existing
-  `FactRelevance`-ranked fact injection already lets you ask NUA about known facts in
-  normal chat — a real dedicated natural-language search over facts/dreams/decisions is
-  still open.
+- ✅ **Second Brain search** (`#33`) — a dedicated natural-language search screen
+  (`SecondBrainSearchScreen`, reachable via a top-bar search icon) over facts and dreams
+  together. `SecondBrainSearch` ranks by the same lexical token-overlap approach as
+  `FactRelevance` rather than embeddings. Decisions will join the ranked result set once
+  Decision Journal (`#32`) exists.
 - ⬜ **Timeline** (`#34`) — not started.
 - ⬜ **Full Memory OS controls** (`#3`, completes Phase 6's partial work) — not started;
   Settings still shows facts in a flat list with type/source/last-used inline, not a
