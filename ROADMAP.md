@@ -62,19 +62,27 @@ gives every later phase something to build on.
   action given the current `ContextSnapshot` and active goals — no new intelligence, a
   dedicated prompt shape over data Context Engine and Goals already produce.
 
-## Phase 8 — Dreams 2.0 & Second Brain
+## Phase 8 — Dreams 2.0 & Second Brain 🟡 partially shipped
 
-- **NUA Dreams 2.0** (`#7`) — the pre-session Dreams plan (one weekly, rate-limited,
-  non-repackaged insight), extended with the categories from the spec (opportunity,
-  pattern, concern, optimisation, relationship, finance, productivity...).
-- **Decision Journal** (`#32`) — optional structured record (options considered, reasoning,
-  choice, outcome) for decisions the user chooses to log, feeding both Dreams and Trust.
-- **Second Brain search** (`#33`) — natural-language search over facts, summaries, and the
-  decision journal ("what did I decide about the cafe?").
-- **Timeline** (`#34`) — a chronological view over logged events/messages/actions; mostly
-  a UI layer over data Phases 6–8 already produce.
-- **Full Memory OS controls** (`#3`, completes Phase 6's partial work) — per-fact
-  "remembered → why → source → confidence → last used → forget" inspector.
+- ✅ **NUA Dreams 2.0** (`#7`) — `DreamSynthesisWorker` (weekly WorkManager job) reviews
+  facts, active-goal observations, and the trust ledger together, asking Claude for
+  exactly one insight that connects at least two of them and isn't a repackaged summary
+  — explicitly instructed to say nothing rather than force one, gated on a minimum
+  signal count so it can't hallucinate connections out of a near-empty database. Ten
+  categories from the spec (`DreamCategory`: opportunity, pattern, reminder, concern,
+  optimization, relationship, finance, productivity, learning, business). Surfaced once
+  per app open the same way the Trust self-report is ("Something occurred to me..."),
+  and visible as a history in Settings.
+- ⬜ **Decision Journal** (`#32`) — not started.
+- ⬜ **Second Brain search** (`#33`) — not started as a dedicated search UI. Partially
+  covered today only in the sense that `replyConversationally`'s existing
+  `FactRelevance`-ranked fact injection already lets you ask NUA about known facts in
+  normal chat — a real dedicated natural-language search over facts/dreams/decisions is
+  still open.
+- ⬜ **Timeline** (`#34`) — not started.
+- ⬜ **Full Memory OS controls** (`#3`, completes Phase 6's partial work) — not started;
+  Settings still shows facts in a flat list with type/source/last-used inline, not a
+  dedicated per-fact drill-down.
 
 ## Phase 9 — Vision & Document Intelligence
 

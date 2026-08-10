@@ -57,6 +57,7 @@ import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
+import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.GoalEntity
 import com.nua.assistant.memory.GoalObservationEntity
@@ -92,6 +93,7 @@ fun SettingsScreen(
     goalObservations: List<GoalObservationEntity>,
     onAddGoal: (String) -> Unit,
     onRemoveGoal: (Long) -> Unit,
+    dreams: List<DreamEntity>,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -120,6 +122,7 @@ fun SettingsScreen(
             item { TrustCard(trustScore, trustLedger, autonomySuggestions, onEnableAutoApprove) }
             item { AuditTrailCard(actionOutcomes) }
             item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
+            item { DreamsCard(dreams) }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -571,6 +574,36 @@ private fun AddGoalDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun DreamsCard(dreams: List<DreamEntity>) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("NUA Dreams", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "At most once a week, NUA looks across everything it knows for one thing " +
+                    "worth pointing out — never a summary of what you already know.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (dreams.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Nothing yet — needs a bit more history to cross-reference.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+                dreams.take(5).forEach { dream ->
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text(dream.text, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            dream.category.name.lowercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

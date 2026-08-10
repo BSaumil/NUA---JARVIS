@@ -21,8 +21,10 @@ import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.briefing.BriefingScheduleStore
 import com.nua.assistant.briefing.BriefingScheduler
 import com.nua.assistant.context.WhatNowAdvisor
+import com.nua.assistant.dreams.DreamRepository
 import com.nua.assistant.geofencing.GeofenceManager
 import com.nua.assistant.goals.GoalRepository
+import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceDao
 import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.GoalEntity
@@ -100,6 +102,7 @@ class NuaViewModel @Inject constructor(
     private val trustRepository: TrustRepository,
     private val goalRepository: GoalRepository,
     private val whatNowAdvisor: WhatNowAdvisor,
+    private val dreamRepository: DreamRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -148,6 +151,9 @@ class NuaViewModel @Inject constructor(
     val goalObservations: StateFlow<List<GoalObservationEntity>> = goalRepository.observeObservations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val dreams: StateFlow<List<DreamEntity>> = dreamRepository.observeRecent()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     // Continuous conversation mode: once woken by voice, keep listening for a few
     // follow-ups without repeating the wake word. Broken by typed input, a listening
     // error/timeout, or after MAX_VOICE_FOLLOW_UPS — never indefinite, so the mic isn't
@@ -169,6 +175,21 @@ class NuaViewModel @Inject constructor(
         voiceManager.setOnFinalSpeechDoneListener { onReplyFinishedSpeaking() }
         viewModelScope.launch { geofenceManager.registerAll() }
         viewModelScope.launch { maybeShowSelfReport() }
+        viewModelScope.launch { maybeShowDream() }
+    }
+
+    /**
+     * Surfaces at most one unshown NUA Dream per app open — DreamSynthesisWorker is what
+     * actually rate-limits how often a new one exists (weekly, and only if there's
+     * something worth saying). Appended silently like the self-report and morning
+     * briefing, in NUA's own voice rather than announced as a notification.
+     */
+    private suspend fun maybeShowDream() {
+        val dream = dreamRepository.nextUnshown() ?: return
+        dreamRepository.markShown(dream.id)
+        val message = "Something occurred to me: ${dream.text}"
+        memoryDao.insertMessage(MessageEntity(role = MessageRole.ASSISTANT, content = message))
+        _uiState.update { it.copy(messages = it.messages + ChatMessage(MessageRole.ASSISTANT, message)) }
     }
 
     /**

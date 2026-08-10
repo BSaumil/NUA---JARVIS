@@ -10,6 +10,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import com.nua.assistant.dreams.DreamCategory
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.TrustEventType
 import kotlinx.coroutines.flow.Flow
@@ -227,6 +228,34 @@ interface GoalDao {
     fun observeAllObservations(): Flow<List<GoalObservationEntity>>
 }
 
+/** One NUA Dream — a rate-limited, non-obvious insight synthesized across memory. See dreams/DreamSynthesisWorker.kt. */
+@Entity(tableName = "dreams")
+data class DreamEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val category: DreamCategory,
+    val text: String,
+    val shown: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface DreamDao {
+    @Insert
+    suspend fun insert(dream: DreamEntity): Long
+
+    @Query("SELECT * FROM dreams WHERE shown = 0 ORDER BY timestamp ASC LIMIT 1")
+    suspend fun oldestUnshown(): DreamEntity?
+
+    @Query("UPDATE dreams SET shown = 1 WHERE id = :id")
+    suspend fun markShown(id: Long)
+
+    @Query("SELECT * FROM dreams ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<DreamEntity>
+
+    @Query("SELECT * FROM dreams ORDER BY timestamp DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<DreamEntity>>
+}
+
 @Dao
 interface MemoryDao {
 
@@ -316,9 +345,9 @@ interface MemoryDao {
     entities = [
         MessageEntity::class, UserFactEntity::class, UsageLogEntity::class, GeofenceEntity::class,
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
-        GoalEntity::class, GoalObservationEntity::class,
+        GoalEntity::class, GoalObservationEntity::class, DreamEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -329,4 +358,5 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun actionOutcomeDao(): ActionOutcomeDao
     abstract fun autonomyPreferenceDao(): AutonomyPreferenceDao
     abstract fun goalDao(): GoalDao
+    abstract fun dreamDao(): DreamDao
 }
