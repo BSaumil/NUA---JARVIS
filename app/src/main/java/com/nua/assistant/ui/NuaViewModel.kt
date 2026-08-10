@@ -11,6 +11,8 @@ import com.nua.assistant.ai.FactExtractor
 import com.nua.assistant.ai.FactRelevance
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.PersonalityEngine
+import com.nua.assistant.ai.SecondBrainResult
+import com.nua.assistant.ai.SecondBrainSearch
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.ai.TaskPlanner
 import com.nua.assistant.ai.UsageSummary
@@ -59,6 +61,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -153,6 +156,17 @@ class NuaViewModel @Inject constructor(
 
     val dreams: StateFlow<List<DreamEntity>> = dreamRepository.observeRecent()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _secondBrainQuery = MutableStateFlow("")
+    val secondBrainQuery: StateFlow<String> = _secondBrainQuery.asStateFlow()
+
+    val secondBrainResults: StateFlow<List<SecondBrainResult>> = combine(_secondBrainQuery, facts, dreams) { query, facts, dreams ->
+        SecondBrainSearch.search(query, facts, dreams)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun updateSecondBrainQuery(query: String) {
+        _secondBrainQuery.value = query
+    }
 
     // Continuous conversation mode: once woken by voice, keep listening for a few
     // follow-ups without repeating the wake word. Broken by typed input, a listening

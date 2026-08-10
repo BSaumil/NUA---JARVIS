@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -75,7 +76,20 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val goals by viewModel.goals.collectAsState()
     val goalObservations by viewModel.goalObservations.collectAsState()
     val dreams by viewModel.dreams.collectAsState()
+    val secondBrainQuery by viewModel.secondBrainQuery.collectAsState()
+    val secondBrainResults by viewModel.secondBrainResults.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
+    var showSecondBrainSearch by remember { mutableStateOf(false) }
+
+    if (showSecondBrainSearch) {
+        SecondBrainSearchScreen(
+            query = secondBrainQuery,
+            onQueryChange = viewModel::updateSecondBrainQuery,
+            results = secondBrainResults,
+            onBack = { showSecondBrainSearch = false },
+        )
+        return
+    }
 
     if (showSettings) {
         LaunchedEffect(Unit) {
@@ -120,6 +134,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     NotificationSummaryChip(notificationSummary)
                     IconButton(onClick = viewModel::whatShouldIDoNow, enabled = !uiState.isProcessing) {
                         Icon(Icons.Filled.Lightbulb, contentDescription = "What should I do now?")
+                    }
+                    IconButton(onClick = { showSecondBrainSearch = true }) {
+                        Icon(Icons.Filled.Search, contentDescription = "Search your Second Brain")
                     }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
