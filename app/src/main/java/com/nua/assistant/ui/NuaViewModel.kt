@@ -23,9 +23,11 @@ import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.briefing.BriefingScheduleStore
 import com.nua.assistant.briefing.BriefingScheduler
 import com.nua.assistant.context.WhatNowAdvisor
+import com.nua.assistant.decisions.DecisionRepository
 import com.nua.assistant.dreams.DreamRepository
 import com.nua.assistant.geofencing.GeofenceManager
 import com.nua.assistant.goals.GoalRepository
+import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceDao
 import com.nua.assistant.memory.GeofenceEntity
@@ -106,6 +108,7 @@ class NuaViewModel @Inject constructor(
     private val goalRepository: GoalRepository,
     private val whatNowAdvisor: WhatNowAdvisor,
     private val dreamRepository: DreamRepository,
+    private val decisionRepository: DecisionRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -157,15 +160,31 @@ class NuaViewModel @Inject constructor(
     val dreams: StateFlow<List<DreamEntity>> = dreamRepository.observeRecent()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val decisions: StateFlow<List<DecisionEntity>> = decisionRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val _secondBrainQuery = MutableStateFlow("")
     val secondBrainQuery: StateFlow<String> = _secondBrainQuery.asStateFlow()
 
-    val secondBrainResults: StateFlow<List<SecondBrainResult>> = combine(_secondBrainQuery, facts, dreams) { query, facts, dreams ->
-        SecondBrainSearch.search(query, facts, dreams)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val secondBrainResults: StateFlow<List<SecondBrainResult>> =
+        combine(_secondBrainQuery, facts, dreams, decisions) { query, facts, dreams, decisions ->
+            SecondBrainSearch.search(query, facts, dreams, decisions)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun updateSecondBrainQuery(query: String) {
         _secondBrainQuery.value = query
+    }
+
+    fun addDecision(decision: String, reasoning: String?) {
+        viewModelScope.launch { decisionRepository.record(decision, reasoning) }
+    }
+
+    fun recordDecisionOutcome(id: Long, outcome: String) {
+        viewModelScope.launch { decisionRepository.recordOutcome(id, outcome) }
+    }
+
+    fun removeDecision(id: Long) {
+        viewModelScope.launch { decisionRepository.delete(id) }
     }
 
     // Continuous conversation mode: once woken by voice, keep listening for a few

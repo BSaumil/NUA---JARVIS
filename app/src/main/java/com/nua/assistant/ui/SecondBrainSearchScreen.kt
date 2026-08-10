@@ -105,6 +105,20 @@ private fun SecondBrainResultCard(result: SecondBrainResult) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                is SecondBrainResult.DecisionHit -> {
+                    Text(
+                        text = "Decision",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(text = result.decision.decision, style = MaterialTheme.typography.bodyMedium)
+                    result.decision.reasoning?.let {
+                        Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    result.decision.outcome?.let {
+                        Text("Outcome: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
         }
     }

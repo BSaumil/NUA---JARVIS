@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.nua.assistant.memory.ActionOutcomeDao
 import com.nua.assistant.memory.AutonomyPreferenceDao
+import com.nua.assistant.memory.DecisionDao
 import com.nua.assistant.memory.DreamDao
 import com.nua.assistant.memory.GeofenceDao
 import com.nua.assistant.memory.GoalDao
@@ -59,6 +60,9 @@ object AppModule {
 
     @Provides
     fun provideDreamDao(database: NuaDatabase): DreamDao = database.dreamDao()
+
+    @Provides
+    fun provideDecisionDao(database: NuaDatabase): DecisionDao = database.decisionDao()
 
     @Provides
     @Singleton

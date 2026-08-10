@@ -1,6 +1,7 @@
 package com.nua.assistant.ai
 
 import com.nua.assistant.dreams.DreamCategory
+import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.UserFactEntity
 import org.junit.Assert.assertEquals
@@ -14,6 +15,9 @@ class SecondBrainSearchTest {
 
     private fun dream(id: Long, text: String, category: DreamCategory = DreamCategory.PATTERN) =
         DreamEntity(id = id, category = category, text = text)
+
+    private fun decision(id: Long, decision: String, reasoning: String? = null, outcome: String? = null) =
+        DecisionEntity(id = id, decision = decision, reasoning = reasoning, outcome = outcome)
 
     @Test
     fun `blank query returns nothing`() {
@@ -65,5 +69,20 @@ class SecondBrainSearchTest {
         val facts = (1..50).map { fact(it.toLong(), "budget note $it") }
         val results = SecondBrainSearch.search(query = "budget", facts = facts, dreams = emptyList(), limit = 10)
         assertEquals(10, results.size)
+    }
+
+    @Test
+    fun `matches decisions by decision, reasoning, and outcome text`() {
+        val results = SecondBrainSearch.search(
+            query = "four day week",
+            facts = emptyList(),
+            dreams = emptyList(),
+            decisions = listOf(
+                decision(1, "Switching to a four-day work week", reasoning = "Burnout was creeping in"),
+                decision(2, "Adopted a new budgeting app", outcome = "Cut grocery spending by switching stores"),
+            ),
+        )
+        assertEquals(1, results.size)
+        assertEquals(1L, (results.first() as SecondBrainResult.DecisionHit).decision.id)
     }
 }
