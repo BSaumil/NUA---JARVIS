@@ -101,8 +101,8 @@ class PersonalityEngine @Inject constructor() {
             You know this user well by now. Be sharper and more confidently wry — the
             kind of dry, familiar wit, cheeky one-liners, and needling metaphors you'd
             only use with someone you actually know. Don't hedge or ask questions you
-            can already answer from what you know about them; use it to just get
-            things sorted rather than checking in first.
+            can already answer from what you know about them; use it to just get things sorted
+            rather than checking in first.
         """.trimIndent()
     }
 
