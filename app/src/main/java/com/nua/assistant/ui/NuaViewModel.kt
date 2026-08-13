@@ -43,6 +43,8 @@ import com.nua.assistant.network.ConnectivityMonitor
 import com.nua.assistant.notifications.NotificationReplySender
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.notifications.NotificationSummary
+import com.nua.assistant.timeline.TimelineBuilder
+import com.nua.assistant.timeline.TimelineEntry
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.memory.ActionOutcomeEntity
@@ -162,6 +164,11 @@ class NuaViewModel @Inject constructor(
 
     val decisions: StateFlow<List<DecisionEntity>> = decisionRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val timeline: StateFlow<List<TimelineEntry>> =
+        combine(facts, dreams, decisions, goalObservations) { facts, dreams, decisions, goalObservations ->
+            TimelineBuilder.build(facts, dreams, decisions, goalObservations)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _secondBrainQuery = MutableStateFlow("")
     val secondBrainQuery: StateFlow<String> = _secondBrainQuery.asStateFlow()

@@ -81,7 +81,10 @@ gives every later phase something to build on.
   (`SecondBrainSearchScreen`, reachable via a top-bar search icon) over facts, dreams,
   and decisions together. `SecondBrainSearch` ranks by the same lexical token-overlap
   approach as `FactRelevance` rather than embeddings.
-- ⬜ **Timeline** (`#34`) — not started.
+- ✅ **Timeline** (`#34`) — a chronological feed (`TimelineScreen`, reachable via a
+  top-bar history icon) merging facts, dreams, decisions (both logged and their
+  outcomes), and goal observations by timestamp. No new storage — `TimelineBuilder`
+  just reads back the existing memory surfaces in the order things actually happened.
 - ⬜ **Full Memory OS controls** (`#3`, completes Phase 6's partial work) — not started;
   Settings still shows facts in a flat list with type/source/last-used inline, not a
   dedicated per-fact drill-down.

@@ -292,7 +292,7 @@ way they are.
    action given the current `ContextSnapshot` and active goals, shown as a normal chat
    reply — the zero-typing entry point into everything this phase built.
 
-## Phase 8 — NUA Dreams 2.0, Decision Journal & Second Brain search (partial)
+## Phase 8 — NUA Dreams 2.0, Decision Journal, Second Brain search & Timeline (partial)
 
 **NUA Dreams.** `DreamSynthesisWorker` runs at most once a week and looks across known
 facts, recent goal observations, and the trust ledger together for exactly one insight
@@ -315,8 +315,13 @@ together, ranked by the same lexical token-overlap approach as `FactRelevance`
 (`SecondBrainSearch`). Distinct from chat, where `FactRelevance` quietly injects relevant
 facts into replies — this is an explicit, standalone lookup.
 
-Still open from Phase 8's full scope in `ROADMAP.md`: a Timeline view and the full
-per-fact Memory OS inspector.
+**Timeline.** A chronological feed (history icon in the top bar) merging facts, dreams,
+decisions, and goal observations by timestamp into one scrollable view — `TimelineBuilder`
+reads back the existing memory surfaces in the order things actually happened rather than
+introducing new storage of its own.
+
+Still open from Phase 8's full scope in `ROADMAP.md`: the full per-fact Memory OS
+inspector.
 
 ## Languages
 
