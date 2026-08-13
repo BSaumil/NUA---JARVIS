@@ -73,12 +73,14 @@ gives every later phase something to build on.
   optimization, relationship, finance, productivity, learning, business). Surfaced once
   per app open the same way the Trust self-report is ("Something occurred to me..."),
   and visible as a history in Settings.
-- ⬜ **Decision Journal** (`#32`) — not started.
+- ✅ **Decision Journal** (`#32`) — `DecisionEntity`/`DecisionRepository` let you log a
+  decision and why, then come back later and record how it turned out, from a
+  `DecisionsCard` in Settings mirroring the Goals/Dreams cards. No automatic capture —
+  this is deliberately a place you write to, not something NUA infers on its own.
 - ✅ **Second Brain search** (`#33`) — a dedicated natural-language search screen
-  (`SecondBrainSearchScreen`, reachable via a top-bar search icon) over facts and dreams
-  together. `SecondBrainSearch` ranks by the same lexical token-overlap approach as
-  `FactRelevance` rather than embeddings. Decisions will join the ranked result set once
-  Decision Journal (`#32`) exists.
+  (`SecondBrainSearchScreen`, reachable via a top-bar search icon) over facts, dreams,
+  and decisions together. `SecondBrainSearch` ranks by the same lexical token-overlap
+  approach as `FactRelevance` rather than embeddings.
 - ⬜ **Timeline** (`#34`) — not started.
 - ⬜ **Full Memory OS controls** (`#3`, completes Phase 6's partial work) — not started;
   Settings still shows facts in a flat list with type/source/last-used inline, not a

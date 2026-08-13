@@ -292,7 +292,7 @@ way they are.
    action given the current `ContextSnapshot` and active goals, shown as a normal chat
    reply — the zero-typing entry point into everything this phase built.
 
-## Phase 8 — NUA Dreams 2.0 & Second Brain search (partial)
+## Phase 8 — NUA Dreams 2.0, Decision Journal & Second Brain search (partial)
 
 **NUA Dreams.** `DreamSynthesisWorker` runs at most once a week and looks across known
 facts, recent goal observations, and the trust ledger together for exactly one insight
@@ -304,14 +304,18 @@ pattern, reminder, concern, optimization, relationship, finance, productivity, l
 business. Surfaced once per app open the same way the Trust self-report is ("Something
 occurred to me...") and kept visible as a history in Settings.
 
-**Second Brain search.** A dedicated search screen (search icon in the top bar) over
-everything NUA remembers or has noticed — facts and dreams together, ranked by the same
-lexical token-overlap approach as `FactRelevance` (`SecondBrainSearch`). Distinct from
-chat, where `FactRelevance` quietly injects relevant facts into replies — this is an
-explicit, standalone lookup.
+**Decision Journal.** A `DecisionsCard` in Settings for logging a decision and (optionally)
+the reasoning behind it, then coming back later to record how it turned out. Unlike Dreams
+and Goal observations, nothing here is inferred by NUA — it's a place you write to
+deliberately, backed by `DecisionEntity`/`DecisionRepository`.
 
-Still open from Phase 8's full scope in `ROADMAP.md`: a Decision Journal (once it
-exists, decisions join the Second Brain search results), a Timeline view, and the full
+**Second Brain search.** A dedicated search screen (search icon in the top bar) over
+everything NUA remembers, has noticed, or has logged — facts, dreams, and decisions
+together, ranked by the same lexical token-overlap approach as `FactRelevance`
+(`SecondBrainSearch`). Distinct from chat, where `FactRelevance` quietly injects relevant
+facts into replies — this is an explicit, standalone lookup.
+
+Still open from Phase 8's full scope in `ROADMAP.md`: a Timeline view and the full
 per-fact Memory OS inspector.
 
 ## Languages

@@ -57,6 +57,7 @@ import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
+import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.GoalEntity
@@ -94,6 +95,10 @@ fun SettingsScreen(
     onAddGoal: (String) -> Unit,
     onRemoveGoal: (Long) -> Unit,
     dreams: List<DreamEntity>,
+    decisions: List<DecisionEntity>,
+    onAddDecision: (decision: String, reasoning: String?) -> Unit,
+    onRecordDecisionOutcome: (id: Long, outcome: String) -> Unit,
+    onRemoveDecision: (Long) -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -123,6 +128,7 @@ fun SettingsScreen(
             item { AuditTrailCard(actionOutcomes) }
             item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
             item { DreamsCard(dreams) }
+            item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -604,6 +610,133 @@ private fun DreamsCard(dreams: List<DreamEntity>) {
             }
         }
     }
+}
+
+@Composable
+private fun DecisionsCard(
+    decisions: List<DecisionEntity>,
+    onAdd: (decision: String, reasoning: String?) -> Unit,
+    onRecordOutcome: (id: Long, outcome: String) -> Unit,
+    onRemove: (Long) -> Unit,
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var outcomeTargetId by remember { mutableStateOf<Long?>(null) }
+
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Decision Journal", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Decisions worth remembering why you made — and, later, how they turned out.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            if (decisions.isEmpty()) {
+                Text("Nothing logged yet.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                decisions.forEach { decision ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(vertical = 4.dp)) {
+                            Text(decision.decision, style = MaterialTheme.typography.bodyMedium)
+                            if (decision.reasoning != null) {
+                                Text(
+                                    decision.reasoning,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (decision.outcome != null) {
+                                Text(
+                                    "Outcome: ${decision.outcome}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            } else {
+                                TextButton(onClick = { outcomeTargetId = decision.id }) { Text("Record outcome") }
+                            }
+                        }
+                        IconButton(onClick = { onRemove(decision.id) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Remove decision")
+                        }
+                    }
+                }
+            }
+            TextButton(onClick = { showAddDialog = true }) { Text("Log a decision") }
+        }
+    }
+
+    if (showAddDialog) {
+        AddDecisionDialog(
+            onConfirm = { decision, reasoning ->
+                onAdd(decision, reasoning)
+                showAddDialog = false
+            },
+            onDismiss = { showAddDialog = false },
+        )
+    }
+
+    outcomeTargetId?.let { id ->
+        RecordOutcomeDialog(
+            onConfirm = { outcome ->
+                onRecordOutcome(id, outcome)
+                outcomeTargetId = null
+            },
+            onDismiss = { outcomeTargetId = null },
+        )
+    }
+}
+
+@Composable
+private fun AddDecisionDialog(onConfirm: (decision: String, reasoning: String?) -> Unit, onDismiss: () -> Unit) {
+    var decision by remember { mutableStateOf("") }
+    var reasoning by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Log a decision") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = decision,
+                    onValueChange = { decision = it },
+                    placeholder = { Text("e.g. \"Switching to a 4-day work week\"") },
+                )
+                OutlinedTextField(
+                    value = reasoning,
+                    onValueChange = { reasoning = it },
+                    placeholder = { Text("Why (optional)") },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (decision.isNotBlank()) onConfirm(decision, reasoning.ifBlank { null }) },
+                enabled = decision.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun RecordOutcomeDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var outcome by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("How did it turn out?") },
+        text = {
+            OutlinedTextField(
+                value = outcome,
+                onValueChange = { outcome = it },
+                placeholder = { Text("What happened") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { if (outcome.isNotBlank()) onConfirm(outcome) }, enabled = outcome.isNotBlank()) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

@@ -238,6 +238,35 @@ data class DreamEntity(
     val timestamp: Long = System.currentTimeMillis(),
 )
 
+/**
+ * One entry in the Decision Journal — a decision the user made, why, and (once it's known)
+ * how it turned out. Written at decision time, [outcome] filled in later on reflection.
+ */
+@Entity(tableName = "decisions")
+data class DecisionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val decision: String,
+    val reasoning: String? = null,
+    val outcome: String? = null,
+    val decidedAt: Long = System.currentTimeMillis(),
+    val outcomeRecordedAt: Long? = null,
+)
+
+@Dao
+interface DecisionDao {
+    @Insert
+    suspend fun insert(decision: DecisionEntity): Long
+
+    @Query("UPDATE decisions SET outcome = :outcome, outcomeRecordedAt = :recordedAt WHERE id = :id")
+    suspend fun recordOutcome(id: Long, outcome: String, recordedAt: Long)
+
+    @Query("DELETE FROM decisions WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM decisions ORDER BY decidedAt DESC")
+    fun observeAll(): Flow<List<DecisionEntity>>
+}
+
 @Dao
 interface DreamDao {
     @Insert
@@ -345,9 +374,9 @@ interface MemoryDao {
     entities = [
         MessageEntity::class, UserFactEntity::class, UsageLogEntity::class, GeofenceEntity::class,
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
-        GoalEntity::class, GoalObservationEntity::class, DreamEntity::class,
+        GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -359,4 +388,5 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun autonomyPreferenceDao(): AutonomyPreferenceDao
     abstract fun goalDao(): GoalDao
     abstract fun dreamDao(): DreamDao
+    abstract fun decisionDao(): DecisionDao
 }
