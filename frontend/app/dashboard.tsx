@@ -27,17 +27,23 @@ export default function DashboardScreen() {
   const [actionResp, setActionResp] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  const [trust, setTrust] = useState<any>(null);
+  const [latestDream, setLatestDream] = useState<any>(null);
+
   useFocusEffect(useCallback(() => { loadAll(); }, []));
 
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [d, w, n] = await Promise.all([
+      const [d, w, n, t, dr] = await Promise.all([
         fetch(`${API}/api/dashboard`).then(r => r.json()),
         fetch(`${API}/api/weather`).then(r => r.json()),
         fetch(`${API}/api/news`).then(r => r.json()),
+        fetch(`${API}/api/trust`).then(r => r.json()),
+        fetch(`${API}/api/dreams`).then(r => r.json()),
       ]);
       setDash(d); setWeather(w); setNews(n.articles || []);
+      setTrust(t); setLatestDream(dr.dreams?.[0] || null);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
@@ -87,6 +93,34 @@ export default function DashboardScreen() {
                 ))}
               </ScrollView>
             )}
+          </View>
+        )}
+
+        {/* Trust Score Widget */}
+        {trust && (
+          <View testID="trust-widget" style={st.trustCard}>
+            <View style={st.trustRow}>
+              <View>
+                <Text style={st.trustScore}>{trust.score}%</Text>
+                <Text style={st.trustLevel}>{trust.level}</Text>
+              </View>
+              <View style={st.trustMeter}>
+                <View style={[st.trustFill, { width: `${trust.score}%` }]} />
+              </View>
+            </View>
+            <Text style={st.trustLabel}>NUA TRUST SCORE • {trust.total_events || 0} events tracked</Text>
+          </View>
+        )}
+
+        {/* Latest Dream */}
+        {latestDream && (
+          <View testID="dream-widget" style={[st.dreamWidget, { borderLeftColor: '#A855F7' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <Ionicons name="sparkles" size={14} color="#A855F7" />
+              <Text style={{ fontSize: 9, color: '#A855F7', fontWeight: '700', letterSpacing: 1 }}>LATEST NUA DREAM</Text>
+            </View>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginBottom: 2 }}>{latestDream.title}</Text>
+            <Text style={{ fontSize: 11, color: C.textSec, lineHeight: 16 }} numberOfLines={2}>{latestDream.content}</Text>
           </View>
         )}
 
@@ -230,4 +264,12 @@ const st = StyleSheet.create({
   remCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.surfEl, borderRadius: 8, padding: 10, marginBottom: 4 },
   remDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.warn },
   remTitle: { fontSize: 12, color: C.text },
+  trustCard: { backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.hudBorder, borderRadius: 14, padding: 14, marginBottom: 14 },
+  trustRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  trustScore: { fontSize: 32, fontWeight: '900', color: C.accent },
+  trustLevel: { fontSize: 11, color: C.primary, fontWeight: '600' },
+  trustMeter: { flex: 1, height: 8, backgroundColor: C.border, borderRadius: 4 },
+  trustFill: { height: 8, backgroundColor: C.accent, borderRadius: 4 },
+  trustLabel: { fontSize: 8, color: C.textTer, letterSpacing: 1.5, marginTop: 8, textTransform: 'uppercase' },
+  dreamWidget: { backgroundColor: C.surfEl, borderWidth: 1, borderColor: C.border, borderLeftWidth: 3, borderRadius: 10, padding: 12, marginBottom: 14 },
 });
