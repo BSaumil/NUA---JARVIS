@@ -81,7 +81,10 @@ gives every later phase something to build on.
   (`SecondBrainSearchScreen`, reachable via a top-bar search icon) over facts, dreams,
   and decisions together. `SecondBrainSearch` ranks by the same lexical token-overlap
   approach as `FactRelevance` rather than embeddings.
-- ⬜ **Timeline** (`#34`) — not started.
+- ✅ **Timeline** (`#34`) — a chronological feed (`TimelineScreen`, reachable via a
+  top-bar history icon) merging facts, dreams, decisions (both logged and their
+  outcomes), and goal observations by timestamp. No new storage — `TimelineBuilder`
+  just reads back the existing memory surfaces in the order things actually happened.
 - ⬜ **Full Memory OS controls** (`#3`, completes Phase 6's partial work) — not started;
   Settings still shows facts in a flat list with type/source/last-used inline, not a
   dedicated per-fact drill-down.
@@ -114,15 +117,38 @@ gives every later phase something to build on.
   calendar, email, automation, Wear, Auto) with specific failure reasons, not "something
   went wrong."
 
-## Phase 12 — Visual Identity & Command Centre
+## Phase 12 — Inner Life & Command Centre
 
-The full redesign (`#14`–`#17`, `#38`–`#42`): color system, dark theme tokens, the NUA
-Orb and its state animations, five-destination navigation (Home / Ask / Memory / Act /
-You), the home dashboard, information-hierarchy labeling (Now/Next/Later/Memory/Insight/
-Action/Alert), animation timing, and accessibility (dynamic type, TalkBack, reduced
-motion, haptics). Deliberately sequenced after Phases 7–9 so the dashboard has Goals,
-Context Engine, and Dreams data to actually show — building the shell first would mean
-either empty cards or fabricated demo content.
+The full redesign (`#8`, `#13`–`#17`, `#37`–`#42`): a real internal-state model, color
+system, dark theme tokens, the NUA Orb and its state animations, five-destination
+navigation (Home / Ask / Memory / Act / You), the home dashboard, a command palette,
+information-hierarchy labeling (Now/Next/Later/Memory/Insight/Action/Alert), animation
+timing, and accessibility (dynamic type, TalkBack, reduced motion, haptics). Deliberately
+sequenced after Phases 7–9 so the dashboard has Goals, Context Engine, and Dreams data to
+actually show — building the shell first would mean either empty cards or fabricated
+demo content.
+
+- **NUA Inner Life** (`#8`) — a `NuaState` model (focus, confidence, current objective,
+  current context, workload, recent mistakes, pending tasks, user availability) computed
+  from data Phases 6–9 already produce, not new fabricated state. The home screen becomes
+  a rendering of this state ("3 things need your attention") rather than a chat window.
+- **Personal Command Centre** (`#13`) — the home screen itself: today's summary, an
+  intelligence card ("NUA noticed something," sourced from Dreams), an action card
+  (sourced from What Now), and the Orb/voice entry point. Chat remains reachable, just
+  not the default surface.
+- **Visual identity & dark UI** (`#14`, `#15`, `#16`) — the orange/violet/pink system,
+  near-black dark theme as default, and the "clean, large type, soft glass, restrained
+  gradient" design language.
+- **The NUA Orb** (`#17`) — one component with distinct idle/listening/thinking/acting/
+  warning/success/error/offline states, meant to be recognizable on sight rather than a
+  generic glowing circle.
+- **Command Palette** (`#37`) — a global search/action surface (`⌘/`-equivalent) over
+  memories, people, tasks, actions, and settings.
+- **Navigation & information hierarchy** (`#38`, `#40`) — the five destinations plus the
+  Now/Next/Later/Memory/Insight/Action/Alert labeling scheme applied consistently.
+- **Animation language & accessibility** (`#41`, `#42`) — the 150/250/400–600ms timing
+  scale, and dynamic type, TalkBack, reduced motion, and haptics as requirements for this
+  phase, not an afterthought.
 
 ## Phase 13 — Voice-First & Personality Depth
 

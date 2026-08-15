@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -77,10 +78,12 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val goalObservations by viewModel.goalObservations.collectAsState()
     val dreams by viewModel.dreams.collectAsState()
     val decisions by viewModel.decisions.collectAsState()
+    val timeline by viewModel.timeline.collectAsState()
     val secondBrainQuery by viewModel.secondBrainQuery.collectAsState()
     val secondBrainResults by viewModel.secondBrainResults.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     var showSecondBrainSearch by remember { mutableStateOf(false) }
+    var showTimeline by remember { mutableStateOf(false) }
 
     if (showSecondBrainSearch) {
         SecondBrainSearchScreen(
@@ -89,6 +92,11 @@ fun NuaScreen(viewModel: NuaViewModel) {
             results = secondBrainResults,
             onBack = { showSecondBrainSearch = false },
         )
+        return
+    }
+
+    if (showTimeline) {
+        TimelineScreen(entries = timeline, onBack = { showTimeline = false })
         return
     }
 
@@ -142,6 +150,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     }
                     IconButton(onClick = { showSecondBrainSearch = true }) {
                         Icon(Icons.Filled.Search, contentDescription = "Search your Second Brain")
+                    }
+                    IconButton(onClick = { showTimeline = true }) {
+                        Icon(Icons.Filled.History, contentDescription = "Timeline")
                     }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
