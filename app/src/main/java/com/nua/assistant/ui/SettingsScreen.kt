@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -62,6 +63,7 @@ import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.GoalEntity
 import com.nua.assistant.memory.GoalObservationEntity
+import com.nua.assistant.memory.MemoryType
 import com.nua.assistant.memory.TrustLedgerEntity
 import com.nua.assistant.memory.UserFactEntity
 import com.nua.assistant.services.WakePhrases
@@ -73,6 +75,7 @@ import com.nua.assistant.voice.NuaLanguage
 fun SettingsScreen(
     facts: List<UserFactEntity>,
     onForgetFact: (Long) -> Unit,
+    onForgetFactsByType: (MemoryType) -> Unit,
     pinnedLanguage: NuaLanguage?,
     onLanguageSelected: (NuaLanguage?) -> Unit,
     briefingSchedule: BriefingSchedule,
@@ -101,6 +104,10 @@ fun SettingsScreen(
     onRemoveDecision: (Long) -> Unit,
     onBack: () -> Unit,
 ) {
+    var selectedMemoryType by remember { mutableStateOf<MemoryType?>(null) }
+    var selectedFact by remember { mutableStateOf<UserFactEntity?>(null) }
+    val visibleFacts = if (selectedMemoryType == null) facts else facts.filter { it.memoryType == selectedMemoryType }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -133,20 +140,94 @@ fun SettingsScreen(
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
 
-            if (facts.isEmpty()) {
-                item { Text("Nothing yet — facts are picked up naturally as you chat.", style = MaterialTheme.typography.bodyMedium) }
-            } else {
-                items(facts, key = { it.id }) { fact -> FactRow(fact, onForget = { onForgetFact(fact.id) }) }
+            if (facts.isNotEmpty()) {
+                item { MemoryTypeFilterRow(selected = selectedMemoryType, onSelect = { selectedMemoryType = it }) }
             }
+
+            if (selectedMemoryType != null && visibleFacts.isNotEmpty()) {
+                item {
+                    TextButton(onClick = { onForgetFactsByType(selectedMemoryType!!) }) {
+                        Text("Forget all ${visibleFacts.size} ${selectedMemoryType!!.name.lowercase()} facts")
+                    }
+                }
+            }
+
+            if (visibleFacts.isEmpty()) {
+                val message = if (facts.isEmpty()) {
+                    "Nothing yet — facts are picked up naturally as you chat."
+                } else {
+                    "No facts of this type."
+                }
+                item { Text(message, style = MaterialTheme.typography.bodyMedium) }
+            } else {
+                items(visibleFacts, key = { it.id }) { fact ->
+                    FactRow(fact, onTap = { selectedFact = fact }, onForget = { onForgetFact(fact.id) })
+                }
+            }
+        }
+    }
+
+    selectedFact?.let { fact ->
+        FactDetailDialog(
+            fact = fact,
+            onForget = {
+                onForgetFact(fact.id)
+                selectedFact = null
+            },
+            onDismiss = { selectedFact = null },
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MemoryTypeFilterRow(selected: MemoryType?, onSelect: (MemoryType?) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = selected == null, onClick = { onSelect(null) }, label = { Text("All") })
+        MemoryType.entries.forEach { type ->
+            FilterChip(
+                selected = selected == type,
+                onClick = { onSelect(type) },
+                label = { Text(type.name.lowercase().replaceFirstChar(Char::uppercase)) },
+            )
         }
     }
 }
 
 @Composable
-private fun FactRow(fact: UserFactEntity, onForget: () -> Unit) {
+private fun FactDetailDialog(fact: UserFactEntity, onForget: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(fact.value) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                FactDetailRow("Category", fact.category)
+                FactDetailRow("Memory type", fact.memoryType.name.lowercase())
+                FactDetailRow("Why NUA remembers this", fact.source ?: "Not recorded")
+                FactDetailRow("Confidence", "${(fact.confidence * 100).toInt()}%")
+                FactDetailRow("Learned", relativeDaysAgo(fact.createdAt))
+                FactDetailRow("Last updated", relativeDaysAgo(fact.updatedAt))
+                FactDetailRow("Last used in conversation", fact.lastUsedAt?.let { relativeDaysAgo(it) } ?: "Never")
+            }
+        },
+        confirmButton = { TextButton(onClick = onForget) { Text("Forget this") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun FactDetailRow(label: String, value: String) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun FactRow(fact: UserFactEntity, onTap: () -> Unit, onForget: () -> Unit) {
     Card {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onTap).padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
