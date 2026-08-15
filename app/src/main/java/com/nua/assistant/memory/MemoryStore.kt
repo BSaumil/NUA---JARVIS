@@ -327,6 +327,9 @@ interface MemoryDao {
     @Query("DELETE FROM user_facts WHERE id = :id")
     suspend fun deleteFactById(id: Long)
 
+    @Query("DELETE FROM user_facts WHERE memoryType = :memoryType")
+    suspend fun deleteFactsByType(memoryType: MemoryType)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertFact(fact: UserFactEntity): Long
 

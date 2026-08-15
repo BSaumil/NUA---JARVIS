@@ -108,6 +108,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
         SettingsScreen(
             facts = facts,
             onForgetFact = viewModel::forgetFact,
+            onForgetFactsByType = viewModel::forgetFactsByType,
             pinnedLanguage = pinnedLanguage,
             onLanguageSelected = viewModel::setPinnedLanguage,
             briefingSchedule = briefingSchedule,

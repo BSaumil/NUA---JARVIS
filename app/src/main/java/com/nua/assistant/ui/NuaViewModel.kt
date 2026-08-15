@@ -521,6 +521,10 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch { memoryDao.deleteFactById(factId) }
     }
 
+    fun forgetFactsByType(memoryType: MemoryType) {
+        viewModelScope.launch { memoryDao.deleteFactsByType(memoryType) }
+    }
+
     /** Null pins nothing — NUA goes back to auto-mirroring whatever language the user writes/speaks in. */
     fun setPinnedLanguage(language: NuaLanguage?) {
         languagePreferenceStore.setPinnedLanguage(language)

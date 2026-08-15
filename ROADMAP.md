@@ -40,11 +40,10 @@ gives every later phase something to build on.
   `ESTABLISHED` familiarity tier, rate-limited to at most once every 14 days, and only
   when there's something to report, NUA now surfaces an unprompted summary of what it's
   gotten wrong since the last report.
-- **Memory OS typing, partial** (`#3`) — `UserFactEntity` gained a `MemoryType`
+- **Memory OS typing** (`#3`) — `UserFactEntity` gained a `MemoryType`
   (identity / episodic / semantic / behavioral / emotional / relationship), `source`, and
   `confidence`, so Settings can show *why* something is remembered, not just that it is.
-  Full memory-control UI (per-fact "why do you remember this" drill-down, forget-by-type)
-  is Phase 8.
+  The control UI over this typing (drill-down, forget-by-type) shipped in Phase 8.
 
 ## Phase 7 — Goals & Proactive Context Engine ✅ shipped
 
@@ -62,7 +61,7 @@ gives every later phase something to build on.
   action given the current `ContextSnapshot` and active goals — no new intelligence, a
   dedicated prompt shape over data Context Engine and Goals already produce.
 
-## Phase 8 — Dreams 2.0 & Second Brain 🟡 partially shipped
+## Phase 8 — Dreams 2.0 & Second Brain ✅ shipped
 
 - ✅ **NUA Dreams 2.0** (`#7`) — `DreamSynthesisWorker` (weekly WorkManager job) reviews
   facts, active-goal observations, and the trust ledger together, asking Claude for
@@ -85,9 +84,12 @@ gives every later phase something to build on.
   top-bar history icon) merging facts, dreams, decisions (both logged and their
   outcomes), and goal observations by timestamp. No new storage — `TimelineBuilder`
   just reads back the existing memory surfaces in the order things actually happened.
-- ⬜ **Full Memory OS controls** (`#3`, completes Phase 6's partial work) — not started;
-  Settings still shows facts in a flat list with type/source/last-used inline, not a
-  dedicated per-fact drill-down.
+- ✅ **Full Memory OS controls** (`#3`, completes Phase 6's partial work) — tapping a
+  fact in Settings now opens a drill-down (`FactDetailDialog`) showing category, memory
+  type, why NUA remembers it, confidence, when it was learned/last updated/last used —
+  answering "why do you remember this" per fact, not just inline. A `MemoryTypeFilterRow`
+  filters the list by type, with a "forget all N of this type" bulk action
+  (`MemoryDao.deleteFactsByType`) once a type is selected.
 
 ## Phase 9 — Vision & Document Intelligence
 

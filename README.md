@@ -267,10 +267,10 @@ way they are.
    at most once every 14 days and only when there's something to say, NUA now reports
    unprompted on what it's gotten wrong since the last report — the inverse of how most
    assistants behave.
-6. **Memory OS typing (partial).** `UserFactEntity` gained a `MemoryType` (identity /
+6. **Memory OS typing.** `UserFactEntity` gained a `MemoryType` (identity /
    episodic / semantic / behavioral / emotional / relationship), a `source` ("why do you
    remember this"), and `lastUsedAt` (now actually touched on every relevant-fact
-   lookup, not just schema). Full per-fact drill-down UI is Phase 8.
+   lookup, not just schema). The control UI over this typing shipped in Phase 8.
 
 ## Phase 7 — Goals & Context Engine
 
@@ -292,7 +292,7 @@ way they are.
    action given the current `ContextSnapshot` and active goals, shown as a normal chat
    reply — the zero-typing entry point into everything this phase built.
 
-## Phase 8 — NUA Dreams 2.0, Decision Journal, Second Brain search & Timeline (partial)
+## Phase 8 — NUA Dreams 2.0, Decision Journal, Second Brain search, Timeline & Memory OS controls
 
 **NUA Dreams.** `DreamSynthesisWorker` runs at most once a week and looks across known
 facts, recent goal observations, and the trust ledger together for exactly one insight
@@ -320,8 +320,12 @@ decisions, and goal observations by timestamp into one scrollable view — `Time
 reads back the existing memory surfaces in the order things actually happened rather than
 introducing new storage of its own.
 
-Still open from Phase 8's full scope in `ROADMAP.md`: the full per-fact Memory OS
-inspector.
+**Memory OS controls.** Tapping a fact in Settings now opens a drill-down
+(`FactDetailDialog`) answering "why do you remember this" per fact — category, memory
+type, source, confidence, when it was learned, last updated, and last used in
+conversation. A filter row lets you narrow the list to one `MemoryType` at a time, with
+a "forget all N of this type" bulk action once a type is selected
+(`MemoryDao.deleteFactsByType`). This closes out Phase 8's full scope.
 
 ## Languages
 
