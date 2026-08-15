@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
@@ -85,9 +86,11 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val secondBrainResults by viewModel.secondBrainResults.collectAsState()
     val visionMonitors by viewModel.visionMonitors.collectAsState()
     val lastVisionResult by viewModel.lastVisionResult.collectAsState()
+    val documents by viewModel.documents.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     var showSecondBrainSearch by remember { mutableStateOf(false) }
     var showTimeline by remember { mutableStateOf(false) }
+    var showDocuments by remember { mutableStateOf(false) }
 
     if (showSecondBrainSearch) {
         SecondBrainSearchScreen(
@@ -101,6 +104,17 @@ fun NuaScreen(viewModel: NuaViewModel) {
 
     if (showTimeline) {
         TimelineScreen(entries = timeline, onBack = { showTimeline = false })
+        return
+    }
+
+    if (showDocuments) {
+        DocumentsScreen(
+            documents = documents,
+            onIngest = viewModel::ingestDocument,
+            onAsk = viewModel::askAboutDocuments,
+            onRemove = viewModel::removeDocument,
+            onBack = { showDocuments = false },
+        )
         return
     }
 
@@ -161,6 +175,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     }
                     IconButton(onClick = { showTimeline = true }) {
                         Icon(Icons.Filled.History, contentDescription = "Timeline")
+                    }
+                    IconButton(onClick = { showDocuments = true }) {
+                        Icon(Icons.Filled.Description, contentDescription = "Documents")
                     }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")

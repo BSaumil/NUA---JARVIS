@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.nua.assistant.documents.DocumentExpiryWorker
 import com.nua.assistant.dreams.DreamSynthesisWorker
 import com.nua.assistant.goals.GoalReviewWorker
 import com.nua.assistant.memory.MemoryConsolidationWorker
@@ -18,6 +19,7 @@ private const val MEMORY_CONSOLIDATION_WORK_NAME = "nua_memory_consolidation"
 private const val GOAL_REVIEW_WORK_NAME = "nua_goal_review"
 private const val DREAM_SYNTHESIS_WORK_NAME = "nua_dream_synthesis"
 private const val VISION_MONITOR_WORK_NAME = "nua_vision_monitor"
+private const val DOCUMENT_EXPIRY_WORK_NAME = "nua_document_expiry"
 
 @HiltAndroidApp
 class NuaApplication : Application(), Configuration.Provider {
@@ -62,6 +64,13 @@ class NuaApplication : Application(), Configuration.Provider {
             VISION_MONITOR_WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             visionMonitorRequest,
+        )
+
+        val documentExpiryRequest = PeriodicWorkRequestBuilder<DocumentExpiryWorker>(1, TimeUnit.DAYS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            DOCUMENT_EXPIRY_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            documentExpiryRequest,
         )
     }
 }

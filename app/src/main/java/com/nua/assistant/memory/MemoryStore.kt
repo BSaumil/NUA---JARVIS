@@ -10,6 +10,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import com.nua.assistant.documents.DocumentType
 import com.nua.assistant.dreams.DreamCategory
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.TrustEventType
@@ -303,6 +304,41 @@ interface VisionMonitorDao {
     suspend fun delete(id: Long)
 }
 
+/**
+ * A PDF, Word doc, or image the user asked NUA to read — transcribed in full so
+ * `DocumentAnalyzer` can answer questions and detect expiry dates from the real text,
+ * not a one-line description. See documents/DocumentAnalyzer.kt.
+ */
+@Entity(tableName = "documents")
+data class DocumentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fileName: String,
+    val type: DocumentType,
+    val extractedText: String,
+    val summary: String? = null,
+    val expiryDate: Long? = null,
+    val expiryReminded: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface DocumentDao {
+    @Insert
+    suspend fun insert(document: DocumentEntity): Long
+
+    @Query("SELECT * FROM documents ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<DocumentEntity>>
+
+    @Query("SELECT * FROM documents WHERE expiryDate IS NOT NULL AND expiryReminded = 0")
+    suspend fun getWithPendingExpiry(): List<DocumentEntity>
+
+    @Query("UPDATE documents SET expiryReminded = 1 WHERE id = :id")
+    suspend fun markExpiryReminded(id: Long)
+
+    @Query("DELETE FROM documents WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
 @Dao
 interface DreamDao {
     @Insert
@@ -414,9 +450,9 @@ interface MemoryDao {
         MessageEntity::class, UserFactEntity::class, UsageLogEntity::class, GeofenceEntity::class,
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
-        VisionMonitorEntity::class,
+        VisionMonitorEntity::class, DocumentEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -430,4 +466,5 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun dreamDao(): DreamDao
     abstract fun decisionDao(): DecisionDao
     abstract fun visionMonitorDao(): VisionMonitorDao
+    abstract fun documentDao(): DocumentDao
 }
