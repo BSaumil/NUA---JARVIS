@@ -327,6 +327,35 @@ conversation. A filter row lets you narrow the list to one `MemoryType` at a tim
 a "forget all N of this type" bulk action once a type is selected
 (`MemoryDao.deleteFactsByType`). This closes out Phase 8's full scope.
 
+## Phase 9 — NUA Vision as a system (partial)
+
+The camera → Claude vision pipeline is now structured as see / understand / remember /
+act instead of one opaque "describe this photo" call:
+
+- **See + understand.** `VisionAnalyzer` classifies the photo (document, receipt, food,
+  product, screen, sign, whiteboard, object, clothing, plant, or vehicle) and describes
+  it in one structured Claude call. The user's photo turn is now actually saved to
+  conversation history too — previously only the assistant's description was persisted,
+  which meant a photo exchange had no matching user turn in the stored history.
+- **Remember.** A "Remember" action on the result (shown right above the input row after
+  NUA looks at a photo) turns it into a durable fact — deliberate, same as the Decision
+  Journal, not automatic fact extraction on every photo.
+- **Act.** No new action-type plumbing was needed: because the photo turn is now real
+  conversation history, a normal follow-up message like "add these to my list" already
+  has that context available through the existing conversational flow.
+- **Monitor, permission-gated.** "Monitor this" records a baseline (`VisionMonitorRepository`
+  — description plus a durably-copied photo, since captures otherwise live in a
+  clearable cache dir). NUA cannot take photos on its own; capture is always delegated to
+  the system camera app. So `VisionMonitorWorker` runs daily and, once a monitor's
+  interval has elapsed, posts a notification asking the user for a fresh photo — the user
+  supplies it, and `VisionAnalyzer.compareAgainstBaseline` reports what's changed. A
+  `Vision monitors` card in Settings lists active monitors with a recheck-now camera
+  button and a way to stop watching. The permission gate here is the explicit "Monitor
+  this" action itself, not an OS-level runtime permission.
+
+Still open from Phase 9's full scope in `ROADMAP.md`: Document Intelligence (PDF/Word
+ingestion, summarization, targeted Q&A, expiry reminders).
+
 ## Languages
 
 NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,

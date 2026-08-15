@@ -8,4 +8,5 @@
     <string name="foreground_service_notification_text_prefix">Listening for:</string>
     <string name="foreground_service_notification_text_idle">Wake-word listening is off — no phrases available</string>
     <string name="morning_briefing_channel_name">NUA morning briefing</string>
+    <string name="vision_monitor_channel_name">NUA vision monitors</string>
 </resources>

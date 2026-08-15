@@ -39,6 +39,7 @@ import com.nua.assistant.memory.MessageRole
 import com.nua.assistant.memory.MemoryType
 import com.nua.assistant.memory.SecureKeyRepository
 import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.memory.VisionMonitorEntity
 import com.nua.assistant.network.ConnectivityMonitor
 import com.nua.assistant.notifications.NotificationReplySender
 import com.nua.assistant.notifications.NotificationRepository
@@ -59,6 +60,9 @@ import com.nua.assistant.voice.VoiceManager
 import com.nua.assistant.voice.VoiceProsody
 import com.nua.assistant.voice.VoiceTone
 import com.nua.assistant.vision.ImageEncoder
+import com.nua.assistant.vision.VisionAnalysis
+import com.nua.assistant.vision.VisionAnalyzer
+import com.nua.assistant.vision.VisionMonitorRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +76,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ChatMessage(val role: MessageRole, val content: String)
+
+/** The most recent photo NUA has understood but not yet acted on — offered for "remember" or "monitor". */
+data class LastVisionResult(val analysis: VisionAnalysis, val imageUri: Uri, val imageBase64: String, val mediaType: String)
 
 data class NuaUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -103,6 +110,8 @@ class NuaViewModel @Inject constructor(
     private val ownerVerifier: OwnerVerifier,
     private val connectivityMonitor: ConnectivityMonitor,
     private val imageEncoder: ImageEncoder,
+    private val visionAnalyzer: VisionAnalyzer,
+    private val visionMonitorRepository: VisionMonitorRepository,
     private val geofenceManager: GeofenceManager,
     private val geofenceDao: GeofenceDao,
     private val usageTracker: UsageTracker,
@@ -181,6 +190,12 @@ class NuaViewModel @Inject constructor(
     fun updateSecondBrainQuery(query: String) {
         _secondBrainQuery.value = query
     }
+
+    val visionMonitors: StateFlow<List<VisionMonitorEntity>> = visionMonitorRepository.observeActive()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _lastVisionResult = MutableStateFlow<LastVisionResult?>(null)
+    val lastVisionResult: StateFlow<LastVisionResult?> = _lastVisionResult.asStateFlow()
 
     fun addDecision(decision: String, reasoning: String?) {
         viewModelScope.launch { decisionRepository.record(decision, reasoning) }
@@ -407,13 +422,21 @@ class NuaViewModel @Inject constructor(
         }
     }
 
-    /** Sends a just-captured photo to Claude's vision and speaks/shows the response like any other reply. */
+    /**
+     * See + understand: sends a just-captured photo to Claude's vision, structures the
+     * result (category + description), and speaks/shows it like any other reply. Doesn't
+     * remember or act on its own — [rememberLastVisionResult] and
+     * [startMonitoringLastVisionResult] are deliberate follow-up actions the user takes
+     * on the result this leaves in [lastVisionResult], the same "write to it on purpose"
+     * philosophy as the Decision Journal.
+     */
     fun describeImage(uri: Uri) {
         if (_uiState.value.isProcessing) return
         _uiState.update {
             it.copy(isProcessing = true, messages = it.messages + ChatMessage(MessageRole.USER, "[Photo]"))
         }
         viewModelScope.launch {
+            memoryDao.insertMessage(MessageEntity(role = MessageRole.USER, content = "[Photo]"))
             if (!connectivityMonitor.isOnline()) {
                 respond("No connection right now — can't look at that photo until you're back online.", extractFacts = false)
                 return@launch
@@ -423,17 +446,82 @@ class NuaViewModel @Inject constructor(
                 respond("Couldn't read that photo.", extractFacts = false)
                 return@launch
             }
-            val result = claudeApiClient.describeImage(
-                imageBase64 = encoded.base64,
-                mediaType = encoded.mediaType,
-                prompt = "Describe what's in this photo in a couple of sentences, and mention anything the user might want to know or act on.",
-            )
-            val text = when (result) {
-                is ClaudeResult.Success -> result.text
-                is ClaudeResult.Failure -> "Couldn't process that photo — ${result.message}"
+            val analysis = visionAnalyzer.analyze(encoded.base64, encoded.mediaType)
+            if (analysis == null) {
+                respond("Couldn't make sense of that photo — mind trying again?", extractFacts = false)
+                return@launch
             }
-            respond(text, extractFacts = false)
+            _lastVisionResult.value = LastVisionResult(analysis, uri, encoded.base64, encoded.mediaType)
+            respond(analysis.description, extractFacts = false)
         }
+    }
+
+    /** Remember: turns the last vision result into a durable fact. Deliberate, not automatic. */
+    fun rememberLastVisionResult() {
+        val result = _lastVisionResult.value ?: return
+        viewModelScope.launch {
+            memoryDao.upsertFact(
+                key = "vision_${System.currentTimeMillis()}",
+                value = result.analysis.description,
+                category = result.analysis.category.name.lowercase(),
+                memoryType = MemoryType.EPISODIC,
+                source = "a photo you shared",
+            )
+            _lastVisionResult.value = null
+        }
+    }
+
+    /**
+     * Monitor: opts the last vision result into a recurring check. NUA can't take photos
+     * on its own, so this doesn't watch anything by itself — it records a baseline and,
+     * once [intervalDays] has passed, VisionMonitorWorker reminds the user to snap a
+     * fresh photo for [recheckVisionMonitor] to compare against it.
+     */
+    fun startMonitoringLastVisionResult(subject: String, intervalDays: Int) {
+        val result = _lastVisionResult.value ?: return
+        viewModelScope.launch {
+            val durablePath = imageEncoder.persistDurably(result.imageUri) ?: return@launch
+            visionMonitorRepository.start(
+                subject = subject,
+                baselineDescription = result.analysis.description,
+                baselineImagePath = durablePath,
+                intervalDays = intervalDays,
+            )
+            _lastVisionResult.value = null
+        }
+    }
+
+    /** Dismisses the last vision result without remembering or monitoring it. */
+    fun dismissLastVisionResult() {
+        _lastVisionResult.value = null
+    }
+
+    /** A fresh photo taken specifically to check on an existing vision monitor. */
+    fun recheckVisionMonitor(monitorId: Long, uri: Uri) {
+        if (_uiState.value.isProcessing) return
+        val monitor = visionMonitors.value.find { it.id == monitorId } ?: return
+        _uiState.update {
+            it.copy(isProcessing = true, messages = it.messages + ChatMessage(MessageRole.USER, "[Photo: checking on ${monitor.subject}]"))
+        }
+        viewModelScope.launch {
+            memoryDao.insertMessage(MessageEntity(role = MessageRole.USER, content = "[Photo: checking on ${monitor.subject}]"))
+            if (!connectivityMonitor.isOnline()) {
+                respond("No connection right now — can't check that photo until you're back online.", extractFacts = false)
+                return@launch
+            }
+            val encoded = imageEncoder.encode(uri)
+            if (encoded == null) {
+                respond("Couldn't read that photo.", extractFacts = false)
+                return@launch
+            }
+            val comparison = visionAnalyzer.compareAgainstBaseline(encoded.base64, encoded.mediaType, monitor.baselineDescription)
+            visionMonitorRepository.markChecked(monitorId)
+            respond(comparison ?: "Couldn't compare that photo — try again in a bit.", extractFacts = false)
+        }
+    }
+
+    fun removeVisionMonitor(id: Long) {
+        viewModelScope.launch { visionMonitorRepository.stop(id) }
     }
 
     fun confirmPendingPlan() {

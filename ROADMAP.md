@@ -91,12 +91,28 @@ gives every later phase something to build on.
   filters the list by type, with a "forget all N of this type" bulk action
   (`MemoryDao.deleteFactsByType`) once a type is selected.
 
-## Phase 9 — Vision & Document Intelligence
+## Phase 9 — Vision & Document Intelligence 🟡 partially shipped
 
-- **NUA Vision as a system** (`#10`) — structures the existing camera → Claude vision
-  pipeline into see / understand / remember / act, with an explicit permission gate for
-  "monitor" (recurring vision checks).
-- **Document Intelligence** (`#11`) — PDF/Word/image ingestion, summarization, targeted
+- ✅ **NUA Vision as a system** (`#10`) — structures the existing camera → Claude vision
+  pipeline into see / understand / remember / act:
+  - **See + understand** — `VisionAnalyzer` classifies the photo into one of the spec's
+    categories (document, receipt, food, product, screen, sign, whiteboard, object,
+    clothing, plant, vehicle) and describes it in one structured Claude call, instead of
+    the previous single opaque sentence. The user's photo turn is now actually persisted
+    to conversation history too (previously only the assistant's reply was saved).
+  - **Remember** — an explicit "Remember" action on the result turns it into a durable
+    fact (`MemoryType.EPISODIC`), the same "write to it on purpose" philosophy as the
+    Decision Journal — nothing is captured automatically.
+  - **Act** — no new action-type plumbing needed: because the photo turn is now real
+    conversation history, a normal follow-up message ("add these to my list") already
+    has the vision context available to act on.
+  - **Monitor, permission-gated** — "Monitor this" records a baseline (description +
+    durably-copied photo) via `VisionMonitorRepository`. NUA cannot take photos on its
+    own — capture is always delegated to the system camera app — so `VisionMonitorWorker`
+    (daily) reminds the user with a notification once the interval elapses, and the user
+    supplies a fresh photo for `VisionAnalyzer.compareAgainstBaseline` to react to. The
+    permission gate is the explicit "Monitor this" action itself, not a device permission.
+- ⬜ **Document Intelligence** (`#11`) — PDF/Word/image ingestion, summarization, targeted
   Q&A ("what am I obligated to do"), and expiry reminders.
 
 ## Phase 10 — Communication Centre

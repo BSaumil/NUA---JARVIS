@@ -26,4 +26,22 @@ class ImageEncoder @Inject constructor(
             null
         }
     }
+
+    /**
+     * Copies a captured photo out of the camera app's cache location into app-private
+     * filesDir storage, so it survives a cache clear. Used for vision monitor baselines,
+     * which need to stick around for days/weeks — plain captures don't need this.
+     */
+    suspend fun persistDurably(uri: Uri): String? = withContext(Dispatchers.IO) {
+        try {
+            val photosDir = java.io.File(context.filesDir, "vision_photos").apply { mkdirs() }
+            val destination = java.io.File(photosDir, "monitor_${System.currentTimeMillis()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                destination.outputStream().use { output -> input.copyTo(output) }
+            } ?: return@withContext null
+            destination.absolutePath
+        } catch (t: Exception) {
+            null
+        }
+    }
 }
