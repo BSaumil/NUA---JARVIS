@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
@@ -32,6 +33,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,6 +83,8 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val timeline by viewModel.timeline.collectAsState()
     val secondBrainQuery by viewModel.secondBrainQuery.collectAsState()
     val secondBrainResults by viewModel.secondBrainResults.collectAsState()
+    val visionMonitors by viewModel.visionMonitors.collectAsState()
+    val lastVisionResult by viewModel.lastVisionResult.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     var showSecondBrainSearch by remember { mutableStateOf(false) }
     var showTimeline by remember { mutableStateOf(false) }
@@ -135,6 +139,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
             onAddDecision = viewModel::addDecision,
             onRecordDecisionOutcome = viewModel::recordDecisionOutcome,
             onRemoveDecision = viewModel::removeDecision,
+            visionMonitors = visionMonitors,
+            onRecheckVisionMonitor = viewModel::recheckVisionMonitor,
+            onRemoveVisionMonitor = viewModel::removeVisionMonitor,
             onBack = { showSettings = false },
         )
         return
@@ -169,6 +176,10 @@ fun NuaScreen(viewModel: NuaViewModel) {
                 onSend = { viewModel.sendMessage() },
                 onMicTap = viewModel::onWakeWordDetected,
                 onImageCaptured = viewModel::describeImage,
+                lastVisionResult = lastVisionResult,
+                onRememberVision = viewModel::rememberLastVisionResult,
+                onMonitorVision = viewModel::startMonitoringLastVisionResult,
+                onDismissVision = viewModel::dismissLastVisionResult,
             )
         }
     }
@@ -201,6 +212,10 @@ private fun ChatColumn(
     onSend: () -> Unit,
     onMicTap: () -> Unit,
     onImageCaptured: (Uri) -> Unit,
+    lastVisionResult: LastVisionResult?,
+    onRememberVision: () -> Unit,
+    onMonitorVision: (subject: String, intervalDays: Int) -> Unit,
+    onDismissVision: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -227,6 +242,15 @@ private fun ChatColumn(
             } else if (uiState.isProcessing) {
                 item { CircularProgressIndicator(modifier = Modifier.padding(8.dp)) }
             }
+        }
+
+        lastVisionResult?.let { result ->
+            VisionResultActionsRow(
+                result = result,
+                onRemember = onRememberVision,
+                onMonitor = onMonitorVision,
+                onDismiss = onDismissVision,
+            )
         }
 
         Row(
@@ -258,10 +282,85 @@ private fun ChatColumn(
 }
 
 /** cacheDir/images/<timestamp>.jpg, exposed via FileProvider so the camera app can write to it. */
-private fun createImageCaptureUri(context: Context): Uri {
+internal fun createImageCaptureUri(context: Context): Uri {
     val imagesDir = java.io.File(context.cacheDir, "images").apply { mkdirs() }
     val file = java.io.File(imagesDir, "capture_${System.currentTimeMillis()}.jpg")
     return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
+/** The "remember" / "monitor" / dismiss affordances offered after NUA understands a photo — deliberate actions, not automatic. */
+@Composable
+private fun VisionResultActionsRow(
+    result: LastVisionResult,
+    onRemember: () -> Unit,
+    onMonitor: (subject: String, intervalDays: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var showMonitorDialog by remember { mutableStateOf(false) }
+
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = result.analysis.category.name.lowercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onRemember) { Text("Remember") }
+            TextButton(onClick = { showMonitorDialog = true }) { Text("Monitor") }
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Filled.Close, contentDescription = "Dismiss")
+            }
+        }
+    }
+
+    if (showMonitorDialog) {
+        MonitorVisionDialog(
+            onConfirm = { subject, intervalDays ->
+                onMonitor(subject, intervalDays)
+                showMonitorDialog = false
+            },
+            onDismiss = { showMonitorDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun MonitorVisionDialog(onConfirm: (subject: String, intervalDays: Int) -> Unit, onDismiss: () -> Unit) {
+    var subject by remember { mutableStateOf("") }
+    var intervalDays by remember { mutableStateOf(7) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Monitor this") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "NUA can't take photos on its own, so this reminds you to snap a fresh one on schedule and reports what's changed.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = subject,
+                    onValueChange = { subject = it },
+                    placeholder = { Text("e.g. \"the plant on the balcony\"") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1 to "Daily", 7 to "Weekly", 30 to "Monthly").forEach { (days, label) ->
+                        FilterChip(selected = intervalDays == days, onClick = { intervalDays = days }, label = { Text(label) })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (subject.isNotBlank()) onConfirm(subject, intervalDays) },
+                enabled = subject.isNotBlank(),
+            ) { Text("Start") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +67,7 @@ import com.nua.assistant.memory.GoalObservationEntity
 import com.nua.assistant.memory.MemoryType
 import com.nua.assistant.memory.TrustLedgerEntity
 import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.memory.VisionMonitorEntity
 import com.nua.assistant.services.WakePhrases
 import com.nua.assistant.services.isAvailable
 import com.nua.assistant.voice.NuaLanguage
@@ -102,6 +104,9 @@ fun SettingsScreen(
     onAddDecision: (decision: String, reasoning: String?) -> Unit,
     onRecordDecisionOutcome: (id: Long, outcome: String) -> Unit,
     onRemoveDecision: (Long) -> Unit,
+    visionMonitors: List<VisionMonitorEntity>,
+    onRecheckVisionMonitor: (monitorId: Long, uri: Uri) -> Unit,
+    onRemoveVisionMonitor: (Long) -> Unit,
     onBack: () -> Unit,
 ) {
     var selectedMemoryType by remember { mutableStateOf<MemoryType?>(null) }
@@ -136,6 +141,7 @@ fun SettingsScreen(
             item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
             item { DreamsCard(dreams) }
             item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
+            item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -818,6 +824,70 @@ private fun RecordOutcomeDialog(onConfirm: (String) -> Unit, onDismiss: () -> Un
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun VisionMonitorsCard(
+    monitors: List<VisionMonitorEntity>,
+    onRecheck: (monitorId: Long, uri: Uri) -> Unit,
+    onRemove: (Long) -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Vision monitors", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "NUA can't take photos on its own — \"monitor this\" after a photo means " +
+                    "it'll remind you to snap a fresh one on schedule and tell you what's changed.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (monitors.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Nothing being watched yet.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+                monitors.forEach { monitor ->
+                    VisionMonitorRow(
+                        monitor = monitor,
+                        onRecheck = { uri -> onRecheck(monitor.id, uri) },
+                        onRemove = { onRemove(monitor.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VisionMonitorRow(monitor: VisionMonitorEntity, onRecheck: (Uri) -> Unit, onRemove: () -> Unit) {
+    val context = LocalContext.current
+    var pendingUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) pendingUri?.let(onRecheck)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(monitor.subject, style = MaterialTheme.typography.bodyMedium)
+            val intervalLabel = if (monitor.intervalDays == 1) "day" else "${monitor.intervalDays} days"
+            Text(
+                text = "Every $intervalLabel · last checked ${relativeDaysAgo(monitor.lastCheckedAt)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = {
+            val uri = createImageCaptureUri(context)
+            pendingUri = uri
+            cameraLauncher.launch(uri)
+        }) {
+            Icon(Icons.Filled.PhotoCamera, contentDescription = "Recheck now")
+        }
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Filled.Delete, contentDescription = "Stop monitoring")
+        }
+    }
 }
 
 @Composable

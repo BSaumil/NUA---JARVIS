@@ -12,6 +12,7 @@ import com.nua.assistant.memory.MemoryDao
 import com.nua.assistant.memory.NuaDatabase
 import com.nua.assistant.memory.TrustLedgerDao
 import com.nua.assistant.memory.UsageDao
+import com.nua.assistant.memory.VisionMonitorDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -63,6 +64,9 @@ object AppModule {
 
     @Provides
     fun provideDecisionDao(database: NuaDatabase): DecisionDao = database.decisionDao()
+
+    @Provides
+    fun provideVisionMonitorDao(database: NuaDatabase): VisionMonitorDao = database.visionMonitorDao()
 
     @Provides
     @Singleton

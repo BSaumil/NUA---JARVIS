@@ -267,6 +267,42 @@ interface DecisionDao {
     fun observeAll(): Flow<List<DecisionEntity>>
 }
 
+/**
+ * A subject NUA is watching on the user's behalf — "tell me if this changes." NUA can't
+ * take photos on its own (capture is delegated to the system camera app), so a monitor
+ * doesn't poll anything by itself; it just records a baseline and, once due, prompts the
+ * user for a fresh photo to compare against it. See vision/VisionMonitorWorker.kt.
+ */
+@Entity(tableName = "vision_monitors")
+data class VisionMonitorEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val subject: String,
+    val baselineDescription: String,
+    val baselineImagePath: String,
+    val intervalDays: Int,
+    val active: Boolean = true,
+    val lastCheckedAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface VisionMonitorDao {
+    @Insert
+    suspend fun insert(monitor: VisionMonitorEntity): Long
+
+    @Query("SELECT * FROM vision_monitors WHERE active = 1 ORDER BY createdAt DESC")
+    fun observeActive(): Flow<List<VisionMonitorEntity>>
+
+    @Query("SELECT * FROM vision_monitors WHERE active = 1")
+    suspend fun getActive(): List<VisionMonitorEntity>
+
+    @Query("UPDATE vision_monitors SET lastCheckedAt = :checkedAt WHERE id = :id")
+    suspend fun updateLastChecked(id: Long, checkedAt: Long)
+
+    @Query("DELETE FROM vision_monitors WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
 @Dao
 interface DreamDao {
     @Insert
@@ -378,8 +414,9 @@ interface MemoryDao {
         MessageEntity::class, UserFactEntity::class, UsageLogEntity::class, GeofenceEntity::class,
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
+        VisionMonitorEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -392,4 +429,5 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun goalDao(): GoalDao
     abstract fun dreamDao(): DreamDao
     abstract fun decisionDao(): DecisionDao
+    abstract fun visionMonitorDao(): VisionMonitorDao
 }
