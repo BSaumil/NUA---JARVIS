@@ -174,9 +174,34 @@ gives every later phase something to build on.
   session). "Test API connection" is a manual, opt-in real round trip to Claude — separate
   from key-presence — so diagnostics never claims a key "works" without actually asking it
   to.
-- ⬜ **Prompt Injection Firewall** (`#44`) — a hard boundary between "data NUA read" and
-  "instructions NUA follows," enforced before any tool call, not just prompted for.
-  Becomes non-optional once Phase 10 gives NUA an inbox to read.
+- ✅ **Prompt Injection Firewall** (`#44`) — a structural boundary between "data NUA
+  read" and "instructions NUA follows," not just prompt wording. Two real mechanisms:
+  1. **Type-level dispatch boundary.** `security/UserUtterance` is a value class wrapping
+     only the user's own literal chat/voice turn. `NuaIntentRouter.route` and
+     `IntentClassifier.classify` — the single, audited entry point into action
+     dispatch (`NuaViewModel.kt:398` is the only call site of `route`) — now require it
+     instead of a bare `String`. A future feature that wants to route
+     document/vision/notification/email-derived text into dispatch has to explicitly
+     construct a `UserUtterance` around content that didn't come from the user, which is
+     visible in code review, not a silent pass-through.
+  2. **Untrusted-content delimiting.** `security/UntrustedContent.kt`'s `wrapUntrusted`
+     wraps external text (document/photo content) in an explicit `<untrusted_...>` tag
+     before it reaches a Claude prompt, and neutralizes any `<untrusted_...>`-shaped tag
+     already inside the text so content can't forge a closing tag to escape the block or
+     a fake tag to spoof a different source. `FIREWALL_SYSTEM_DIRECTIVE` is appended to
+     the system prompt of every call site that uses it, telling Claude the tagged content
+     is data, never instructions. Wired into `DocumentAnalyzer.summarize`/`answer` and
+     `VisionAnalyzer.compareAgainstBaseline` — the two places a documented research pass
+     found raw, undelimited concatenation of external text into prompts. Notifications and
+     email have no Claude call today (confirmed by the same research pass), so there was
+     nothing to wrap yet — but the `UserUtterance` boundary above already covers them: if
+     a future notification/email-summarization feature is built, it structurally cannot
+     reach dispatch without an explicit, reviewable `UserUtterance(...)` wrap.
+
+  This raises the bar; it doesn't claim to make prompt injection impossible — nothing
+  purely in a prompt can. The backstop is structural: even if the system directive were
+  ignored, wrapped/untrusted content has no path into `route`/`classify`, so an injected
+  instruction can produce a wrong *reply*, never an unauthorized *action*.
 - ⬜ **Agent Sandbox** (`#45`) — every tool gets a declared input/output schema, permission,
   risk level, timeout, and audit log; no arbitrary tool execution path.
 - ✅ **Security architecture** (`#23`, partial) — biometric step-up authentication and a

@@ -28,6 +28,7 @@ import com.nua.assistant.diagnostics.DiagnosticCategory
 import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.SelfDiagnosticsRepository
 import com.nua.assistant.documents.DocumentAnalyzer
+import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.documents.DocumentRepository
 import com.nua.assistant.documents.DocumentType
 import com.nua.assistant.documents.DocxTextExtractor
@@ -395,7 +396,7 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch {
             memoryDao.insertMessage(MessageEntity(role = MessageRole.USER, content = message))
 
-            when (val routed = intentRouter.route(message, _pinnedLanguage.value)) {
+            when (val routed = intentRouter.route(UserUtterance(message), _pinnedLanguage.value)) {
                 is NuaRouteResult.ActionTaken -> respond(routed.message, extractFacts = false)
                 is NuaRouteResult.PlanProposed -> {
                     if (trustRepository.isAutoApproved(NuaActionType.PLAN_TASK)) {

@@ -5,6 +5,7 @@ import com.nua.assistant.ai.IntentClassifier
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.notifications.NotificationEntry
+import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.autonomyTierFor
 import com.nua.assistant.voice.NuaLanguage
@@ -39,14 +40,20 @@ class NuaIntentRouter @Inject constructor(
     private val trustRepository: TrustRepository,
 ) {
 
-    suspend fun route(utterance: String, pinnedLanguage: NuaLanguage? = null): NuaRouteResult {
-        KeywordIntentMatcher.match(utterance)?.let { return dispatch(it, utterance, pinnedLanguage) }
+    /**
+     * Takes a [UserUtterance], not a bare String — see that type's doc comment. This is
+     * the one entry point into action dispatch; nothing document/vision/notification/
+     * email-derived should ever be wrapped and passed here.
+     */
+    suspend fun route(utterance: UserUtterance, pinnedLanguage: NuaLanguage? = null): NuaRouteResult {
+        val text = utterance.text
+        KeywordIntentMatcher.match(text)?.let { return dispatch(it, text, pinnedLanguage) }
 
         val classified = intentClassifier.classify(utterance) ?: return NuaRouteResult.FallThroughToChat
         if (classified.action == NuaActionType.CHAT || classified.confidence < CLASSIFICATION_CONFIDENCE_THRESHOLD) {
             return NuaRouteResult.FallThroughToChat
         }
-        return dispatch(classified, utterance, pinnedLanguage)
+        return dispatch(classified, text, pinnedLanguage)
     }
 
     private suspend fun dispatch(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {

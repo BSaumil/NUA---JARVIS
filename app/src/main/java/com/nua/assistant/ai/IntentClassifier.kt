@@ -1,5 +1,6 @@
 package com.nua.assistant.ai
 
+import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.voice.NuaLanguage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -101,10 +102,14 @@ class IntentClassifier @Inject constructor(
     private val json: Json,
 ) {
 
-    suspend fun classify(utterance: String): ClassifiedIntent? {
+    /**
+     * Takes a [UserUtterance], not a bare String — see that type's doc comment. Only the
+     * user's own literal chat/voice turn should ever reach action classification.
+     */
+    suspend fun classify(utterance: UserUtterance): ClassifiedIntent? {
         val system = "$CLASSIFIER_SYSTEM_PROMPT\n\nCURRENT_TIME: ${CLASSIFIER_DATE_FORMAT.format(Date())}"
         val result = claudeApiClient.complete(
-            userPrompt = utterance,
+            userPrompt = utterance.text,
             system = system,
             model = CLAUDE_MODEL_UTILITY,
             maxTokens = 256,
