@@ -159,18 +159,31 @@ gives every later phase something to build on.
   original scope note that this won't be built against anything that risks the user's
   account.
 
-## Phase 11 — Security, Audit, and Self-Diagnostics
+## Phase 11 — Security, Audit, and Self-Diagnostics 🟡 partially shipped
 
-- **Prompt Injection Firewall** (`#44`) — a hard boundary between "data NUA read" and
+- ✅ **Self-Diagnostics** (`#25`, `#13`) — a real system-health view under
+  Settings → Self-diagnostics, not "something went wrong." `SelfDiagnosticsRepository`
+  gathers real signals (permission checks, an actual `MemoryDao.countMessages()` query,
+  `OwnerVerifier.isEnrolled()`, the real injected `EmailRepository.checkInbox()` result,
+  `NuaAccessibilityService.isEnabled()`) and the pure `evaluateDiagnostics` (unit tested,
+  `DiagnosticEvaluatorTest`) turns them into one specific status per area — API, memory,
+  voice, location, calendar, email, automation, Wear, Auto — each with a concrete reason,
+  never a generic failure. Two categories are honestly reported as unverifiable rather
+  than faked: Wear (no Wearable Data Layer API wired up yet to check live connection) and
+  Auto (`NuaCarAppService` connection state is only observable from inside an active car
+  session). "Test API connection" is a manual, opt-in real round trip to Claude — separate
+  from key-presence — so diagnostics never claims a key "works" without actually asking it
+  to.
+- ⬜ **Prompt Injection Firewall** (`#44`) — a hard boundary between "data NUA read" and
   "instructions NUA follows," enforced before any tool call, not just prompted for.
   Becomes non-optional once Phase 10 gives NUA an inbox to read.
-- **Agent Sandbox** (`#45`) — every tool gets a declared input/output schema, permission,
+- ⬜ **Agent Sandbox** (`#45`) — every tool gets a declared input/output schema, permission,
   risk level, timeout, and audit log; no arbitrary tool execution path.
-- **Security architecture** (`#23`) — local encryption audit, device trust, and
-  step-up authentication (biometric) for the highest-risk actions.
-- **Self-Diagnostics** (`#25`) — a real system-health view (API, memory, voice, location,
-  calendar, email, automation, Wear, Auto) with specific failure reasons, not "something
-  went wrong."
+- ⬜ **Security architecture** (`#23`) — local encryption audit, device trust, and
+  step-up authentication (biometric) for the highest-risk actions. (Encryption itself is
+  already real — `SecureKeyRepository`/`OwnerVoiceProfileStore` use
+  `EncryptedSharedPreferences` with an Android Keystore `MasterKey` — but there's no
+  biometric step-up gate on high-risk actions yet.)
 
 ## Phase 12 — Inner Life & Command Centre
 

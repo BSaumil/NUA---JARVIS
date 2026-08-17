@@ -8,8 +8,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -19,14 +21,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -45,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
@@ -59,6 +67,8 @@ import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
+import com.nua.assistant.diagnostics.DiagnosticCheck
+import com.nua.assistant.diagnostics.DiagnosticStatus
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
@@ -107,6 +117,10 @@ fun SettingsScreen(
     visionMonitors: List<VisionMonitorEntity>,
     onRecheckVisionMonitor: (monitorId: Long, uri: Uri) -> Unit,
     onRemoveVisionMonitor: (Long) -> Unit,
+    diagnostics: List<DiagnosticCheck>,
+    testingApiConnection: Boolean,
+    onRefreshDiagnostics: () -> Unit,
+    onTestApiConnection: () -> Unit,
     onBack: () -> Unit,
 ) {
     var selectedMemoryType by remember { mutableStateOf<MemoryType?>(null) }
@@ -142,6 +156,7 @@ fun SettingsScreen(
             item { DreamsCard(dreams) }
             item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
             item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
+            item { DiagnosticsCard(diagnostics, testingApiConnection, onRefreshDiagnostics, onTestApiConnection) }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -889,6 +904,76 @@ private fun VisionMonitorRow(monitor: VisionMonitorEntity, onRecheck: (Uri) -> U
             Icon(Icons.Filled.Delete, contentDescription = "Stop monitoring")
         }
     }
+}
+
+@Composable
+private fun DiagnosticsCard(
+    diagnostics: List<DiagnosticCheck>,
+    testingApiConnection: Boolean,
+    onRefresh: () -> Unit,
+    onTestApiConnection: () -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Self-diagnostics", style = MaterialTheme.typography.titleSmall)
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh diagnostics")
+                }
+            }
+            Text(
+                text = "Real system-health checks, not \"something went wrong\" — each row explains exactly what's missing.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (diagnostics.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Tap refresh to run diagnostics.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+                diagnostics.forEach { check -> DiagnosticRow(check) }
+                Spacer(modifier = Modifier.height(4.dp))
+                TextButton(onClick = onTestApiConnection, enabled = !testingApiConnection) {
+                    if (testingApiConnection) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(if (testingApiConnection) "Testing connection…" else "Test API connection")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticRow(check: DiagnosticCheck) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(diagnosticStatusColor(check.status)),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(check.category.label, style = MaterialTheme.typography.bodyMedium)
+            Text(check.detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun diagnosticStatusColor(status: DiagnosticStatus) = when (status) {
+    DiagnosticStatus.OK -> MaterialTheme.colorScheme.primary
+    DiagnosticStatus.WARNING -> MaterialTheme.colorScheme.tertiary
+    DiagnosticStatus.ERROR -> MaterialTheme.colorScheme.error
+    DiagnosticStatus.NOT_CONFIGURED -> MaterialTheme.colorScheme.outline
+    DiagnosticStatus.INFO -> MaterialTheme.colorScheme.outline
 }
 
 @Composable

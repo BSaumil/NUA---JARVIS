@@ -400,6 +400,26 @@ email to two more capabilities — both built on official, on-device APIs, no OA
 - **WhatsApp** wasn't built — no compliant on-device API path was found, and this project
   won't build against anything that risks the user's account.
 
+## Phase 11 — Security, Audit, and Self-Diagnostics (partial)
+
+- **Self-Diagnostics.** Settings → Self-diagnostics shows one row per area (API, memory,
+  voice, location, calendar, email, automation, Wear, Auto), each with a real, specific
+  status — never a generic "something went wrong." `diagnostics/SelfDiagnosticsRepository`
+  gathers the actual signals (permission checks, a real `MemoryDao.countMessages()` query,
+  `OwnerVerifier.isEnrolled()`, the real `EmailRepository.checkInbox()` result,
+  `NuaAccessibilityService.isEnabled()`); the pure `evaluateDiagnostics` function turns
+  those into statuses and is unit tested independently of Android. Wear and Auto are
+  always reported as informational rather than OK/error, honestly: there's no Wearable
+  Data Layer hookup or car-session hook to check a live connection against yet. "Test API
+  connection" is a separate, manual, opt-in real round trip to Claude — key *presence* and
+  key *actually working* are never conflated.
+- **Encryption** was already real before this phase — `SecureKeyRepository` and
+  `OwnerVoiceProfileStore` both use `EncryptedSharedPreferences` backed by an Android
+  Keystore `MasterKey` (AES256-GCM) — but there's no local-encryption-audit surface or
+  biometric step-up gate on high-risk actions yet.
+- **Not yet built:** Prompt Injection Firewall, Agent Sandbox, and biometric step-up
+  authentication — see `ROADMAP.md`'s Phase 11 section.
+
 ## Languages
 
 NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,

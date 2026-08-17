@@ -24,6 +24,9 @@ import com.nua.assistant.briefing.BriefingScheduleStore
 import com.nua.assistant.briefing.BriefingScheduler
 import com.nua.assistant.context.WhatNowAdvisor
 import com.nua.assistant.decisions.DecisionRepository
+import com.nua.assistant.diagnostics.DiagnosticCategory
+import com.nua.assistant.diagnostics.DiagnosticCheck
+import com.nua.assistant.diagnostics.SelfDiagnosticsRepository
 import com.nua.assistant.documents.DocumentAnalyzer
 import com.nua.assistant.documents.DocumentRepository
 import com.nua.assistant.documents.DocumentType
@@ -134,6 +137,7 @@ class NuaViewModel @Inject constructor(
     private val whatNowAdvisor: WhatNowAdvisor,
     private val dreamRepository: DreamRepository,
     private val decisionRepository: DecisionRepository,
+    private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -153,6 +157,12 @@ class NuaViewModel @Inject constructor(
 
     private val _usageThisMonth = MutableStateFlow<UsageSummary?>(null)
     val usageThisMonth: StateFlow<UsageSummary?> = _usageThisMonth.asStateFlow()
+
+    private val _diagnostics = MutableStateFlow<List<DiagnosticCheck>>(emptyList())
+    val diagnostics: StateFlow<List<DiagnosticCheck>> = _diagnostics.asStateFlow()
+
+    private val _testingApiConnection = MutableStateFlow(false)
+    val testingApiConnection: StateFlow<Boolean> = _testingApiConnection.asStateFlow()
 
     private val _trustScore = MutableStateFlow<Int?>(null)
     val trustScore: StateFlow<Int?> = _trustScore.asStateFlow()
@@ -802,6 +812,27 @@ class NuaViewModel @Inject constructor(
     /** Called when Settings opens — usage isn't worth keeping live-updated, just fresh on view. */
     fun refreshUsage() {
         viewModelScope.launch { _usageThisMonth.value = usageTracker.summaryThisMonth() }
+    }
+
+    /** Called when Settings opens — same reasoning as [refreshUsage]. Permission checks are cheap, but not worth polling. */
+    fun refreshDiagnostics() {
+        viewModelScope.launch { _diagnostics.value = selfDiagnosticsRepository.runChecks() }
+    }
+
+    /** A real network round trip, so it's opt-in via a button rather than run automatically on every Settings open. */
+    fun testApiConnection() {
+        viewModelScope.launch {
+            _testingApiConnection.value = true
+            val result = selfDiagnosticsRepository.testApiConnection()
+            _diagnostics.update { current ->
+                if (current.any { it.category == DiagnosticCategory.API }) {
+                    current.map { if (it.category == DiagnosticCategory.API) result else it }
+                } else {
+                    current + result
+                }
+            }
+            _testingApiConnection.value = false
+        }
     }
 
     /** Called when Settings opens — same reasoning as [refreshUsage]. */

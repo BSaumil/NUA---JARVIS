@@ -90,6 +90,8 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val visionMonitors by viewModel.visionMonitors.collectAsState()
     val lastVisionResult by viewModel.lastVisionResult.collectAsState()
     val documents by viewModel.documents.collectAsState()
+    val diagnostics by viewModel.diagnostics.collectAsState()
+    val testingApiConnection by viewModel.testingApiConnection.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     var showSecondBrainSearch by remember { mutableStateOf(false) }
     var showTimeline by remember { mutableStateOf(false) }
@@ -125,6 +127,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
         LaunchedEffect(Unit) {
             viewModel.refreshUsage()
             viewModel.refreshTrust()
+            viewModel.refreshDiagnostics()
         }
         SettingsScreen(
             facts = facts,
@@ -159,6 +162,10 @@ fun NuaScreen(viewModel: NuaViewModel) {
             visionMonitors = visionMonitors,
             onRecheckVisionMonitor = viewModel::recheckVisionMonitor,
             onRemoveVisionMonitor = viewModel::removeVisionMonitor,
+            diagnostics = diagnostics,
+            testingApiConnection = testingApiConnection,
+            onRefreshDiagnostics = viewModel::refreshDiagnostics,
+            onTestApiConnection = viewModel::testApiConnection,
             onBack = { showSettings = false },
         )
         return
