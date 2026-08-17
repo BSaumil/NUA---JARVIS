@@ -63,9 +63,15 @@ class ContactResolver @Inject constructor(
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }
 
-private val PHONE_NUMBER_REGEX = Regex("^[+0-9][0-9 ()-]{5,}$")
+private val PHONE_NUMBER_CHARSET_REGEX = Regex("^[+()\\- 0-9]{6,}$")
 private val EMAIL_REGEX = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+private const val MIN_PHONE_DIGITS = 6
 
-internal fun looksLikePhoneNumber(query: String): Boolean = PHONE_NUMBER_REGEX.matches(query.trim())
+/** Matches only if every character is a phone-number character and there are enough actual digits — "(555) 123-4567" qualifies, "Sam" or "------" don't. */
+internal fun looksLikePhoneNumber(query: String): Boolean {
+    val trimmed = query.trim()
+    if (!PHONE_NUMBER_CHARSET_REGEX.matches(trimmed)) return false
+    return trimmed.count { it.isDigit() } >= MIN_PHONE_DIGITS
+}
 
 internal fun looksLikeEmail(query: String): Boolean = EMAIL_REGEX.matches(query.trim())
