@@ -908,6 +908,453 @@ async def uninstall_skill(skill_id: str):
     return {"uninstalled": True, "skill_id": skill_id}
 
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         LAYER 2: MEMORY OS — 6 Intelligence Types           ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+MEMORY_TYPES = ["identity", "episodic", "semantic", "behavioral", "emotional", "relationship"]
+
+class AdvancedMemoryCreate(BaseModel):
+    mem_type: str = "semantic"
+    category: str = "general"
+    key: str
+    value: str
+    confidence: float = 0.8
+    why: str = ""
+
+@api_router.get("/memory/os")
+async def get_memory_os():
+    """Get all memories organized by type with controls."""
+    all_mems = await db.user_memory.find({}, {"_id": 0}).sort("updated_at", -1).to_list(500)
+    grouped = {t: [] for t in MEMORY_TYPES}
+    grouped["general"] = []
+    for m in all_mems:
+        mt = m.get("mem_type", m.get("category", "general"))
+        if mt in grouped:
+            grouped[mt].append(m)
+        elif m.get("category") in grouped:
+            grouped[m["category"]].append(m)
+        else:
+            grouped["general"].append(m)
+
+    # Migrate old memories
+    for m in all_mems:
+        if "mem_type" not in m:
+            mt = "semantic"
+            cat = m.get("category", "general")
+            if cat in ("personal",):
+                mt = "identity"
+            elif cat in ("preference", "habit"):
+                mt = "behavioral"
+            await db.user_memory.update_one({"id": m["id"]}, {"$set": {"mem_type": mt}})
+
+    stats = {t: len(grouped.get(t, [])) for t in MEMORY_TYPES}
+    stats["total"] = len(all_mems)
+    return {"memories": grouped, "stats": stats, "types": MEMORY_TYPES}
+
+@api_router.post("/memory/advanced")
+async def add_advanced_memory(mem: AdvancedMemoryCreate):
+    doc = {
+        "id": str(uuid.uuid4()), "mem_type": mem.mem_type,
+        "category": mem.category, "key": mem.key, "value": mem.value,
+        "confidence": mem.confidence, "why": mem.why or f"Manually added by user",
+        "source": "manual", "use_count": 0, "last_used": now_iso(),
+        "created_at": now_iso(), "updated_at": now_iso(),
+    }
+    await db.user_memory.insert_one(doc)
+    return {"id": doc["id"], "message": "Memory stored in " + mem.mem_type}
+
+@api_router.get("/memory/explain/{memory_id}")
+async def explain_memory(memory_id: str):
+    """Why does NUA remember this?"""
+    mem = await db.user_memory.find_one({"id": memory_id}, {"_id": 0})
+    if not mem:
+        return {"error": "Memory not found"}
+    return {
+        "memory": mem,
+        "explanation": {
+            "why": mem.get("why", "Extracted from conversation"),
+            "source": mem.get("source", "conversation"),
+            "confidence": mem.get("confidence", 0.8),
+            "first_learned": mem.get("created_at", "unknown"),
+            "last_used": mem.get("last_used", "never"),
+            "times_used": mem.get("use_count", 0),
+        }
+    }
+
+@api_router.post("/memory/forget/{memory_id}")
+async def forget_memory(memory_id: str):
+    """Explicitly forget a memory with trust logging."""
+    mem = await db.user_memory.find_one({"id": memory_id}, {"_id": 0})
+    if mem:
+        await db.user_memory.delete_one({"id": memory_id})
+        # Log to trust ledger
+        await db.trust_ledger.insert_one({
+            "id": str(uuid.uuid4()), "event_type": "correction",
+            "description": f"User asked to forget: {mem.get('key', 'unknown')}",
+            "score_change": -1, "created_at": now_iso()
+        })
+    return {"forgotten": True, "memory_id": memory_id}
+
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         LAYER 3: NUA TRUST ENGINE                           ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+async def calculate_trust_score() -> dict:
+    """Calculate NUA's trust score from the ledger."""
+    events = await db.trust_ledger.find({}, {"_id": 0}).to_list(1000)
+    if not events:
+        return {"score": 0, "level": "New", "total_events": 0, "breakdown": {}}
+
+    breakdown = {"success": 0, "failure": 0, "correction": 0, "rejection": 0, "confirmation": 0, "prediction": 0}
+    total_change = 0
+    for e in events:
+        et = e.get("event_type", "")
+        if et in breakdown:
+            breakdown[et] += 1
+        total_change += e.get("score_change", 0)
+
+    # Score: base 0, +3 for success, -5 for failure, -2 for correction, +1 for confirmation, +2 for prediction
+    raw = (breakdown["success"] * 3 + breakdown["confirmation"] * 1 +
+           breakdown["prediction"] * 2 - breakdown["failure"] * 5 -
+           breakdown["correction"] * 2 - breakdown["rejection"] * 1)
+    max_possible = max(len(events) * 3, 1)
+    score = max(0, min(100, int((raw / max_possible) * 100 + 50)))
+
+    levels = [(90, "Autonomous"), (75, "Highly Trusted"), (60, "Trusted"),
+              (40, "Building Trust"), (20, "Learning"), (0, "New")]
+    level = next((l for s, l in levels if score >= s), "New")
+
+    return {
+        "score": score, "level": level, "total_events": len(events),
+        "breakdown": breakdown, "raw_score": raw,
+        "autonomy_suggestions": await get_autonomy_suggestions(breakdown),
+    }
+
+async def get_autonomy_suggestions(breakdown: dict) -> list:
+    """Suggest actions NUA could do automatically based on trust."""
+    suggestions = []
+    if breakdown.get("success", 0) >= 5:
+        suggestions.append("I've successfully handled several tasks. Consider letting me auto-execute low-risk actions.")
+    if breakdown.get("confirmation", 0) >= 10:
+        suggestions.append("You've confirmed many of my suggestions. I could start acting on similar ones automatically.")
+    return suggestions
+
+async def record_trust_event(event_type: str, description: str, score_change: float = 0):
+    """Record a trust event."""
+    auto_scores = {"success": 3, "failure": -5, "correction": -2, "rejection": -1, "confirmation": 1, "prediction": 2}
+    if score_change == 0:
+        score_change = auto_scores.get(event_type, 0)
+    await db.trust_ledger.insert_one({
+        "id": str(uuid.uuid4()), "event_type": event_type,
+        "description": description, "score_change": score_change,
+        "created_at": now_iso()
+    })
+
+@api_router.get("/trust")
+async def get_trust():
+    trust = await calculate_trust_score()
+    recent = await db.trust_ledger.find({}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    return {**trust, "recent_events": recent}
+
+@api_router.get("/trust/ledger")
+async def get_trust_ledger():
+    events = await db.trust_ledger.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {"events": events}
+
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         LAYER 4: AUTONOMOUS ACTION ENGINE (T0-T5)           ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+ACTION_TIERS = {
+    "T0": {"name": "Read-only", "description": "Information retrieval only", "auto": True},
+    "T1": {"name": "Auto-execute", "description": "Safe, low-risk actions", "auto": True},
+    "T2": {"name": "Notify + execute", "description": "Execute and inform user", "auto": True},
+    "T3": {"name": "Confirm first", "description": "Ask before executing", "auto": False},
+    "T4": {"name": "Multi-step approval", "description": "Plan review required", "auto": False},
+    "T5": {"name": "Never autonomous", "description": "Always requires explicit approval", "auto": False},
+}
+
+@api_router.get("/actions/tiers")
+async def get_action_tiers():
+    return {"tiers": ACTION_TIERS}
+
+@api_router.get("/actions/log")
+async def get_action_log():
+    actions = await db.action_log.find({}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return {"actions": actions}
+
+async def log_action(action: str, tier: str, intent: str, result: str, risk: str = "low"):
+    doc = {
+        "id": str(uuid.uuid4()), "action": action, "tier": tier,
+        "intent": intent, "result": result, "risk_level": risk,
+        "verified": result == "success", "created_at": now_iso()
+    }
+    await db.action_log.insert_one(doc)
+    if result == "success":
+        await record_trust_event("success", f"Action completed: {action}")
+    else:
+        await record_trust_event("failure", f"Action failed: {action}")
+    return doc
+
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         LAYER 5: NUA GOALS                                  ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+class GoalCreate(BaseModel):
+    title: str
+    description: str = ""
+
+class SubTaskCreate(BaseModel):
+    title: str
+
+@api_router.get("/goals")
+async def list_goals():
+    goals = await db.goals.find({}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return {"goals": goals}
+
+@api_router.post("/goals")
+async def create_goal(goal: GoalCreate):
+    doc = {
+        "id": str(uuid.uuid4()), "title": goal.title,
+        "description": goal.description, "status": "active",
+        "progress": 0, "sub_tasks": [], "insights": [],
+        "created_at": now_iso(), "updated_at": now_iso(),
+    }
+    await db.goals.insert_one(doc)
+    await log_action(f"Created goal: {goal.title}", "T1", "goal_creation", "success")
+    return {"id": doc["id"], "message": "Goal created"}
+
+@api_router.post("/goals/{goal_id}/subtask")
+async def add_subtask(goal_id: str, task: SubTaskCreate):
+    subtask = {"id": str(uuid.uuid4()), "title": task.title, "completed": False}
+    await db.goals.update_one({"id": goal_id}, {"$push": {"sub_tasks": subtask}, "$set": {"updated_at": now_iso()}})
+    return {"subtask": subtask}
+
+@api_router.patch("/goals/{goal_id}/subtask/{subtask_id}")
+async def toggle_subtask(goal_id: str, subtask_id: str):
+    goal = await db.goals.find_one({"id": goal_id}, {"_id": 0})
+    if not goal:
+        return {"error": "Goal not found"}
+    for st in goal.get("sub_tasks", []):
+        if st["id"] == subtask_id:
+            st["completed"] = not st["completed"]
+    completed = sum(1 for s in goal.get("sub_tasks", []) if s.get("completed"))
+    total = len(goal.get("sub_tasks", []))
+    progress = int((completed / max(total, 1)) * 100)
+    status = "completed" if progress == 100 and total > 0 else "active"
+    await db.goals.update_one({"id": goal_id}, {"$set": {
+        "sub_tasks": goal["sub_tasks"], "progress": progress,
+        "status": status, "updated_at": now_iso()
+    }})
+    if status == "completed":
+        await record_trust_event("success", f"Goal completed: {goal.get('title', '')}")
+    return {"progress": progress, "status": status}
+
+@api_router.delete("/goals/{goal_id}")
+async def delete_goal(goal_id: str):
+    await db.goals.delete_one({"id": goal_id})
+    return {"deleted": True}
+
+@api_router.post("/goals/{goal_id}/analyze")
+async def analyze_goal(goal_id: str):
+    """NUA analyzes goal progress and provides insights."""
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    goal = await db.goals.find_one({"id": goal_id}, {"_id": 0})
+    if not goal:
+        return {"error": "Goal not found"}
+
+    memories = await get_user_memories()
+    api_key = os.environ.get('EMERGENT_LLM_KEY')
+    session_id = f"goal-analysis-{uuid.uuid4().hex[:8]}"
+    chat = LlmChat(api_key=api_key, session_id=session_id,
+        system_message="You are Nua, analyzing a user's goal. Provide 2-3 actionable insights. Be concise and encouraging.")
+    chat.with_model("openai", "gpt-5.2")
+
+    context = f"Goal: {goal['title']}\nDescription: {goal.get('description','')}\nProgress: {goal['progress']}%\n"
+    context += f"Sub-tasks: {json.dumps(goal.get('sub_tasks', []))}\n"
+    if memories:
+        context += f"User context: {json.dumps([{'key':m['key'],'value':m['value']} for m in memories[:10]])}"
+
+    resp = await chat.send_message(UserMessage(text=f"Analyze this goal and suggest next steps:\n{context}"))
+    insight = {"text": resp, "generated_at": now_iso()}
+    await db.goals.update_one({"id": goal_id}, {"$push": {"insights": insight}})
+    return {"insight": resp, "goal_id": goal_id}
+
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         LAYER 6: NUA DREAMS 2.0                             ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+DREAM_CATEGORIES = ["opportunity", "pattern", "reminder", "concern", "optimization",
+                    "relationship", "finance", "productivity", "learning", "business"]
+
+@api_router.get("/dreams")
+async def list_dreams():
+    dreams = await db.dreams.find({}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return {"dreams": dreams, "categories": DREAM_CATEGORIES}
+
+@api_router.post("/dreams/generate")
+async def generate_dream():
+    """Generate a NUA Dream — cross-referenced insight from all data."""
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    api_key = os.environ.get('EMERGENT_LLM_KEY')
+
+    # Gather all context
+    memories = await db.user_memory.find({}, {"_id": 0}).to_list(100)
+    convs = await db.conversations.find({}, {"_id": 0}).sort("updated_at", -1).to_list(10)
+    goals = await db.goals.find({"status": "active"}, {"_id": 0}).to_list(10)
+    expenses = await db.expenses.find({}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    reminders = await db.reminders.find({}, {"_id": 0}).to_list(20)
+    trust = await calculate_trust_score()
+    recent_msgs = await db.messages.find({}, {"_id": 0}).sort("created_at", -1).to_list(30)
+
+    context = "=== USER MEMORIES ===\n"
+    for m in memories:
+        context += f"[{m.get('mem_type','general')}] {m.get('key','')}: {m.get('value','')}\n"
+    context += "\n=== RECENT CONVERSATIONS (titles) ===\n"
+    for c in convs:
+        context += f"- {c.get('title','')} ({c.get('message_count',0)} msgs)\n"
+    context += "\n=== ACTIVE GOALS ===\n"
+    for g in goals:
+        context += f"- {g.get('title','')} ({g.get('progress',0)}% done)\n"
+    context += "\n=== RECENT EXPENSES ===\n"
+    for e in expenses[:10]:
+        context += f"- ${e.get('amount',0)} on {e.get('category','')} ({e.get('date','')})\n"
+    context += f"\n=== TRUST SCORE: {trust['score']}% ({trust['level']}) ===\n"
+    context += "\n=== RECENT MESSAGES ===\n"
+    for msg in recent_msgs[:15]:
+        context += f"[{msg.get('role','')}]: {msg.get('content','')[:100]}\n"
+
+    dream_prompt = f"""Based on ALL the following data about the user, generate ONE non-obvious, cross-referenced insight.
+This should NOT be a summary. It should be a genuine discovery — something the user hasn't thought of.
+
+Pick ONE category: {', '.join(DREAM_CATEGORIES)}
+
+Format your response as:
+CATEGORY: [category]
+TITLE: [short punchy title]
+INSIGHT: [2-3 sentences of the actual insight]
+IMPACT: [low/medium/high]
+
+{context}
+
+Generate a genuinely useful, non-obvious insight. Think like a brilliant advisor who notices patterns the user missed."""
+
+    session_id = f"dream-{uuid.uuid4().hex[:8]}"
+    chat = LlmChat(api_key=api_key, session_id=session_id,
+        system_message="You are Nua's Dream Engine. You cross-reference all user data to find non-obvious insights.")
+    chat.with_model("openai", "gpt-5.2")
+    resp = await chat.send_message(UserMessage(text=dream_prompt))
+
+    # Parse response
+    category = "pattern"
+    title = "New Insight"
+    content = resp
+    impact = "medium"
+    for line in resp.split("\n"):
+        if line.startswith("CATEGORY:"):
+            cat = line.replace("CATEGORY:", "").strip().lower()
+            if cat in DREAM_CATEGORIES:
+                category = cat
+        elif line.startswith("TITLE:"):
+            title = line.replace("TITLE:", "").strip()
+        elif line.startswith("INSIGHT:"):
+            content = line.replace("INSIGHT:", "").strip()
+        elif line.startswith("IMPACT:"):
+            impact = line.replace("IMPACT:", "").strip().lower()
+
+    dream = {
+        "id": str(uuid.uuid4()), "category": category, "title": title,
+        "content": content, "impact": impact, "acted_on": False,
+        "source_data": f"{len(memories)} memories, {len(convs)} conversations, {len(goals)} goals",
+        "created_at": now_iso(),
+    }
+    await db.dreams.insert_one(dream)
+    return {"dream": {k: v for k, v in dream.items() if k != "_id"}}
+
+@api_router.patch("/dreams/{dream_id}/act")
+async def act_on_dream(dream_id: str):
+    await db.dreams.update_one({"id": dream_id}, {"$set": {"acted_on": True}})
+    return {"acted_on": True}
+
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  ENHANCED: NUA CORE — Memory-aware chat with trust tracking ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# Override the build_nua_system_prompt to use full Memory OS + Trust + Goals
+_original_build = build_nua_system_prompt
+
+def build_nua_system_prompt_v2(memories: list = None, reminders: list = None):
+    """Enhanced system prompt with all 7 intelligence layers."""
+    base = _original_build(memories, reminders)
+
+    # Add trust context
+    trust_addition = "\n\nTRUST & AUTONOMY:\n"
+    trust_addition += "Track your performance. When you successfully help, note it. When user corrects you, learn.\n"
+    trust_addition += "For action extraction, classify risk: low-risk (T1), medium (T3), high (T4).\n"
+
+    # Add memory classification guidance
+    memory_addition = "\n\nMEMORY CLASSIFICATION:\n"
+    memory_addition += "When storing memories, use these action types:\n"
+    memory_addition += '```action{"type":"memory","mem_type":"identity","category":"name","key":"...","value":"...","why":"...","confidence":0.9}```\n'
+    memory_addition += "Types: identity (name/people/dates), episodic (events/decisions), semantic (facts/knowledge), "
+    memory_addition += "behavioral (habits/routines), emotional (feelings/reactions), relationship (connections between people)\n"
+
+    # Add goal awareness
+    goal_addition = "\n\nGOAL AWARENESS:\n"
+    goal_addition += "If you detect the user is working toward a goal, mention relevant progress or suggest next steps.\n"
+    goal_addition += "For new goals: ```action{\"type\":\"goal\",\"title\":\"...\",\"description\":\"...\"}```\n"
+
+    return base + trust_addition + memory_addition + goal_addition
+
+# Monkey-patch the system prompt builder
+build_nua_system_prompt = build_nua_system_prompt_v2
+
+
+# Enhanced action processing to handle goals and trust
+_original_process = process_actions
+
+async def enhanced_process_actions(response_text: str):
+    """Process actions with goal support and trust tracking."""
+    executed = await _original_process(response_text)
+
+    # Also check for goal actions
+    action_pattern = r'```action\s*(\{.*?\})\s*```'
+    actions = re.findall(action_pattern, response_text, re.DOTALL)
+    for action_str in actions:
+        try:
+            action = json.loads(action_str)
+            if action.get("type") == "goal":
+                doc = {
+                    "id": str(uuid.uuid4()), "title": action.get("title", ""),
+                    "description": action.get("description", ""), "status": "active",
+                    "progress": 0, "sub_tasks": [], "insights": [],
+                    "created_at": now_iso(), "updated_at": now_iso(),
+                }
+                await db.goals.insert_one(doc)
+                executed.append({"type": "goal", "title": doc["title"]})
+                await record_trust_event("success", f"Created goal: {doc['title']}")
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Record successful action processing
+    if executed:
+        for action in executed:
+            await log_action(
+                f"{action.get('type','unknown')}: {action.get('title', action.get('key', '?'))}",
+                "T1", "auto_extraction", "success"
+            )
+
+    return executed
+
+process_actions = enhanced_process_actions
+
+
 # Include router & middleware
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
