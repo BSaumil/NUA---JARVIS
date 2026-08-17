@@ -1,6 +1,8 @@
 package com.nua.assistant.ui
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.nua.assistant.ai.PlannedStep
 import com.nua.assistant.ai.TaskPlan
@@ -218,6 +221,14 @@ fun NuaScreen(viewModel: NuaViewModel) {
             pending = pending,
             onConfirm = viewModel::confirmPendingReply,
             onDismiss = viewModel::dismissPendingReply,
+        )
+    }
+
+    uiState.pendingSms?.let { pending ->
+        SmsConfirmationDialog(
+            pending = pending,
+            onConfirm = viewModel::confirmPendingSms,
+            onDismiss = viewModel::dismissPendingSms,
         )
     }
 }
@@ -432,6 +443,28 @@ private fun ReplyConfirmationDialog(pending: NuaRouteResult.ReplyProposed, onCon
         title = { Text("Reply to ${pending.notification.title}?") },
         text = { Text("\"${pending.message}\"") },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Send") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** SMS permission is requested lazily, right here on first send attempt, rather than upfront at launch — most users never send a text via NUA. */
+@Composable
+private fun SmsConfirmationDialog(pending: NuaRouteResult.SmsProposed, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> onConfirm() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Text ${pending.contactName}?") },
+        text = { Text("\"${pending.message}\"") },
+        confirmButton = {
+            TextButton(onClick = {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+                    onConfirm()
+                } else {
+                    permissionLauncher.launch(Manifest.permission.SEND_SMS)
+                }
+            }) { Text("Send") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
