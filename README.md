@@ -428,9 +428,22 @@ email to two more capabilities — both built on official, on-device APIs, no OA
   backed by the Android Keystore, while conversation history, facts, documents,
   decisions, and goals sit in a plain Room database protected only by Android's per-app
   sandbox — stated honestly, not glossed over.
-- **Not yet built:** Prompt Injection Firewall, Agent Sandbox, and attestation-based
-  device trust (no server component exists to attest to yet) — see `ROADMAP.md`'s
-  Phase 11 section.
+- **Prompt Injection Firewall.** A structural boundary, not just prompt wording, between
+  data NUA reads and instructions it follows. `security/UserUtterance` is a value class
+  wrapping only the user's own literal chat/voice turn; `NuaIntentRouter.route` and
+  `IntentClassifier.classify` — the one audited entry point into action dispatch — now
+  require it instead of a bare `String`, so a future feature can't silently pipe
+  document/vision/notification/email text into dispatch without an explicit, reviewable
+  wrap. Separately, `security/UntrustedContent.wrapUntrusted` (unit tested) wraps external
+  text in an explicit `<untrusted_...>` tag before it reaches a Claude prompt and
+  neutralizes any such tag already inside the text, so content can't forge a closing tag
+  to escape the block; it's wired into `DocumentAnalyzer.summarize`/`answer` and
+  `VisionAnalyzer.compareAgainstBaseline`, the two places raw string concatenation of
+  external text was found. Even if the accompanying system-prompt directive is ignored,
+  wrapped content still has no path into `route`/`classify` — an injected instruction can
+  produce a wrong reply, never an unauthorized action.
+- **Not yet built:** Agent Sandbox and attestation-based device trust (no server
+  component exists to attest to yet) — see `ROADMAP.md`'s Phase 11 section.
 
 ## Languages
 

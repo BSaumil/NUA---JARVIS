@@ -4,6 +4,9 @@ import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
 import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.extractJsonPayload
+import com.nua.assistant.security.FIREWALL_SYSTEM_DIRECTIVE
+import com.nua.assistant.security.UntrustedSource
+import com.nua.assistant.security.wrapUntrusted
 import java.text.SimpleDateFormat
 import java.util.Locale
 import javax.inject.Inject
@@ -37,10 +40,16 @@ private val SUMMARY_SYSTEM_PROMPT = """
 
     Reply with JSON only, no prose:
     {"summary": "<a few sentences>", "expiryDate": "<YYYY-MM-DD, or null>"}
+
+    $FIREWALL_SYSTEM_DIRECTIVE
 """.trimIndent()
 
-private const val ANSWER_SYSTEM_PROMPT =
-    "Answer the question using only the document text provided below. If the answer isn't in there, say so plainly rather than guessing."
+private val ANSWER_SYSTEM_PROMPT = """
+    Answer the question using only the document text provided below. If the answer isn't
+    in there, say so plainly rather than guessing.
+
+    $FIREWALL_SYSTEM_DIRECTIVE
+""".trimIndent()
 
 /**
  * The Claude-calling half of Document Intelligence: turns page images into text
@@ -68,7 +77,7 @@ class DocumentAnalyzer @Inject constructor(
 
     suspend fun summarize(text: String): DocumentSummary {
         val result = claudeApiClient.complete(
-            userPrompt = text.take(MAX_CONTEXT_CHARS),
+            userPrompt = wrapUntrusted(text.take(MAX_CONTEXT_CHARS), UntrustedSource.DOCUMENT),
             system = SUMMARY_SYSTEM_PROMPT,
             maxTokens = 500,
         )
@@ -84,9 +93,13 @@ class DocumentAnalyzer @Inject constructor(
     }
 
     suspend fun answer(documents: List<Pair<String, String>>, question: String): String {
-        val context = documents.joinToString("\n\n") { (name, text) -> "=== $name ===\n${text.take(MAX_CONTEXT_CHARS)}" }
+        val context = documents.joinToString("\n\n") { (name, text) ->
+            wrapUntrusted("=== $name ===\n${text.take(MAX_CONTEXT_CHARS)}", UntrustedSource.DOCUMENT)
+        }
+        // The question comes first and is never wrapped, so it's unambiguous which part
+        // of the prompt is the user's actual instruction versus document data to read.
         val result = claudeApiClient.complete(
-            userPrompt = "$context\n\nQuestion: $question",
+            userPrompt = "Question: $question\n\n$context",
             system = ANSWER_SYSTEM_PROMPT,
             model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 600,
