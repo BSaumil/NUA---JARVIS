@@ -8,11 +8,11 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.nua.assistant.services.ACTION_WAKE_WORD_DETECTED
 import com.nua.assistant.services.EXTRA_WAKE_PHRASE_ID
 import com.nua.assistant.ui.NuaScreen
@@ -20,8 +20,9 @@ import com.nua.assistant.ui.NuaTheme
 import com.nua.assistant.ui.NuaViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
+/** FragmentActivity (not plain ComponentActivity) because BiometricPrompt (security/BiometricGate.kt) requires one. */
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val viewModel: NuaViewModel by viewModels()
 

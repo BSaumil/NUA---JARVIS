@@ -69,6 +69,8 @@ import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.DiagnosticStatus
+import com.nua.assistant.security.BiometricGate
+import com.nua.assistant.security.encryptionAuditEntries
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
@@ -157,6 +159,7 @@ fun SettingsScreen(
             item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
             item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
             item { DiagnosticsCard(diagnostics, testingApiConnection, onRefreshDiagnostics, onTestApiConnection) }
+            item { SecurityCard() }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
@@ -974,6 +977,48 @@ private fun diagnosticStatusColor(status: DiagnosticStatus) = when (status) {
     DiagnosticStatus.ERROR -> MaterialTheme.colorScheme.error
     DiagnosticStatus.NOT_CONFIGURED -> MaterialTheme.colorScheme.outline
     DiagnosticStatus.INFO -> MaterialTheme.colorScheme.outline
+}
+
+@Composable
+private fun SecurityCard() {
+    val context = LocalContext.current
+    val biometricAvailable = remember { BiometricGate.isAvailable(context) }
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Security", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = if (biometricAvailable) {
+                    "Step-up authentication is set up on this device — NUA asks for your fingerprint, " +
+                        "face, or device PIN before sending a text, replying to a notification, or " +
+                        "confirming a multi-step plan."
+                } else {
+                    "No biometric or device-credential lock is set up, so step-up authentication is " +
+                        "skipped for now — set a fingerprint, face, or PIN in system Settings to enable it."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("What's encrypted at rest", style = MaterialTheme.typography.labelLarge)
+            encryptionAuditEntries().forEach { entry ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(if (entry.encrypted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(entry.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(entry.detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
