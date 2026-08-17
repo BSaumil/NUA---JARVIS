@@ -413,12 +413,24 @@ email to two more capabilities — both built on official, on-device APIs, no OA
   Data Layer hookup or car-session hook to check a live connection against yet. "Test API
   connection" is a separate, manual, opt-in real round trip to Claude — key *presence* and
   key *actually working* are never conflated.
-- **Encryption** was already real before this phase — `SecureKeyRepository` and
-  `OwnerVoiceProfileStore` both use `EncryptedSharedPreferences` backed by an Android
-  Keystore `MasterKey` (AES256-GCM) — but there's no local-encryption-audit surface or
-  biometric step-up gate on high-risk actions yet.
-- **Not yet built:** Prompt Injection Firewall, Agent Sandbox, and biometric step-up
-  authentication — see `ROADMAP.md`'s Phase 11 section.
+- **Biometric step-up authentication.** Every T3+ confirmation dialog — SMS send, reply
+  to a notification, plan confirmation — is gated behind `security/BiometricGate`
+  (fingerprint, face, or device PIN via `androidx.biometric.BiometricPrompt`) whenever the
+  device actually has one enrolled; `security/StepUpPolicy.requiresStepUpAuth` (unit
+  tested) decides which tiers qualify. `MainActivity` is now a `FragmentActivity` since
+  `BiometricPrompt` requires one. On a device with no biometric/PIN set up, step-up is
+  skipped and the existing confirm-only flow still works — gating on hardware that
+  doesn't exist would lock users out, not add security — and Settings → Security says so
+  plainly.
+- **Local encryption audit.** Settings → Security also lists what's actually encrypted
+  today via `security/EncryptionAudit.encryptionAuditEntries` (unit tested): the Claude
+  API key and owner voice profile are real AES-256-GCM `EncryptedSharedPreferences`
+  backed by the Android Keystore, while conversation history, facts, documents,
+  decisions, and goals sit in a plain Room database protected only by Android's per-app
+  sandbox — stated honestly, not glossed over.
+- **Not yet built:** Prompt Injection Firewall, Agent Sandbox, and attestation-based
+  device trust (no server component exists to attest to yet) — see `ROADMAP.md`'s
+  Phase 11 section.
 
 ## Languages
 

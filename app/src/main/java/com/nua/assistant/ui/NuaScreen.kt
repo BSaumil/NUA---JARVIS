@@ -2,6 +2,7 @@ package com.nua.assistant.ui
 
 import android.Manifest
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -58,11 +59,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.fragment.app.FragmentActivity
 import com.nua.assistant.ai.PlannedStep
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.memory.MessageRole
 import com.nua.assistant.notifications.NotificationSummary
+import com.nua.assistant.security.BiometricGate
+import com.nua.assistant.security.requiresStepUpAuth
+import com.nua.assistant.trust.AutonomyTier
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -445,11 +450,17 @@ private fun ApiKeyDialog(onSave: (String) -> Unit) {
 
 @Composable
 private fun ReplyConfirmationDialog(pending: NuaRouteResult.ReplyProposed, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val gatedConfirm = rememberStepUpGatedAction(
+        tier = AutonomyTier.T3,
+        title = "Confirm reply",
+        subtitle = "Verify it's you before NUA sends this reply.",
+        action = onConfirm,
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Reply to ${pending.notification.title}?") },
         text = { Text("\"${pending.message}\"") },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Send") } },
+        confirmButton = { TextButton(onClick = gatedConfirm) { Text("Send") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
@@ -459,25 +470,36 @@ private fun ReplyConfirmationDialog(pending: NuaRouteResult.ReplyProposed, onCon
 private fun SmsConfirmationDialog(pending: NuaRouteResult.SmsProposed, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> onConfirm() }
+    val requestPermissionThenSend: () -> Unit = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+            onConfirm()
+        } else {
+            permissionLauncher.launch(Manifest.permission.SEND_SMS)
+        }
+    }
+    val gatedConfirm = rememberStepUpGatedAction(
+        tier = AutonomyTier.T3,
+        title = "Confirm text",
+        subtitle = "Verify it's you before NUA texts ${pending.contactName}.",
+        action = requestPermissionThenSend,
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Text ${pending.contactName}?") },
         text = { Text("\"${pending.message}\"") },
-        confirmButton = {
-            TextButton(onClick = {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
-                    onConfirm()
-                } else {
-                    permissionLauncher.launch(Manifest.permission.SEND_SMS)
-                }
-            }) { Text("Send") }
-        },
+        confirmButton = { TextButton(onClick = gatedConfirm) { Text("Send") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 
 @Composable
 private fun PlanConfirmationDialog(plan: TaskPlan, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val gatedConfirm = rememberStepUpGatedAction(
+        tier = AutonomyTier.T4,
+        title = "Confirm plan",
+        subtitle = "Verify it's you before NUA schedules this plan.",
+        action = onConfirm,
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(plan.summary) },
@@ -486,9 +508,38 @@ private fun PlanConfirmationDialog(plan: TaskPlan, onConfirm: () -> Unit, onDism
                 plan.steps.forEach { step -> PlanStepRow(step) }
             }
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Confirm plan") } },
+        confirmButton = { TextButton(onClick = gatedConfirm) { Text("Confirm plan") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
     )
+}
+
+/**
+ * Wraps [action] behind a biometric/device-credential prompt when the tier requires
+ * step-up ([requiresStepUpAuth]) and the device actually has one set up. Falls back to
+ * calling [action] straight through otherwise — there's no FragmentActivity to prompt
+ * from, or the device has no biometric/PIN enrolled, so gating would just block the user
+ * rather than add security.
+ */
+@Composable
+private fun rememberStepUpGatedAction(tier: AutonomyTier, title: String, subtitle: String, action: () -> Unit): () -> Unit {
+    val context = LocalContext.current
+    return {
+        val activity = context.findFragmentActivity()
+        if (requiresStepUpAuth(tier) && activity != null && BiometricGate.isAvailable(context)) {
+            BiometricGate.authenticate(activity, title, subtitle) { success -> if (success) action() }
+        } else {
+            action()
+        }
+    }
+}
+
+private fun Context.findFragmentActivity(): FragmentActivity? {
+    var current = this
+    while (current is ContextWrapper) {
+        if (current is FragmentActivity) return current
+        current = current.baseContext
+    }
+    return null
 }
 
 @Composable

@@ -179,11 +179,20 @@ gives every later phase something to build on.
   Becomes non-optional once Phase 10 gives NUA an inbox to read.
 - ⬜ **Agent Sandbox** (`#45`) — every tool gets a declared input/output schema, permission,
   risk level, timeout, and audit log; no arbitrary tool execution path.
-- ⬜ **Security architecture** (`#23`) — local encryption audit, device trust, and
-  step-up authentication (biometric) for the highest-risk actions. (Encryption itself is
-  already real — `SecureKeyRepository`/`OwnerVoiceProfileStore` use
-  `EncryptedSharedPreferences` with an Android Keystore `MasterKey` — but there's no
-  biometric step-up gate on high-risk actions yet.)
+- ✅ **Security architecture** (`#23`, partial) — biometric step-up authentication and a
+  local-encryption audit surface, both under Settings → Security. `security/BiometricGate`
+  wraps `androidx.biometric.BiometricPrompt` (fingerprint/face/device PIN); `MainActivity`
+  is now a `FragmentActivity` since `BiometricPrompt` requires one. `security/StepUpPolicy`
+  (`requiresStepUpAuth`, unit tested) gates every T3+ confirmation dialog — SMS send, reply
+  to notification, plan confirmation — behind a successful biometric check, but only when
+  the device actually has one enrolled; gating on hardware that doesn't exist would just
+  lock users out, not add security, so it falls back to the existing confirm-only flow and
+  the Security card says so honestly. `security/EncryptionAudit` (unit tested,
+  `encryptionAuditEntries`) lists what's actually encrypted today — the Claude API key and
+  owner voice profile (`EncryptedSharedPreferences`/Android Keystore) — versus what isn't:
+  the plain Room database (messages, facts, documents, decisions, goals), which relies only
+  on Android's per-app sandbox. Device trust (attestation-based) is not built — no server
+  component exists to attest to yet.
 
 ## Phase 12 — Inner Life & Command Centre
 

@@ -31,6 +31,10 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Step-up authentication for T3+ actions (security/BiometricGate.kt). Not a
+         runtime-requested permission — the system handles biometric consent itself via
+         BiometricPrompt. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Lets Settings screen ask the user to exempt NUA from battery optimization, needed
          for the wake-word foreground service to survive OEM background-kill policies. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
