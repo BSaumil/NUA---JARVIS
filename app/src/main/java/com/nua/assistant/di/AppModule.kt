@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.nua.assistant.memory.ActionOutcomeDao
 import com.nua.assistant.memory.AutonomyPreferenceDao
 import com.nua.assistant.memory.DecisionDao
+import com.nua.assistant.memory.DocumentDao
 import com.nua.assistant.memory.DreamDao
 import com.nua.assistant.memory.GeofenceDao
 import com.nua.assistant.memory.GoalDao
@@ -67,6 +68,9 @@ object AppModule {
 
     @Provides
     fun provideVisionMonitorDao(database: NuaDatabase): VisionMonitorDao = database.visionMonitorDao()
+
+    @Provides
+    fun provideDocumentDao(database: NuaDatabase): DocumentDao = database.documentDao()
 
     @Provides
     @Singleton

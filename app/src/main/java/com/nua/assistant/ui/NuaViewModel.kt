@@ -24,10 +24,17 @@ import com.nua.assistant.briefing.BriefingScheduleStore
 import com.nua.assistant.briefing.BriefingScheduler
 import com.nua.assistant.context.WhatNowAdvisor
 import com.nua.assistant.decisions.DecisionRepository
+import com.nua.assistant.documents.DocumentAnalyzer
+import com.nua.assistant.documents.DocumentRepository
+import com.nua.assistant.documents.DocumentType
+import com.nua.assistant.documents.DocxTextExtractor
+import com.nua.assistant.documents.PdfTextExtractor
+import com.nua.assistant.documents.documentTypeForMime
 import com.nua.assistant.dreams.DreamRepository
 import com.nua.assistant.geofencing.GeofenceManager
 import com.nua.assistant.goals.GoalRepository
 import com.nua.assistant.memory.DecisionEntity
+import com.nua.assistant.memory.DocumentEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceDao
 import com.nua.assistant.memory.GeofenceEntity
@@ -112,6 +119,10 @@ class NuaViewModel @Inject constructor(
     private val imageEncoder: ImageEncoder,
     private val visionAnalyzer: VisionAnalyzer,
     private val visionMonitorRepository: VisionMonitorRepository,
+    private val documentRepository: DocumentRepository,
+    private val documentAnalyzer: DocumentAnalyzer,
+    private val pdfTextExtractor: PdfTextExtractor,
+    private val docxTextExtractor: DocxTextExtractor,
     private val geofenceManager: GeofenceManager,
     private val geofenceDao: GeofenceDao,
     private val usageTracker: UsageTracker,
@@ -196,6 +207,70 @@ class NuaViewModel @Inject constructor(
 
     private val _lastVisionResult = MutableStateFlow<LastVisionResult?>(null)
     val lastVisionResult: StateFlow<LastVisionResult?> = _lastVisionResult.asStateFlow()
+
+    val documents: StateFlow<List<DocumentEntity>> = documentRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Ingests a PDF, .docx, or image the user picked: extracts its full text (PdfTextExtractor
+     * rasterizes pages and transcribes each via Claude vision, DocxTextExtractor reads the
+     * XML directly, images go straight through DocumentAnalyzer), then summarizes it and
+     * looks for an expiry date. No text extracted means nothing gets saved — never a document
+     * entry claiming a capability it doesn't have.
+     */
+    fun ingestDocument(uri: Uri, mimeType: String?, fileName: String) {
+        if (_uiState.value.isProcessing) return
+        val type = documentTypeForMime(mimeType)
+        if (type == null) {
+            _uiState.update { it.copy(messages = it.messages + ChatMessage(MessageRole.ASSISTANT, "That's not a file type NUA can read yet.")) }
+            return
+        }
+        _uiState.update {
+            it.copy(isProcessing = true, messages = it.messages + ChatMessage(MessageRole.USER, "[Document: $fileName]"))
+        }
+        viewModelScope.launch {
+            memoryDao.insertMessage(MessageEntity(role = MessageRole.USER, content = "[Document: $fileName]"))
+            if (!connectivityMonitor.isOnline()) {
+                respond("No connection right now — can't read that document until you're back online.", extractFacts = false)
+                return@launch
+            }
+            val text = when (type) {
+                DocumentType.PDF -> pdfTextExtractor.extract(uri)
+                DocumentType.WORD -> docxTextExtractor.extract(uri)
+                DocumentType.IMAGE -> imageEncoder.encode(uri)?.let { documentAnalyzer.transcribePage(it.base64, it.mediaType) }
+            }
+            if (text.isNullOrBlank()) {
+                respond("Couldn't read any text out of \"$fileName\".", extractFacts = false)
+                return@launch
+            }
+            val summary = documentAnalyzer.summarize(text)
+            documentRepository.save(fileName, type, text, summary.summary, summary.expiryDate)
+            respond(summary.summary, extractFacts = false)
+        }
+    }
+
+    /** Targeted Q&A over one or more ingested documents — also how "compare these two" works, by including both. */
+    fun askAboutDocuments(documentIds: List<Long>, question: String) {
+        if (_uiState.value.isProcessing || question.isBlank()) return
+        val selected = documents.value.filter { it.id in documentIds }
+        if (selected.isEmpty()) return
+        _uiState.update {
+            it.copy(isProcessing = true, messages = it.messages + ChatMessage(MessageRole.USER, question))
+        }
+        viewModelScope.launch {
+            memoryDao.insertMessage(MessageEntity(role = MessageRole.USER, content = question))
+            if (!connectivityMonitor.isOnline()) {
+                respond("No connection right now — can't check those documents until you're back online.", extractFacts = false)
+                return@launch
+            }
+            val answer = documentAnalyzer.answer(selected.map { it.fileName to it.extractedText }, question)
+            respond(answer, extractFacts = false)
+        }
+    }
+
+    fun removeDocument(id: Long) {
+        viewModelScope.launch { documentRepository.delete(id) }
+    }
 
     fun addDecision(decision: String, reasoning: String?) {
         viewModelScope.launch { decisionRepository.record(decision, reasoning) }

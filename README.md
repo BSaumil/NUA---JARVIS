@@ -327,7 +327,7 @@ conversation. A filter row lets you narrow the list to one `MemoryType` at a tim
 a "forget all N of this type" bulk action once a type is selected
 (`MemoryDao.deleteFactsByType`). This closes out Phase 8's full scope.
 
-## Phase 9 — NUA Vision as a system (partial)
+## Phase 9 — NUA Vision as a system & Document Intelligence
 
 The camera → Claude vision pipeline is now structured as see / understand / remember /
 act instead of one opaque "describe this photo" call:
@@ -353,8 +353,25 @@ act instead of one opaque "describe this photo" call:
   button and a way to stop watching. The permission gate here is the explicit "Monitor
   this" action itself, not an OS-level runtime permission.
 
-Still open from Phase 9's full scope in `ROADMAP.md`: Document Intelligence (PDF/Word
-ingestion, summarization, targeted Q&A, expiry reminders).
+**Document Intelligence.** A Documents screen (document icon in the top bar) for reading
+PDFs, Word documents, and images:
+
+- **Ingestion, no new dependency.** `PdfTextExtractor` rasterizes PDF pages with
+  Android's built-in `PdfRenderer` and transcribes each via Claude vision — PdfRenderer
+  exposes pixels, not a text layer, and plenty of real-world PDFs are scans with no text
+  layer anyway. `DocxTextExtractor` reads a `.docx`'s `word/document.xml` directly with
+  `java.util.zip` and a SAX parser, both already part of the platform — a `.docx` is just
+  a zip of XML, so no Office document library was needed. Images reuse the same
+  `DocumentAnalyzer.transcribePage` PDF pages go through.
+- **Summarization + expiry detection.** `DocumentAnalyzer.summarize` asks Claude for a
+  short summary — obligations, deadlines, money — plus a single ISO expiry/renewal date
+  when the document genuinely has one.
+- **Targeted Q&A and comparison.** `DocumentAnalyzer.answer` takes one or more documents'
+  text as context. The Documents screen's "Ask" dialog lets you check additional
+  documents to include, so comparing two contracts is just asking a question with both
+  checked — no separate compare mode needed.
+- **Expiry reminders.** `DocumentExpiryWorker` runs daily and notifies once a document's
+  expiry date is within 30 days (or already past) and hasn't been reminded about yet.
 
 ## Languages
 
