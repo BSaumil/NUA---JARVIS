@@ -9,6 +9,16 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- Resolves a spoken name to a phone number/email for SMS and calendar invitations
+         (contacts/ContactResolver.kt). Read-only, official ContactsContract API. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Requested lazily on first "send a text" confirmation (see NuaScreen.kt's
+         SmsConfirmationDialog), not upfront — most users never send SMS via NUA.
+         SEND_SMS is one of Google Play's restricted permissions: distributing a build
+         that isn't the device's default SMS/Assistant handler requires a Play Console
+         permissions declaration, same caveat already noted below for background
+         location — not yet filed, since this is still pre-release scaffolding. -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
     <!-- Coarse is enough for a city-level weather lookup; no fine location needed. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Geofencing (geofencing/GeofenceManager.kt) needs fine location, and background

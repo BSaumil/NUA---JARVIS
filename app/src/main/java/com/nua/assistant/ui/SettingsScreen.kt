@@ -560,6 +560,7 @@ private fun relativeDaysAgo(timestampMillis: Long): String {
 private fun displayActionType(actionType: NuaActionType): String = when (actionType) {
     NuaActionType.REPLY_TO_NOTIFICATION -> "replying to notifications"
     NuaActionType.PLAN_TASK -> "confirming task plans"
+    NuaActionType.SMS_SEND -> "sending texts"
     else -> actionType.name.lowercase().replace('_', ' ')
 }
 

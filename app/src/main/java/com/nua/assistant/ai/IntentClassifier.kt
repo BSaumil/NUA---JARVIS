@@ -1,6 +1,9 @@
 package com.nua.assistant.ai
 
 import com.nua.assistant.voice.NuaLanguage
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.Serializable
@@ -18,6 +21,8 @@ enum class NuaActionType {
     PLAN_TASK,
     SMART_HOME,
     EMAIL,
+    SMS_SEND,
+    CALENDAR_INVITE,
     /** No concrete action fits — fall through to a normal conversational reply. */
     CHAT,
 }
@@ -59,6 +64,16 @@ private val CLASSIFIER_SYSTEM_PROMPT = """
     - SMART_HOME: user wants to control a smart-home device (lights, thermostat, plugs,
       locks). parameters: {"device": "<device/room name>", "action": "on|off|<other>"}
     - EMAIL: user wants their email checked or read ("any new emails?", "check my inbox").
+    - SMS_SEND: user wants a text message sent to someone (e.g. "text Sam I'm running
+      late"). parameters: {"contact": "<name or phone number as said>", "message":
+      "<text to send, in the same language/wording the user used>"}. Only use this when
+      there's a clear recipient and message; otherwise CHAT.
+    - CALENDAR_INVITE: user wants a calendar event created, optionally with someone else
+      invited (e.g. "set up a call with John tomorrow at 3", "invite priya@example.com to
+      lunch Friday at noon"). parameters: {"title": "<short event title>", "attendee":
+      "<name or email, if one was mentioned — omit the key entirely if not>",
+      "offsetHours": "<number of hours from right now the event should start, e.g. 26.5
+      for tomorrow at a similar time — compute this using CURRENT_TIME below>"}.
     - CHAT: nothing above fits, or the request is purely conversational — this includes
       mood/vibe statements with no obvious action ("I'm bored", "I had a rough day")
       unless they clearly imply one of the actions above (e.g. "I'm bored" alone is
@@ -69,8 +84,11 @@ private val CLASSIFIER_SYSTEM_PROMPT = """
 
     The request may be in any of: ${NuaLanguage.supportedNames()} — understand it
     regardless of language. Keep any extracted text parameters ("app", "query",
-    "activity") in the same language and wording the user used; don't translate them.
+    "activity", "contact", "message", "title", "attendee") in the same language and
+    wording the user used; don't translate them.
 """.trimIndent()
+
+private val CLASSIFIER_DATE_FORMAT = SimpleDateFormat("EEEE, MMMM d, yyyy 'at' h:mm a", Locale.US)
 
 /**
  * Claude-based fallback for ambiguous or conversational requests that
@@ -84,9 +102,10 @@ class IntentClassifier @Inject constructor(
 ) {
 
     suspend fun classify(utterance: String): ClassifiedIntent? {
+        val system = "$CLASSIFIER_SYSTEM_PROMPT\n\nCURRENT_TIME: ${CLASSIFIER_DATE_FORMAT.format(Date())}"
         val result = claudeApiClient.complete(
             userPrompt = utterance,
-            system = CLASSIFIER_SYSTEM_PROMPT,
+            system = system,
             model = CLAUDE_MODEL_UTILITY,
             maxTokens = 256,
         )

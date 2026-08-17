@@ -131,12 +131,33 @@ gives every later phase something to build on.
   - **Expiry reminders** — `DocumentExpiryWorker` (daily) notifies once a document's
     expiry date is within 30 days (or already past) and hasn't been reminded about yet.
 
-## Phase 10 — Communication Centre
+## Phase 10 — Communication Centre 🟡 partially shipped
 
-- Turns the existing email scaffold (`#12`, already structurally real but blocked on
-  external Gmail OAuth) into a real, provisioned integration, then extends the same
-  pattern to SMS and calendar invitations. WhatsApp only if a compliant API path exists —
-  won't be built against anything that risks the user's account.
+- ✅ **SMS send** (`#12`, extends the pattern) — `NuaActionType.SMS_SEND` via
+  `SmsSendSkill`/`SmsSender` (Android's built-in `SmsManager`, official API, no OAuth).
+  `ContactResolver` resolves a spoken name to a number via `ContactsContract` (or uses it
+  directly if it's already a number). Tier 3 — always confirmed before sending, the same
+  reasoning as replying to a notification. `READ_CONTACTS` is requested upfront-adjacent
+  (Tier 1 block); `SEND_SMS` is requested lazily on first send, since it's one of Google
+  Play's restricted permissions and most users will never trigger it.
+- ✅ **Calendar invitations** (`#12`, extends the pattern) — `NuaActionType.CALENDAR_INVITE`
+  via `CalendarInviteSkill`, extending `CalendarReader.createInvitation` to insert a
+  `CalendarContract.Attendees` row alongside the event when an email is resolved (via the
+  same `ContactResolver`). Tier 2 — executes immediately and reports what happened, same
+  reasoning as smart-home actions, since `CalendarReader.createReminder` already proved
+  this content-provider write is safe and this is a natural extension of it. If no email
+  resolves for the named attendee, the event is still created as a personal note and NUA
+  says so rather than claiming an invitation that didn't reach anyone.
+- ⬜ **Gmail/email** — genuinely blocked, not a "todo": the existing `email/` scaffold
+  (`EmailRepository`/`UnconfiguredEmailRepository`/`EmailModule`) is exactly what its own
+  doc comment says it is — an extension point with *zero* OAuth scaffolding behind it.
+  There is no on-device content-provider equivalent for email the way there is for
+  calendar/contacts; a real integration needs a Gmail API project and OAuth consent flow
+  set up outside this codebase, with real credentials only a human can provision. Swap
+  the `EmailModule` binding once that exists.
+- ⬜ **WhatsApp** — no compliant on-device API path identified; not built, per the
+  original scope note that this won't be built against anything that risks the user's
+  account.
 
 ## Phase 11 — Security, Audit, and Self-Diagnostics
 

@@ -51,6 +51,7 @@ import com.nua.assistant.network.ConnectivityMonitor
 import com.nua.assistant.notifications.NotificationReplySender
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.notifications.NotificationSummary
+import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
 import com.nua.assistant.trust.AutonomyTier
@@ -95,6 +96,7 @@ data class NuaUiState(
     val streamingReply: String? = null,
     val pendingPlan: TaskPlan? = null,
     val pendingReply: NuaRouteResult.ReplyProposed? = null,
+    val pendingSms: NuaRouteResult.SmsProposed? = null,
     val needsApiKey: Boolean = false,
 )
 
@@ -110,6 +112,7 @@ class NuaViewModel @Inject constructor(
     private val voiceManager: VoiceManager,
     private val notificationRepository: NotificationRepository,
     private val notificationReplySender: NotificationReplySender,
+    private val smsSender: SmsSender,
     private val languagePreferenceStore: LanguagePreferenceStore,
     private val briefingScheduleStore: BriefingScheduleStore,
     private val briefingScheduler: BriefingScheduler,
@@ -398,6 +401,13 @@ class NuaViewModel @Inject constructor(
                         _uiState.update { it.copy(isProcessing = false, pendingReply = routed) }
                     }
                 }
+                is NuaRouteResult.SmsProposed -> {
+                    if (trustRepository.isAutoApproved(NuaActionType.SMS_SEND)) {
+                        executeConfirmedSms(routed)
+                    } else {
+                        _uiState.update { it.copy(isProcessing = false, pendingSms = routed) }
+                    }
+                }
                 NuaRouteResult.FallThroughToChat -> replyConversationally(message)
             }
         }
@@ -667,6 +677,47 @@ class NuaViewModel @Inject constructor(
                 actionType = NuaActionType.REPLY_TO_NOTIFICATION.name,
                 tier = AutonomyTier.T3,
                 summary = "Declined proposed reply to ${pending.notification.title}",
+                succeeded = false,
+                wasRejection = true,
+            )
+        }
+    }
+
+    fun confirmPendingSms() {
+        val pending = _uiState.value.pendingSms ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pendingSms = null) }
+            trustRepository.recordApproval(NuaActionType.SMS_SEND)
+            executeConfirmedSms(pending)
+        }
+    }
+
+    private suspend fun executeConfirmedSms(pending: NuaRouteResult.SmsProposed) {
+        val sent = smsSender.send(pending.phoneNumber, pending.message)
+        val confirmation = if (sent) {
+            "Sent — texted ${pending.contactName}."
+        } else if (!smsSender.hasPermission()) {
+            "Couldn't send that — NUA doesn't have permission to send texts yet."
+        } else {
+            "That text didn't go through."
+        }
+        trustRepository.recordOutcome(
+            actionType = NuaActionType.SMS_SEND.name,
+            tier = AutonomyTier.T3,
+            summary = confirmation,
+            succeeded = sent,
+        )
+        respond(confirmation, extractFacts = false)
+    }
+
+    fun dismissPendingSms() {
+        val pending = _uiState.value.pendingSms ?: return
+        _uiState.update { it.copy(pendingSms = null) }
+        viewModelScope.launch {
+            trustRepository.recordOutcome(
+                actionType = NuaActionType.SMS_SEND.name,
+                tier = AutonomyTier.T3,
+                summary = "Declined proposed text to ${pending.contactName}",
                 succeeded = false,
                 wasRejection = true,
             )

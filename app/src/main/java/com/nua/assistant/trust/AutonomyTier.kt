@@ -49,7 +49,13 @@ fun autonomyTierFor(action: NuaActionType): AutonomyTier = when (action) {
     NuaActionType.MEDIA_CONTROL,
     -> AutonomyTier.T1
 
-    NuaActionType.SMART_HOME -> AutonomyTier.T2
-    NuaActionType.REPLY_TO_NOTIFICATION -> AutonomyTier.T3
+    NuaActionType.SMART_HOME,
+    NuaActionType.CALENDAR_INVITE,
+    -> AutonomyTier.T2
+
+    NuaActionType.REPLY_TO_NOTIFICATION,
+    NuaActionType.SMS_SEND,
+    -> AutonomyTier.T3
+
     NuaActionType.PLAN_TASK -> AutonomyTier.T4
 }

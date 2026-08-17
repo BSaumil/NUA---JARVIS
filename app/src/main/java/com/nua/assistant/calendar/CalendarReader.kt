@@ -84,6 +84,35 @@ class CalendarReader @Inject constructor(
      * explicit user confirmation action, never while assembling the plan itself.
      */
     suspend fun createReminder(title: String, whenMillis: Long, notes: String? = null): Result<Long> =
+        insertEvent(title, whenMillis, notes)
+
+    /**
+     * Creates a calendar event and, if an attendee email was resolved, invites them via
+     * CalendarContract.Attendees — the same official on-device API as the event itself,
+     * no Google Calendar API round trip. Unlike [createReminder], called directly once
+     * NUA classifies a CALENDAR_INVITE intent (Tier 2: executes immediately, then
+     * reports what happened) — creating an event a user explicitly asked for is squarely
+     * "do it and say so" territory, the same reasoning as smart-home actions.
+     */
+    suspend fun createInvitation(title: String, whenMillis: Long, attendeeEmail: String?, notes: String? = null): Result<Long> {
+        val created = insertEvent(title, whenMillis, notes)
+        val eventId = created.getOrNull() ?: return created
+        if (attendeeEmail != null) {
+            withContext(Dispatchers.IO) {
+                val attendeeValues = ContentValues().apply {
+                    put(CalendarContract.Attendees.ATTENDEE_EMAIL, attendeeEmail)
+                    put(CalendarContract.Attendees.ATTENDEE_RELATIONSHIP, CalendarContract.Attendees.RELATIONSHIP_ATTENDEE)
+                    put(CalendarContract.Attendees.ATTENDEE_TYPE, CalendarContract.Attendees.TYPE_REQUIRED)
+                    put(CalendarContract.Attendees.ATTENDEE_STATUS, CalendarContract.Attendees.ATTENDEE_STATUS_INVITED)
+                    put(CalendarContract.Attendees.EVENT_ID, eventId)
+                }
+                context.contentResolver.insert(CalendarContract.Attendees.CONTENT_URI, attendeeValues)
+            }
+        }
+        return created
+    }
+
+    private suspend fun insertEvent(title: String, whenMillis: Long, notes: String?): Result<Long> =
         withContext(Dispatchers.IO) {
             if (!hasCalendarPermission(Manifest.permission.WRITE_CALENDAR)) {
                 return@withContext Result.failure(IllegalStateException("Calendar write permission not granted."))

@@ -373,6 +373,33 @@ PDFs, Word documents, and images:
 - **Expiry reminders.** `DocumentExpiryWorker` runs daily and notifies once a document's
   expiry date is within 30 days (or already past) and hasn't been reminded about yet.
 
+## Phase 10 — Communication Centre (partial)
+
+Extends the `NuaActionType`/`NuaSkill` router pattern already used for smart home and
+email to two more capabilities — both built on official, on-device APIs, no OAuth:
+
+- **SMS send.** `SmsSendSkill` resolves a spoken name to a phone number via
+  `ContactResolver` (`ContactsContract`, or used directly if it already looks like a
+  number), then proposes the exact recipient and text for confirmation — never sends
+  without it, the same "ask first" treatment as replying to a notification. `SmsSender`
+  wraps Android's built-in `SmsManager`. `SEND_SMS` is requested lazily, right in the
+  confirmation dialog, rather than upfront at launch, since it's one of Google Play's
+  restricted permissions and most users will never trigger it.
+- **Calendar invitations.** `CalendarInviteSkill` extends `CalendarReader` (previously
+  read-plus-personal-reminders only) with `createInvitation`, which inserts a
+  `CalendarContract.Attendees` row alongside the event once `ContactResolver` finds an
+  email for the named attendee. Executes immediately and reports back — the same "do it,
+  then say so" tier as smart-home actions — since the underlying calendar write already
+  proved itself safe via `createReminder`. If no email resolves, the event is still
+  created as a personal note, and NUA says so rather than claiming an invitation that
+  didn't reach anyone.
+- **Gmail — genuinely blocked, not a gap.** The `email/` scaffold
+  (`EmailRepository`/`UnconfiguredEmailRepository`) has zero OAuth code behind it; unlike
+  calendar/contacts there's no on-device content-provider equivalent for email. A real
+  integration needs a Gmail API project and OAuth consent set up outside this codebase.
+- **WhatsApp** wasn't built — no compliant on-device API path was found, and this project
+  won't build against anything that risks the user's account.
+
 ## Languages
 
 NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,

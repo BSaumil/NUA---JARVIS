@@ -66,4 +66,14 @@ abstract class SkillModule {
     @IntoMap
     @ActionTypeKey(NuaActionType.EMAIL)
     abstract fun bindEmailSkill(impl: EmailSkill): NuaSkill
+
+    @Binds
+    @IntoMap
+    @ActionTypeKey(NuaActionType.SMS_SEND)
+    abstract fun bindSmsSendSkill(impl: SmsSendSkill): NuaSkill
+
+    @Binds
+    @IntoMap
+    @ActionTypeKey(NuaActionType.CALENDAR_INVITE)
+    abstract fun bindCalendarInviteSkill(impl: CalendarInviteSkill): NuaSkill
 }

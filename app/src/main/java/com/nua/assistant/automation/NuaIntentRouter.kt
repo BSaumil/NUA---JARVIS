@@ -20,6 +20,8 @@ sealed class NuaRouteResult {
     data class PlanProposed(val plan: TaskPlan) : NuaRouteResult()
     /** Sending a message on the user's behalf is sensitive — always confirmed before NotificationReplySender fires. */
     data class ReplyProposed(val notification: NotificationEntry, val message: String) : NuaRouteResult()
+    /** Same reasoning as ReplyProposed — always confirmed before SmsSender fires. */
+    data class SmsProposed(val contactName: String, val phoneNumber: String, val message: String) : NuaRouteResult()
     data object FallThroughToChat : NuaRouteResult()
 }
 
