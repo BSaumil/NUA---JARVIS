@@ -11,6 +11,8 @@ class MorningBriefingSkill @Inject constructor(
     private val morningBriefing: MorningBriefing,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(timeoutMillis = TIMEOUT_CLAUDE_MILLIS)
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult =
         NuaRouteResult.ActionTaken(morningBriefing.generate(originalUtterance, pinnedLanguage))
 }

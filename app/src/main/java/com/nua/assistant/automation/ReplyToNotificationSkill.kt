@@ -11,6 +11,10 @@ class ReplyToNotificationSkill @Inject constructor(
     private val notificationRepository: NotificationRepository,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(
+        parameters = listOf(SkillParameter("target", required = true), SkillParameter("message", required = true)),
+    )
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val target = intent.parameters["target"]
         val message = intent.parameters["message"]

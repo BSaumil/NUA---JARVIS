@@ -38,6 +38,7 @@ class NuaIntentRouter @Inject constructor(
     private val intentClassifier: IntentClassifier,
     private val skills: Map<NuaActionType, @JvmSuppressWildcards NuaSkill>,
     private val trustRepository: TrustRepository,
+    private val skillSandbox: SkillSandbox,
 ) {
 
     /**
@@ -57,8 +58,11 @@ class NuaIntentRouter @Inject constructor(
     }
 
     private suspend fun dispatch(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
+        // The skills map is a closed set assembled by Hilt (SkillModule.kt) — an action
+        // with no binding simply isn't dispatchable, so there's no arbitrary execution
+        // path. Everything that is dispatchable goes through the sandbox, never directly.
         val skill = skills[intent.action] ?: return NuaRouteResult.FallThroughToChat
-        val result = skill.execute(intent, originalUtterance, pinnedLanguage)
+        val result = skillSandbox.execute(skill, intent, originalUtterance, pinnedLanguage)
         // Only ActionTaken resolves immediately — proposals (Plan/Reply) are logged by the
         // ViewModel once the user actually confirms or declines them.
         if (result is NuaRouteResult.ActionTaken) {

@@ -11,6 +11,8 @@ class ReadNotificationsSkill @Inject constructor(
     private val notificationRepository: NotificationRepository,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest()
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult =
         NuaRouteResult.ActionTaken(notificationRepository.summary().spokenSummary)
 }

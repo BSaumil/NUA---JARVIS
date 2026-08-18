@@ -212,8 +212,27 @@ gives every later phase something to build on.
   purely in a prompt can. The backstop is structural: even if the system directive were
   ignored, wrapped/untrusted content has no path into `route`/`classify`, so an injected
   instruction can produce a wrong *reply*, never an unauthorized *action*.
-- ⬜ **Agent Sandbox** (`#45`) — every tool gets a declared input/output schema, permission,
-  risk level, timeout, and audit log; no arbitrary tool execution path.
+- ✅ **Agent Sandbox** (`#45`) — every skill now declares a `SkillManifest` (abstract on
+  the `NuaSkill` interface, so a new skill can't be added undeclared), and every dispatch
+  goes through `SkillSandbox` rather than calling the skill directly. Per execution it
+  enforces: **declared inputs** (required parameters must be present and non-blank, and
+  undeclared parameters are *stripped* before the skill sees them — so a classifier that
+  invents an extra key can't smuggle it into a tool call), **permission preconditions**
+  (checked up front, with a specific "that needs location, which isn't granted yet"
+  rather than a vague downstream failure), and a **declared timeout** (10s local / 20s
+  network / 45s Claude) with exception containment, so a hanging or throwing skill
+  becomes a reported failure instead of a stuck turn or a crash. **Risk level** and the
+  **audit log** were already real and are reused rather than duplicated —
+  `autonomyTierFor` keys risk off the same `NuaActionType`, and `TrustRepository`
+  receives every outcome, now including sandbox refusals, timeouts, and crashes. **No
+  arbitrary execution path**: the skill map is a closed Hilt multibinding, so an action
+  with no binding simply isn't dispatchable. Pure validation logic is unit tested
+  (`SkillManifestTest`).
+
+  Honest scope: this is a policy and lifecycle envelope, not OS-level isolation. Skills
+  run in NUA's own process with NUA's own permissions; nothing here stops a skill that
+  deliberately reaches around its manifest. It constrains the *dispatch path*, which is
+  where classifier output — the untrusted part — actually flows.
 - ✅ **Security architecture** (`#23`, partial) — biometric step-up authentication and a
   local-encryption audit surface, both under Settings → Security. `security/BiometricGate`
   wraps `androidx.biometric.BiometricPrompt` (fingerprint/face/device PIN); `MainActivity`

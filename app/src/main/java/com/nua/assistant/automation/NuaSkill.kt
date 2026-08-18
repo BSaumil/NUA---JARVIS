@@ -17,6 +17,14 @@ annotation class ActionTypeKey(val value: NuaActionType)
  * NuaSkill implementation and one new binding, not another NuaIntentRouter branch.
  */
 interface NuaSkill {
+    /**
+     * This skill's declared contract — inputs, hard permission preconditions, and time
+     * budget. Deliberately abstract with no default: the Agent Sandbox's premise is that
+     * *every* tool declares itself, so a new skill can't slip through undeclared.
+     * [SkillSandbox] enforces it before and during [execute].
+     */
+    val manifest: SkillManifest
+
     suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult
 }
 

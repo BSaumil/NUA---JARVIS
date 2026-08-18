@@ -12,6 +12,11 @@ class SmartHomeSkill @Inject constructor(
     private val smartHomeRepository: SmartHomeRepository,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(
+        parameters = listOf(SkillParameter("device", required = true), SkillParameter("action", required = true)),
+        timeoutMillis = TIMEOUT_NETWORK_MILLIS,
+    )
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val device = intent.parameters["device"]
         val action = intent.parameters["action"]

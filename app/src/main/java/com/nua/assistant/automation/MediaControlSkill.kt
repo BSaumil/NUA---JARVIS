@@ -11,6 +11,8 @@ class MediaControlSkill @Inject constructor(
     private val mediaControlManager: MediaControlManager,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(parameters = listOf(SkillParameter("command", required = true)))
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val handled = when (intent.parameters["command"]) {
             "play" -> mediaControlManager.play()

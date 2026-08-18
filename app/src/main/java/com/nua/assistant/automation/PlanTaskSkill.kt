@@ -11,6 +11,11 @@ class PlanTaskSkill @Inject constructor(
     private val taskPlanner: TaskPlanner,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(
+        parameters = listOf(SkillParameter("activity")),
+        timeoutMillis = TIMEOUT_CLAUDE_MILLIS,
+    )
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val activity = intent.parameters["activity"] ?: originalUtterance
         val plan = taskPlanner.propose(activity, pinnedLanguage)
