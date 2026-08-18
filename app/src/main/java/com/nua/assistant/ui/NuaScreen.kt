@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -36,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,11 +58,16 @@ import androidx.fragment.app.FragmentActivity
 import com.nua.assistant.ai.PlannedStep
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.automation.NuaRouteResult
+import com.nua.assistant.automation.displayNameFor
 import com.nua.assistant.memory.MessageRole
 import com.nua.assistant.security.BiometricGate
 import com.nua.assistant.ui.components.NuaBottomBar
 import com.nua.assistant.ui.nav.MemorySection
 import com.nua.assistant.ui.nav.NuaDestination
+import com.nua.assistant.ui.palette.CommandPaletteSheet
+import com.nua.assistant.ui.palette.PaletteAction
+import com.nua.assistant.ui.palette.buildPalette
+import com.nua.assistant.ui.theme.NuaTheme
 import com.nua.assistant.ui.theme.rememberCommitHaptic
 import com.nua.assistant.security.requiresStepUpAuth
 import com.nua.assistant.trust.AutonomyTier
@@ -96,6 +103,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val latestInsight by viewModel.latestInsight.collectAsState()
     val nextBestAction by viewModel.nextBestAction.collectAsState()
     val skills = viewModel.skills
+    val paletteQuery by viewModel.paletteQuery.collectAsState()
+    val paletteMemories by viewModel.paletteMemories.collectAsState()
+    var showPalette by remember { mutableStateOf(false) }
     // One destination enum replaces the pile of boolean show* flags this screen used to
     // navigate with — each new screen used to mean another flag and another early return,
     // and the user got no sense of where they were.
@@ -125,6 +135,17 @@ fun NuaScreen(viewModel: NuaViewModel) {
 
     Scaffold(
         bottomBar = { NuaBottomBar(current = destination, onSelect = { destination = it }, alertOn = alerts) },
+        floatingActionButton = {
+            // The palette is reachable from every destination — that's what makes it a
+            // palette rather than another screen you have to navigate to first.
+            FloatingActionButton(
+                onClick = { showPalette = true },
+                containerColor = NuaTheme.colors.surfaceElevated,
+                contentColor = NuaTheme.colors.brandIdentity,
+            ) {
+                Icon(Icons.Filled.Search, contentDescription = "Open command palette")
+            }
+        },
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (destination) {
@@ -223,6 +244,42 @@ fun NuaScreen(viewModel: NuaViewModel) {
 
     if (uiState.needsApiKey) {
         ApiKeyDialog(onSave = viewModel::saveApiKey)
+    }
+
+    if (showPalette) {
+        CommandPaletteSheet(
+            query = paletteQuery,
+            onQueryChange = viewModel::updatePaletteQuery,
+            entries = buildPalette(paletteQuery, viewModel.paletteSkills, paletteMemories),
+            onChoose = { entry ->
+                showPalette = false
+                viewModel.updatePaletteQuery("")
+                when (val chosen = entry.action) {
+                    is PaletteAction.Navigate -> destination = chosen.destination
+                    is PaletteAction.OpenMemory -> {
+                        viewModel.updateSecondBrainQuery(chosen.query)
+                        memorySection = MemorySection.SEARCH
+                        destination = NuaDestination.MEMORY
+                    }
+                    // Both of these go through sendMessage, so routing, the autonomy
+                    // tier, and the confirmation dialogs all still apply — the palette
+                    // never becomes a second, less-guarded way to run an action.
+                    is PaletteAction.RunSkill -> {
+                        // The plain capability name, not the decorated row label — the
+                        // classifier should see a clean utterance. A gated skill with no
+                        // details yet ("Send a text") correctly falls through to chat so
+                        // NUA can ask who and what, rather than half-firing.
+                        viewModel.sendMessage(displayNameFor(chosen.action))
+                        destination = NuaDestination.ASK
+                    }
+                    is PaletteAction.AskNua -> {
+                        viewModel.sendMessage(chosen.utterance)
+                        destination = NuaDestination.ASK
+                    }
+                }
+            },
+            onDismiss = { showPalette = false },
+        )
     }
 
     uiState.pendingPlan?.let { plan ->

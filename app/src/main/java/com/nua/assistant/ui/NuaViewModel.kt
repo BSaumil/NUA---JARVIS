@@ -34,6 +34,8 @@ import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.state.NuaState
 import com.nua.assistant.state.NuaStateRepository
 import com.nua.assistant.ui.orb.OrbState
+import com.nua.assistant.ui.palette.PaletteMemory
+import com.nua.assistant.ui.palette.PaletteSkill
 import com.nua.assistant.documents.DocumentRepository
 import com.nua.assistant.documents.DocumentType
 import com.nua.assistant.documents.DocxTextExtractor
@@ -183,6 +185,21 @@ class NuaViewModel @Inject constructor(
      * screen can't drift from what's really dispatchable.
      */
     val skills: List<SkillDescriptor> = skillCatalog.all()
+
+    /** The same capabilities, flattened for the command palette's pure ranking. */
+    val paletteSkills: List<PaletteSkill> = skills.map { PaletteSkill(it.action, it.displayName, it.tier) }
+
+    private val _paletteQuery = MutableStateFlow("")
+    val paletteQuery: StateFlow<String> = _paletteQuery.asStateFlow()
+
+    /**
+     * What the palette can search over. Facts and dreams only — the things NUA actually
+     * remembers — rather than every row in the database, so the palette stays a shortcut.
+     */
+    val paletteMemories: StateFlow<List<PaletteMemory>> =
+        combine(facts, dreams) { facts, dreams ->
+            facts.map { PaletteMemory(it.value, "Memory") } + dreams.map { PaletteMemory(it.text, "Insight") }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _diagnostics = MutableStateFlow<List<DiagnosticCheck>>(emptyList())
     val diagnostics: StateFlow<List<DiagnosticCheck>> = _diagnostics.asStateFlow()
@@ -869,6 +886,10 @@ class NuaViewModel @Inject constructor(
     /** Called when Settings opens — usage isn't worth keeping live-updated, just fresh on view. */
     fun refreshUsage() {
         viewModelScope.launch { _usageThisMonth.value = usageTracker.summaryThisMonth() }
+    }
+
+    fun updatePaletteQuery(query: String) {
+        _paletteQuery.value = query
     }
 
     /** Called when the Act destination appears: pending work plus the recent-action log. */

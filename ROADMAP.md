@@ -328,8 +328,22 @@ demo content.
 - ✅ **Orb state derivation** — `NuaViewModel.currentOrbState()` derives the Orb from state
   NUA already tracks (processing, offline, recent mistakes, pending work) rather than
   being driven independently, so the Orb can't contradict the rest of the screen.
-- **Command Palette** (`#37`) — a global search/action surface (`⌘/`-equivalent) over
-  memories, people, tasks, actions, and settings.
+- ✅ **Command Palette** (`#37`) — one surface over destinations, capabilities, and what
+  NUA remembers, reachable from *every* destination via a floating action button (that's
+  what makes it a palette rather than another screen you navigate to first). Ranking lives
+  in the pure `buildPalette`/`matchScore`, so behaviour is unit tested rather than
+  eyeballed: exact prefix beats word-start beats loose substring, an empty query offers
+  only the five destinations (a palette that opens showing everything is a wall of text,
+  not a shortcut), and a non-empty query always ends with an "Ask NUA" fallback so it can
+  never dead-end.
+
+  **The safety property is the important part, and it's asserted in tests:** the palette
+  is never a second, less-guarded route to a high-authority action. Anything above T2 is
+  phrased as a request ("Ask NUA to send a text"), is tinted with the identity colour so
+  you can see it needs confirmation *before* tapping, and on selection is handed to the
+  ordinary `sendMessage` routing path — where the autonomy tier, the confirmation dialog,
+  and biometric step-up all still apply. `CommandPaletteTest` asserts that no T3+ entry
+  reports `executesImmediately`.
 - ✅ **Navigation & information hierarchy** (`#38`, `#40`) — `NuaDestination` (Home / Ask /
   Memory / Act / You) replaces the pile of boolean `show*` flags the UI used to navigate
   with: every new screen used to mean another flag and another early `return`, and the

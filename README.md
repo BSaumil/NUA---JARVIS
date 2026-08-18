@@ -506,6 +506,14 @@ email to two more capabilities — both built on official, on-device APIs, no OA
   motion is off, so state still changes but nothing moves. Haptics fire only where
   something actually changes in the world, never on navigation.
 
+- **Command palette.** One search surface over destinations, capabilities, and memories,
+  reachable from anywhere. Ranking is a pure function (`buildPalette`), so it's unit
+  tested rather than eyeballed. Crucially it is *not* a bypass: anything above Tier 2 is
+  phrased as a request, tinted so you can see it needs confirmation before you tap, and
+  routed through the normal `sendMessage` path where the confirmation dialog and biometric
+  step-up still apply — with a test asserting no high-tier entry ever reports itself as
+  immediately executable.
+
 ## Languages
 
 NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,
