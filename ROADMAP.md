@@ -259,10 +259,23 @@ sequenced after Phases 7–9 so the dashboard has Goals, Context Engine, and Dre
 actually show — building the shell first would mean either empty cards or fabricated
 demo content.
 
-- **NUA Inner Life** (`#8`) — a `NuaState` model (focus, confidence, current objective,
-  current context, workload, recent mistakes, pending tasks, user availability) computed
-  from data Phases 6–9 already produce, not new fabricated state. The home screen becomes
-  a rendering of this state ("3 things need your attention") rather than a chat window.
+- ✅ **NUA Inner Life** (`#8`) — `state/NuaState` covers all eight specified dimensions
+  (focus, confidence, current objective, current context, workload, recent mistakes,
+  pending tasks, user availability), every one computed from data Phases 6–9 already
+  produce: active goals, the trust score earned from real action outcomes, ranked
+  notifications, today's calendar, documents nearing expiry, due vision monitors, and
+  recent goal observations. `NuaStateRepository` gathers the signals; the pure
+  `deriveNuaState` turns them into state, so the model is JVM-testable — the same split
+  `SelfDiagnosticsRepository`/`evaluateDiagnostics` uses.
+
+  Absent signals stay absent rather than defaulting to something plausible: `confidence`
+  is null until NUA has action history to be scored on (zero would read as
+  "untrustworthy"), and an unreadable calendar yields `UserAvailability.UNKNOWN`, never
+  `FREE` — the repository checks `READ_CALENDAR` separately because `eventsBetween`
+  returns an empty list both for "no events" and "no permission", and silently rendering
+  "can't see your calendar" as "your day is clear" would be NUA claiming to know
+  something it doesn't. `NuaStateTest` covers all of this, including that derivation is
+  deterministic. The home screen that renders it is the next slice.
 - **Personal Command Centre** (`#13`) — the home screen itself: today's summary, an
   intelligence card ("NUA noticed something," sourced from Dreams), an action card
   (sourced from What Now), and the Orb/voice entry point. Chat remains reachable, just
