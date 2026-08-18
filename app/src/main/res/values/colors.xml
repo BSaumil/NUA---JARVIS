@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only the tokens the Android resource system needs (launch window, system bars)
+         before Compose takes over. The palette's source of truth is
+         ui/theme/NuaColors.kt — keep this value identical to NuaBackground there. -->
+    <color name="nua_background">#08090D</color>
+</resources>

@@ -458,6 +458,32 @@ email to two more capabilities — both built on official, on-device APIs, no OA
 - **Not yet built:** attestation-based device trust (no server component exists to attest
   to yet) — see `ROADMAP.md`'s Phase 11 section.
 
+## Phase 12 — Inner Life & Command Centre (in progress)
+
+- **Design token layer** (`ui/theme/`). NUA's visual identity as code, built to the
+  spec's literal values rather than an approximation of them. `NuaPalette` holds every
+  token as a plain ARGB long with no Compose or Android types — one source of truth,
+  unit-testable on the JVM. `NuaColors` derives the `Color` instances and adds the
+  semantic slots Material3 has no home for (a third surface level, the success/warning/
+  critical triad, the hairline border). `NuaTheme` maps the brand hierarchy onto
+  Material3 so ordinary components inherit it: orange is `primary` because it carries
+  NUA's identity, violet `secondary` (intelligence), pink `tertiary` (exceptional/active)
+  — deliberately *not* three equal accents, which is what makes most AI apps look alike.
+  `NuaGradients` carries the orange→violet brush with its four permitted uses (Orb, AI
+  activity, hero cards, active-intelligence state) documented on the type, so it doesn't
+  drift into general decoration.
+- **Dark is the only theme, on purpose.** The spec defines exactly one palette. A light
+  variant would mean inventing eleven values it doesn't specify and shipping them as
+  NUA's identity, so there isn't one; `NuaTheme` takes no `useDarkTheme` flag. The
+  pre-Compose launch window in `themes.xml`/`colors.xml` was switched to the same
+  near-black, since a light launch theme flashes white for a frame against a dark app.
+- **Accessibility is checked, not assumed.** `NuaPaletteTest` asserts each token against
+  its literal spec value (so a "small tweak" has to be a deliberate change, not drift)
+  and computes WCAG contrast across all three surfaces: primary text clears AAA,
+  secondary text, the status triad, and orange all clear AA body text, and violet/pink
+  clear AA-large — which is exactly why those two are documented as accents rather than
+  running-text colours. Type is sized in `sp` throughout so dynamic type works.
+
 ## Languages
 
 NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,

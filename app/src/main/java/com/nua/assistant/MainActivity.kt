@@ -16,7 +16,7 @@ import androidx.fragment.app.FragmentActivity
 import com.nua.assistant.services.ACTION_WAKE_WORD_DETECTED
 import com.nua.assistant.services.EXTRA_WAKE_PHRASE_ID
 import com.nua.assistant.ui.NuaScreen
-import com.nua.assistant.ui.NuaTheme
+import com.nua.assistant.ui.theme.NuaTheme
 import com.nua.assistant.ui.NuaViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
