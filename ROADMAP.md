@@ -158,6 +158,16 @@ gives every later phase something to build on.
 - ⬜ **WhatsApp** — no compliant on-device API path identified; not built, per the
   original scope note that this won't be built against anything that risks the user's
   account.
+- ⬜ **Unified communication intelligence** (`#12`) — the part that makes this a *centre*
+  rather than three separate send actions. One triage model across every channel NUA can
+  actually reach (notifications, SMS, calendar today; email once unblocked), sorting each
+  item into **Critical / Important / Normal / Ignore**, so a single instruction like
+  "NUA, deal with anything non-important" is meaningful. Per item NUA should be able to:
+  categorise, summarise, draft, reply (after approval — Tier 3, never autonomous),
+  schedule, remind, and escalate. Partly foundation-ready: `NotificationPriorityScorer`
+  already does local priority scoring and `ReplyToNotificationSkill`/`SmsSendSkill`
+  already do approval-gated sending — what's missing is the shared cross-channel model,
+  the bulk-triage command, and draft/schedule/escalate as first-class verbs.
 
 ## Phase 11 — Security, Audit, and Self-Diagnostics 🟡 partially shipped
 
@@ -238,12 +248,22 @@ demo content.
   intelligence card ("NUA noticed something," sourced from Dreams), an action card
   (sourced from What Now), and the Orb/voice entry point. Chat remains reachable, just
   not the default surface.
-- **Visual identity & dark UI** (`#14`, `#15`, `#16`) — the orange/violet/pink system,
-  near-black dark theme as default, and the "clean, large type, soft glass, restrained
-  gradient" design language.
-- **The NUA Orb** (`#17`) — one component with distinct idle/listening/thinking/acting/
-  warning/success/error/offline states, meant to be recognizable on sight rather than a
-  generic glowing circle.
+- **Visual identity & dark UI** (`#14`, `#15`, `#16`) — the exact token set, not an
+  approximation of it. Brand: NUA Orange `#F58C14` (identity), Neural Violet `#8B5CF6`
+  (intelligence), Future Pink `#EC4899` (exceptional/active state) — deliberately *not*
+  weighted equally; orange carries identity, the other two are accents. Dark is the
+  default, not a variant: background `#08090D`, surface `#11131A`, elevated surface
+  `#181B24`, primary text `#F5F7FA`, secondary text `#9299A8`, success `#34D399`, warning
+  `#FBBF24`, critical `#F87171`. The orange→violet gradient is reserved for the Orb, AI
+  activity, hero cards, and active-intelligence state — never used as general decoration.
+  Design language: extremely clean, large typography, soft glass surfaces, subtle
+  gradients, thin borders, large rounded cards, micro-animations, strong hierarchy,
+  almost no clutter — explicitly *not* a traditional AI-chatbot look.
+- **The NUA Orb** (`#17`) — one component, eight distinct states, meant to be
+  recognizable on sight rather than a generic glowing circle: idle (slow breathing),
+  listening (expands subtly), thinking (internal particles move), acting (directional
+  energy movement), warning (orange pulse), success (short confirmation animation),
+  error (controlled red pulse), offline (muted/static).
 - **Command Palette** (`#37`) — a global search/action surface (`⌘/`-equivalent) over
   memories, people, tasks, actions, and settings.
 - **Navigation & information hierarchy** (`#38`, `#40`) — the five destinations plus the
@@ -254,11 +274,18 @@ demo content.
 
 ## Phase 13 — Voice-First & Personality Depth
 
-- **Barge-in / interruption handling** (`#18`) — user can interrupt NUA mid-reply and
-  redirect; whisper mode; driving mode.
+- **Barge-in / interruption handling** (`#18`) — four distinct behaviours on top of the
+  existing `SpeechRecognizer`/TTS foundation: *natural interruption* (mid-utterance
+  context switch — "what's the weather—actually forget that, remind me about Sarah" stops
+  the first response and switches), *barge-in* (user speaks while NUA is speaking → NUA
+  stops), *whisper mode* (detect quiet speech, respond quietly), *driving mode* (minimal
+  UI, voice only), and *conversation mode* (no wake word needed once activated — partly
+  covered today by the follow-up chain).
 - **Personality dimensions** (`#19`) — replaces the current single tone-by-familiarity-tier
-  model with tunable dimensions (formal↔casual, concise↔detailed, etc.) that NUA learns
-  toward, with safety always overriding tone.
+  model with six tunable axes NUA gradually learns the user's preferred operating point
+  on: formal↔casual, serious↔playful, concise↔detailed, proactive↔reactive, warm↔neutral,
+  assertive↔gentle. Personality must never override safety — tone is expression, not
+  permission.
 - **Deeper multilingual code-switching** (`#20`) — mid-sentence language mixing (the
   Gujarati/English example), beyond the current per-message language pinning.
 
