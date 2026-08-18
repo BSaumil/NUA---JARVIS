@@ -10,6 +10,8 @@ class OpenAppSkill @Inject constructor(
     private val appLauncher: AppLauncher,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(parameters = listOf(SkillParameter("app", required = true)))
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val app = intent.parameters["app"]
         return if (app.isNullOrBlank()) {

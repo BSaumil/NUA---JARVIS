@@ -11,6 +11,10 @@ class SmsSendSkill @Inject constructor(
     private val contactResolver: ContactResolver,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(
+        parameters = listOf(SkillParameter("contact", required = true), SkillParameter("message", required = true)),
+    )
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val contact = intent.parameters["contact"]
         val message = intent.parameters["message"]

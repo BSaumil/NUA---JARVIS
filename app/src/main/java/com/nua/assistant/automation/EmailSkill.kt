@@ -12,6 +12,8 @@ class EmailSkill @Inject constructor(
     private val emailRepository: EmailRepository,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(timeoutMillis = TIMEOUT_NETWORK_MILLIS)
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val result = emailRepository.checkInbox()
         val message = when (result) {

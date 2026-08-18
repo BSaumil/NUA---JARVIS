@@ -442,8 +442,21 @@ email to two more capabilities — both built on official, on-device APIs, no OA
   external text was found. Even if the accompanying system-prompt directive is ignored,
   wrapped content still has no path into `route`/`classify` — an injected instruction can
   produce a wrong reply, never an unauthorized action.
-- **Not yet built:** Agent Sandbox and attestation-based device trust (no server
-  component exists to attest to yet) — see `ROADMAP.md`'s Phase 11 section.
+- **Agent Sandbox.** Every skill declares a `SkillManifest` — its inputs, hard permission
+  preconditions, and time budget — and the property is abstract on `NuaSkill`, so a skill
+  can't be added without declaring one. Dispatch never calls a skill directly; it goes
+  through `SkillSandbox`, which checks required parameters are present, **strips any
+  parameter the skill didn't declare** (so a classifier inventing an extra key can't
+  smuggle it into a tool call), preflights permissions with a specific message instead of
+  a vague downstream failure, and runs the skill under a declared timeout with exception
+  containment — a hanging or throwing skill becomes a reported failure, not a stuck turn.
+  Risk tier (`autonomyTierFor`) and the audit trail (`TrustRepository`) already existed
+  and are reused rather than duplicated, so sandbox refusals, timeouts, and crashes all
+  land in the same log as ordinary outcomes. It's a policy envelope, not OS-level
+  isolation — skills still run in-process with NUA's permissions — but the dispatch path,
+  which is where untrusted classifier output flows, is fully constrained.
+- **Not yet built:** attestation-based device trust (no server component exists to attest
+  to yet) — see `ROADMAP.md`'s Phase 11 section.
 
 ## Languages
 

@@ -1,5 +1,6 @@
 package com.nua.assistant.automation
 
+import android.Manifest
 import com.nua.assistant.ai.ClassifiedIntent
 import com.nua.assistant.calendar.CalendarReader
 import com.nua.assistant.contacts.ContactResolver
@@ -12,6 +13,15 @@ class CalendarInviteSkill @Inject constructor(
     private val calendarReader: CalendarReader,
     private val contactResolver: ContactResolver,
 ) : NuaSkill {
+
+    override val manifest = SkillManifest(
+        parameters = listOf(
+            SkillParameter("title", required = true),
+            SkillParameter("offsetHours", required = true),
+            SkillParameter("attendee"),
+        ),
+        requiredPermissions = listOf(Manifest.permission.WRITE_CALENDAR),
+    )
 
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val title = intent.parameters["title"]

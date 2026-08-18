@@ -158,6 +158,16 @@ gives every later phase something to build on.
 - ⬜ **WhatsApp** — no compliant on-device API path identified; not built, per the
   original scope note that this won't be built against anything that risks the user's
   account.
+- ⬜ **Unified communication intelligence** (`#12`) — the part that makes this a *centre*
+  rather than three separate send actions. One triage model across every channel NUA can
+  actually reach (notifications, SMS, calendar today; email once unblocked), sorting each
+  item into **Critical / Important / Normal / Ignore**, so a single instruction like
+  "NUA, deal with anything non-important" is meaningful. Per item NUA should be able to:
+  categorise, summarise, draft, reply (after approval — Tier 3, never autonomous),
+  schedule, remind, and escalate. Partly foundation-ready: `NotificationPriorityScorer`
+  already does local priority scoring and `ReplyToNotificationSkill`/`SmsSendSkill`
+  already do approval-gated sending — what's missing is the shared cross-channel model,
+  the bulk-triage command, and draft/schedule/escalate as first-class verbs.
 
 ## Phase 11 — Security, Audit, and Self-Diagnostics 🟡 partially shipped
 
@@ -202,8 +212,27 @@ gives every later phase something to build on.
   purely in a prompt can. The backstop is structural: even if the system directive were
   ignored, wrapped/untrusted content has no path into `route`/`classify`, so an injected
   instruction can produce a wrong *reply*, never an unauthorized *action*.
-- ⬜ **Agent Sandbox** (`#45`) — every tool gets a declared input/output schema, permission,
-  risk level, timeout, and audit log; no arbitrary tool execution path.
+- ✅ **Agent Sandbox** (`#45`) — every skill now declares a `SkillManifest` (abstract on
+  the `NuaSkill` interface, so a new skill can't be added undeclared), and every dispatch
+  goes through `SkillSandbox` rather than calling the skill directly. Per execution it
+  enforces: **declared inputs** (required parameters must be present and non-blank, and
+  undeclared parameters are *stripped* before the skill sees them — so a classifier that
+  invents an extra key can't smuggle it into a tool call), **permission preconditions**
+  (checked up front, with a specific "that needs location, which isn't granted yet"
+  rather than a vague downstream failure), and a **declared timeout** (10s local / 20s
+  network / 45s Claude) with exception containment, so a hanging or throwing skill
+  becomes a reported failure instead of a stuck turn or a crash. **Risk level** and the
+  **audit log** were already real and are reused rather than duplicated —
+  `autonomyTierFor` keys risk off the same `NuaActionType`, and `TrustRepository`
+  receives every outcome, now including sandbox refusals, timeouts, and crashes. **No
+  arbitrary execution path**: the skill map is a closed Hilt multibinding, so an action
+  with no binding simply isn't dispatchable. Pure validation logic is unit tested
+  (`SkillManifestTest`).
+
+  Honest scope: this is a policy and lifecycle envelope, not OS-level isolation. Skills
+  run in NUA's own process with NUA's own permissions; nothing here stops a skill that
+  deliberately reaches around its manifest. It constrains the *dispatch path*, which is
+  where classifier output — the untrusted part — actually flows.
 - ✅ **Security architecture** (`#23`, partial) — biometric step-up authentication and a
   local-encryption audit surface, both under Settings → Security. `security/BiometricGate`
   wraps `androidx.biometric.BiometricPrompt` (fingerprint/face/device PIN); `MainActivity`
@@ -238,12 +267,22 @@ demo content.
   intelligence card ("NUA noticed something," sourced from Dreams), an action card
   (sourced from What Now), and the Orb/voice entry point. Chat remains reachable, just
   not the default surface.
-- **Visual identity & dark UI** (`#14`, `#15`, `#16`) — the orange/violet/pink system,
-  near-black dark theme as default, and the "clean, large type, soft glass, restrained
-  gradient" design language.
-- **The NUA Orb** (`#17`) — one component with distinct idle/listening/thinking/acting/
-  warning/success/error/offline states, meant to be recognizable on sight rather than a
-  generic glowing circle.
+- **Visual identity & dark UI** (`#14`, `#15`, `#16`) — the exact token set, not an
+  approximation of it. Brand: NUA Orange `#F58C14` (identity), Neural Violet `#8B5CF6`
+  (intelligence), Future Pink `#EC4899` (exceptional/active state) — deliberately *not*
+  weighted equally; orange carries identity, the other two are accents. Dark is the
+  default, not a variant: background `#08090D`, surface `#11131A`, elevated surface
+  `#181B24`, primary text `#F5F7FA`, secondary text `#9299A8`, success `#34D399`, warning
+  `#FBBF24`, critical `#F87171`. The orange→violet gradient is reserved for the Orb, AI
+  activity, hero cards, and active-intelligence state — never used as general decoration.
+  Design language: extremely clean, large typography, soft glass surfaces, subtle
+  gradients, thin borders, large rounded cards, micro-animations, strong hierarchy,
+  almost no clutter — explicitly *not* a traditional AI-chatbot look.
+- **The NUA Orb** (`#17`) — one component, eight distinct states, meant to be
+  recognizable on sight rather than a generic glowing circle: idle (slow breathing),
+  listening (expands subtly), thinking (internal particles move), acting (directional
+  energy movement), warning (orange pulse), success (short confirmation animation),
+  error (controlled red pulse), offline (muted/static).
 - **Command Palette** (`#37`) — a global search/action surface (`⌘/`-equivalent) over
   memories, people, tasks, actions, and settings.
 - **Navigation & information hierarchy** (`#38`, `#40`) — the five destinations plus the
@@ -254,11 +293,18 @@ demo content.
 
 ## Phase 13 — Voice-First & Personality Depth
 
-- **Barge-in / interruption handling** (`#18`) — user can interrupt NUA mid-reply and
-  redirect; whisper mode; driving mode.
+- **Barge-in / interruption handling** (`#18`) — four distinct behaviours on top of the
+  existing `SpeechRecognizer`/TTS foundation: *natural interruption* (mid-utterance
+  context switch — "what's the weather—actually forget that, remind me about Sarah" stops
+  the first response and switches), *barge-in* (user speaks while NUA is speaking → NUA
+  stops), *whisper mode* (detect quiet speech, respond quietly), *driving mode* (minimal
+  UI, voice only), and *conversation mode* (no wake word needed once activated — partly
+  covered today by the follow-up chain).
 - **Personality dimensions** (`#19`) — replaces the current single tone-by-familiarity-tier
-  model with tunable dimensions (formal↔casual, concise↔detailed, etc.) that NUA learns
-  toward, with safety always overriding tone.
+  model with six tunable axes NUA gradually learns the user's preferred operating point
+  on: formal↔casual, serious↔playful, concise↔detailed, proactive↔reactive, warm↔neutral,
+  assertive↔gentle. Personality must never override safety — tone is expression, not
+  permission.
 - **Deeper multilingual code-switching** (`#20`) — mid-sentence language mixing (the
   Gujarati/English example), beyond the current per-message language pinning.
 

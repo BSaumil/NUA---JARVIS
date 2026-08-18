@@ -11,6 +11,8 @@ class PlayMediaSkill @Inject constructor(
     private val mediaControlManager: MediaControlManager,
 ) : NuaSkill {
 
+    override val manifest = SkillManifest(parameters = listOf(SkillParameter("query")))
+
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         val query = intent.parameters["query"] ?: originalUtterance
         return if (mediaControlManager.playByQuery(query)) {
