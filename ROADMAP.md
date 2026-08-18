@@ -248,7 +248,7 @@ gives every later phase something to build on.
   on Android's per-app sandbox. Device trust (attestation-based) is not built — no server
   component exists to attest to yet.
 
-## Phase 12 — Inner Life & Command Centre
+## Phase 12 — Inner Life & Command Centre 🟡 in progress
 
 The full redesign (`#8`, `#13`–`#17`, `#37`–`#42`): a real internal-state model, color
 system, dark theme tokens, the NUA Orb and its state animations, five-destination
@@ -267,8 +267,25 @@ demo content.
   intelligence card ("NUA noticed something," sourced from Dreams), an action card
   (sourced from What Now), and the Orb/voice entry point. Chat remains reachable, just
   not the default surface.
-- **Visual identity & dark UI** (`#14`, `#15`, `#16`) — the exact token set, not an
-  approximation of it. Brand: NUA Orange `#F58C14` (identity), Neural Violet `#8B5CF6`
+- ✅ **Visual identity & dark UI** (`#14`, `#15`, `#16`) — shipped as the token layer in
+  `ui/theme/`. `NuaPalette` holds every value as a plain ARGB long (no Compose types) so
+  it's the single source of truth and unit-testable on the JVM; `NuaColors` derives the
+  `Color` instances and adds the semantic slots Material3 has no home for (third surface
+  level, status triad, hairline border) via a `staticCompositionLocalOf`. `NuaTheme` maps
+  the brand hierarchy onto Material3 — orange `primary`, violet `secondary`, pink
+  `tertiary` — so ordinary Material components inherit the palette. `NuaGradients` exposes
+  the orange→violet brush with its four permitted uses documented on the type itself.
+  `NuaShapes`/`NuaTypography` carry the large-rounded-card and large-type language, sized
+  in `sp` so dynamic type works. Dark is the *only* theme, deliberately: the spec defines
+  one palette, and inventing eleven light tokens it doesn't specify would ship a second
+  unnamed identity — `res/values/themes.xml` and `colors.xml` now set the same near-black
+  launch window so there's no white flash before the first Compose frame.
+  `NuaPaletteTest` asserts every token against its literal spec value and checks WCAG
+  contrast across all three surfaces: primary text clears AAA, secondary/status/orange
+  clear AA body, and violet/pink clear AA-large — which is precisely why those two are
+  documented as accents rather than body-text colours.
+
+  The specified values, for reference. Brand: NUA Orange `#F58C14` (identity), Neural Violet `#8B5CF6`
   (intelligence), Future Pink `#EC4899` (exceptional/active state) — deliberately *not*
   weighted equally; orange carries identity, the other two are accents. Dark is the
   default, not a variant: background `#08090D`, surface `#11131A`, elevated surface
