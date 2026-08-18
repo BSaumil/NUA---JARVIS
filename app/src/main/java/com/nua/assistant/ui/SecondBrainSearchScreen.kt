@@ -46,29 +46,48 @@ fun SecondBrainSearchScreen(
             )
         },
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search what NUA knows and has noticed...") },
-                singleLine = true,
+        SecondBrainSearchContent(
+            query = query,
+            onQueryChange = onQueryChange,
+            results = results,
+            modifier = Modifier.padding(padding),
+        )
+    }
+}
+
+/**
+ * The screen body without its own Scaffold, so the Memory destination can host it as a
+ * section rather than a separate top-level screen with its own back stack.
+ */
+@Composable
+fun SecondBrainSearchContent(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    results: List<SecondBrainResult>,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.padding(16.dp).fillMaxSize()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Search what NUA knows and has noticed...") },
+            singleLine = true,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        when {
+            query.isBlank() -> Text(
+                text = "Search facts NUA remembers and dreams it's noticed about you.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(modifier = Modifier.height(12.dp))
-            when {
-                query.isBlank() -> Text(
-                    text = "Search facts NUA remembers and dreams it's noticed about you.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                results.isEmpty() -> Text(
-                    text = "No matches.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(results) { result -> SecondBrainResultCard(result) }
-                }
+            results.isEmpty() -> Text(
+                text = "No matches.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(results) { result -> SecondBrainResultCard(result) }
             }
         }
     }

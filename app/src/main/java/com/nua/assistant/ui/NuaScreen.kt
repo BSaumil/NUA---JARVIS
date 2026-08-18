@@ -22,18 +22,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,7 +39,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -65,8 +57,10 @@ import com.nua.assistant.ai.PlannedStep
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.memory.MessageRole
-import com.nua.assistant.notifications.NotificationSummary
 import com.nua.assistant.security.BiometricGate
+import com.nua.assistant.ui.components.NuaBottomBar
+import com.nua.assistant.ui.nav.MemorySection
+import com.nua.assistant.ui.nav.NuaDestination
 import com.nua.assistant.security.requiresStepUpAuth
 import com.nua.assistant.trust.AutonomyTier
 
@@ -74,7 +68,6 @@ import com.nua.assistant.trust.AutonomyTier
 @Composable
 fun NuaScreen(viewModel: NuaViewModel) {
     val uiState by viewModel.uiState.collectAsState()
-    val notificationSummary by viewModel.notificationSummary.collectAsState()
     val facts by viewModel.facts.collectAsState()
     val pinnedLanguage by viewModel.pinnedLanguage.collectAsState()
     val briefingSchedule by viewModel.briefingSchedule.collectAsState()
@@ -101,114 +94,40 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val nuaState by viewModel.nuaState.collectAsState()
     val latestInsight by viewModel.latestInsight.collectAsState()
     val nextBestAction by viewModel.nextBestAction.collectAsState()
-    // The Command Centre is the default surface — chat is a destination, not the whole UI.
-    var showChat by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
-    var showSecondBrainSearch by remember { mutableStateOf(false) }
-    var showTimeline by remember { mutableStateOf(false) }
-    var showDocuments by remember { mutableStateOf(false) }
+    val skills = viewModel.skills
+    // One destination enum replaces the pile of boolean show* flags this screen used to
+    // navigate with — each new screen used to mean another flag and another early return,
+    // and the user got no sense of where they were.
+    var destination by remember { mutableStateOf(NuaDestination.HOME) }
+    var memorySection by remember { mutableStateOf(MemorySection.SEARCH) }
 
-    if (showSecondBrainSearch) {
-        SecondBrainSearchScreen(
-            query = secondBrainQuery,
-            onQueryChange = viewModel::updateSecondBrainQuery,
-            results = secondBrainResults,
-            onBack = { showSecondBrainSearch = false },
-        )
-        return
-    }
-
-    if (showTimeline) {
-        TimelineScreen(entries = timeline, onBack = { showTimeline = false })
-        return
-    }
-
-    if (showDocuments) {
-        DocumentsScreen(
-            documents = documents,
-            onIngest = viewModel::ingestDocument,
-            onAsk = viewModel::askAboutDocuments,
-            onRemove = viewModel::removeDocument,
-            onBack = { showDocuments = false },
-        )
-        return
-    }
-
-    if (showSettings) {
-        LaunchedEffect(Unit) {
-            viewModel.refreshUsage()
-            viewModel.refreshTrust()
-            viewModel.refreshDiagnostics()
+    LaunchedEffect(destination) {
+        when (destination) {
+            NuaDestination.HOME -> viewModel.refreshNuaState()
+            NuaDestination.ACT -> viewModel.refreshAct()
+            NuaDestination.YOU -> {
+                viewModel.refreshUsage()
+                viewModel.refreshTrust()
+                viewModel.refreshDiagnostics()
+            }
+            else -> Unit
         }
-        SettingsScreen(
-            facts = facts,
-            onForgetFact = viewModel::forgetFact,
-            onForgetFactsByType = viewModel::forgetFactsByType,
-            pinnedLanguage = pinnedLanguage,
-            onLanguageSelected = viewModel::setPinnedLanguage,
-            briefingSchedule = briefingSchedule,
-            onBriefingScheduleChanged = viewModel::setBriefingSchedule,
-            voiceEnrolled = voiceEnrolled,
-            enrollmentProgress = enrollmentProgress,
-            onRecordEnrollmentClip = viewModel::recordVoiceEnrollmentClip,
-            onResetVoiceEnrollment = viewModel::resetVoiceEnrollment,
-            geofences = geofences,
-            onAddGeofence = viewModel::addGeofence,
-            onRemoveGeofence = viewModel::removeGeofence,
-            usageThisMonth = usageThisMonth,
-            trustScore = trustScore,
-            trustLedger = trustLedger,
-            actionOutcomes = actionOutcomes,
-            autonomySuggestions = autonomySuggestions,
-            onEnableAutoApprove = viewModel::enableAutoApprove,
-            goals = goals,
-            goalObservations = goalObservations,
-            onAddGoal = viewModel::addGoal,
-            onRemoveGoal = viewModel::removeGoal,
-            dreams = dreams,
-            decisions = decisions,
-            onAddDecision = viewModel::addDecision,
-            onRecordDecisionOutcome = viewModel::recordDecisionOutcome,
-            onRemoveDecision = viewModel::removeDecision,
-            visionMonitors = visionMonitors,
-            onRecheckVisionMonitor = viewModel::recheckVisionMonitor,
-            onRemoveVisionMonitor = viewModel::removeVisionMonitor,
-            diagnostics = diagnostics,
-            testingApiConnection = testingApiConnection,
-            onRefreshDiagnostics = viewModel::refreshDiagnostics,
-            onTestApiConnection = viewModel::testApiConnection,
-            onBack = { showSettings = false },
-        )
-        return
     }
 
-    if (!showChat) {
-        LaunchedEffect(Unit) { viewModel.refreshNuaState() }
-        val state = nuaState
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("NUA") },
-                    actions = {
-                        NotificationSummaryChip(notificationSummary)
-                        IconButton(onClick = { showSecondBrainSearch = true }) {
-                            Icon(Icons.Filled.Search, contentDescription = "Search your Second Brain")
-                        }
-                        IconButton(onClick = { showTimeline = true }) {
-                            Icon(Icons.Filled.History, contentDescription = "Timeline")
-                        }
-                        IconButton(onClick = { showDocuments = true }) {
-                            Icon(Icons.Filled.Description, contentDescription = "Documents")
-                        }
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Filled.Settings, contentDescription = "Settings")
-                        }
-                    },
-                )
-            },
-        ) { padding ->
-            Box(modifier = Modifier.padding(padding)) {
-                if (state == null) {
+    val state = nuaState
+    // A dot on Home when something genuinely needs the user, and on Act when NUA has
+    // failed at something recently — earned from real state, never decorative.
+    val alerts = buildSet {
+        if (state?.pendingTasks?.isNotEmpty() == true) add(NuaDestination.HOME)
+        if (state?.recentMistakes?.isNotEmpty() == true) add(NuaDestination.ACT)
+    }
+
+    Scaffold(
+        bottomBar = { NuaBottomBar(current = destination, onSelect = { destination = it }, alertOn = alerts) },
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
+            when (destination) {
+                NuaDestination.HOME -> if (state == null) {
                     // Genuinely still loading — deliberately not fake zeroes.
                     CircularProgressIndicator(modifier = Modifier.padding(24.dp))
                 } else {
@@ -219,64 +138,85 @@ fun NuaScreen(viewModel: NuaViewModel) {
                         insight = latestInsight,
                         nextAction = nextBestAction,
                         onOrbTap = viewModel::onWakeWordDetected,
-                        onOpenChat = { showChat = true },
+                        onOpenChat = { destination = NuaDestination.ASK },
                         onAskWhatNow = {
                             viewModel.whatShouldIDoNow()
-                            showChat = true
+                            destination = NuaDestination.ASK
                         },
                     )
                 }
+
+                NuaDestination.ASK -> ChatColumn(
+                    uiState = uiState,
+                    onInputChanged = viewModel::onInputChanged,
+                    onSend = { viewModel.sendMessage() },
+                    onMicTap = viewModel::onWakeWordDetected,
+                    onImageCaptured = viewModel::describeImage,
+                    lastVisionResult = lastVisionResult,
+                    onRememberVision = viewModel::rememberLastVisionResult,
+                    onMonitorVision = viewModel::startMonitoringLastVisionResult,
+                    onDismissVision = viewModel::dismissLastVisionResult,
+                )
+
+                NuaDestination.MEMORY -> MemoryScreen(
+                    section = memorySection,
+                    onSectionChange = { memorySection = it },
+                    searchQuery = secondBrainQuery,
+                    onSearchQueryChange = viewModel::updateSecondBrainQuery,
+                    searchResults = secondBrainResults,
+                    timeline = timeline,
+                    documents = documents,
+                    onIngestDocument = viewModel::ingestDocument,
+                    onAskDocuments = viewModel::askAboutDocuments,
+                    onRemoveDocument = viewModel::removeDocument,
+                )
+
+                NuaDestination.ACT -> ActScreen(
+                    skills = skills,
+                    pendingTasks = state?.pendingTasks.orEmpty(),
+                    recentActions = actionOutcomes,
+                )
+
+                NuaDestination.YOU -> SettingsScreen(
+                    facts = facts,
+                    onForgetFact = viewModel::forgetFact,
+                    onForgetFactsByType = viewModel::forgetFactsByType,
+                    pinnedLanguage = pinnedLanguage,
+                    onLanguageSelected = viewModel::setPinnedLanguage,
+                    briefingSchedule = briefingSchedule,
+                    onBriefingScheduleChanged = viewModel::setBriefingSchedule,
+                    voiceEnrolled = voiceEnrolled,
+                    enrollmentProgress = enrollmentProgress,
+                    onRecordEnrollmentClip = viewModel::recordVoiceEnrollmentClip,
+                    onResetVoiceEnrollment = viewModel::resetVoiceEnrollment,
+                    geofences = geofences,
+                    onAddGeofence = viewModel::addGeofence,
+                    onRemoveGeofence = viewModel::removeGeofence,
+                    usageThisMonth = usageThisMonth,
+                    trustScore = trustScore,
+                    trustLedger = trustLedger,
+                    actionOutcomes = actionOutcomes,
+                    autonomySuggestions = autonomySuggestions,
+                    onEnableAutoApprove = viewModel::enableAutoApprove,
+                    goals = goals,
+                    goalObservations = goalObservations,
+                    onAddGoal = viewModel::addGoal,
+                    onRemoveGoal = viewModel::removeGoal,
+                    dreams = dreams,
+                    decisions = decisions,
+                    onAddDecision = viewModel::addDecision,
+                    onRecordDecisionOutcome = viewModel::recordDecisionOutcome,
+                    onRemoveDecision = viewModel::removeDecision,
+                    visionMonitors = visionMonitors,
+                    onRecheckVisionMonitor = viewModel::recheckVisionMonitor,
+                    onRemoveVisionMonitor = viewModel::removeVisionMonitor,
+                    diagnostics = diagnostics,
+                    testingApiConnection = testingApiConnection,
+                    onRefreshDiagnostics = viewModel::refreshDiagnostics,
+                    onTestApiConnection = viewModel::testApiConnection,
+                    onBack = null,
+                )
             }
-        }
-
-        if (uiState.needsApiKey) {
-            ApiKeyDialog(onSave = viewModel::saveApiKey)
-        }
-        return
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("NUA") },
-                navigationIcon = {
-                    IconButton(onClick = { showChat = false }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back to home")
-                    }
-                },
-                actions = {
-                    NotificationSummaryChip(notificationSummary)
-                    IconButton(onClick = viewModel::whatShouldIDoNow, enabled = !uiState.isProcessing) {
-                        Icon(Icons.Filled.Lightbulb, contentDescription = "What should I do now?")
-                    }
-                    IconButton(onClick = { showSecondBrainSearch = true }) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search your Second Brain")
-                    }
-                    IconButton(onClick = { showTimeline = true }) {
-                        Icon(Icons.Filled.History, contentDescription = "Timeline")
-                    }
-                    IconButton(onClick = { showDocuments = true }) {
-                        Icon(Icons.Filled.Description, contentDescription = "Documents")
-                    }
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            ChatColumn(
-                uiState = uiState,
-                onInputChanged = viewModel::onInputChanged,
-                onSend = { viewModel.sendMessage() },
-                onMicTap = viewModel::onWakeWordDetected,
-                onImageCaptured = viewModel::describeImage,
-                lastVisionResult = lastVisionResult,
-                onRememberVision = viewModel::rememberLastVisionResult,
-                onMonitorVision = viewModel::startMonitoringLastVisionResult,
-                onDismissVision = viewModel::dismissLastVisionResult,
-            )
         }
     }
 
@@ -482,12 +422,6 @@ private fun MessageBubble(message: ChatMessage) {
             Text(text = message.content, modifier = Modifier.padding(12.dp))
         }
     }
-}
-
-@Composable
-private fun NotificationSummaryChip(summary: NotificationSummary) {
-    if (summary.needsAttention.isEmpty() && summary.canWait.isEmpty()) return
-    AssistChip(onClick = {}, label = { Text(summary.spokenSummary) })
 }
 
 @Composable

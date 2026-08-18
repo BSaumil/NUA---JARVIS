@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -58,7 +59,6 @@ fun DocumentsScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    var askTarget by remember { mutableStateOf<DocumentEntity?>(null) }
     val pickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             onIngest(uri, context.contentResolver.getType(uri), displayNameFor(context, uri))
@@ -82,17 +82,60 @@ fun DocumentsScreen(
             )
         },
     ) { padding ->
+        DocumentsContent(
+            documents = documents,
+            onIngest = onIngest,
+            onAsk = onAsk,
+            onRemove = onRemove,
+            modifier = Modifier.padding(padding),
+            showAddButton = false,
+        )
+    }
+}
+
+/**
+ * Body without a Scaffold, so the Memory destination can host it as a section. Carries its
+ * own "add a document" affordance ([showAddButton]) because, unlike Search and Timeline,
+ * this section needs an action and there's no per-section app bar to hang one on.
+ */
+@Composable
+fun DocumentsContent(
+    documents: List<DocumentEntity>,
+    onIngest: (uri: Uri, mimeType: String?, fileName: String) -> Unit,
+    onAsk: (documentIds: List<Long>, question: String) -> Unit,
+    onRemove: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    showAddButton: Boolean = true,
+) {
+    val context = LocalContext.current
+    var askTarget by remember { mutableStateOf<DocumentEntity?>(null) }
+    val pickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            onIngest(uri, context.contentResolver.getType(uri), displayNameFor(context, uri))
+        }
+    }
+
+    Column(modifier = modifier) {
+        if (showAddButton) {
+            TextButton(
+                onClick = { pickerLauncher.launch(DOCUMENT_PICKER_MIME_TYPES) },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            ) {
+                Icon(Icons.Filled.UploadFile, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Add a document")
+            }
+        }
         if (documents.isEmpty()) {
-            Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    "Nothing read yet. Tap the upload icon to add a PDF, Word document, or image.",
+                    "Nothing read yet. Add a PDF, Word document, or image.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else {
             LazyColumn(
-                modifier = Modifier.padding(padding),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

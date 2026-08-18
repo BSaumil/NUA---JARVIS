@@ -123,7 +123,7 @@ fun SettingsScreen(
     testingApiConnection: Boolean,
     onRefreshDiagnostics: () -> Unit,
     onTestApiConnection: () -> Unit,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
 ) {
     var selectedMemoryType by remember { mutableStateOf<MemoryType?>(null) }
     var selectedFact by remember { mutableStateOf<UserFactEntity?>(null) }
@@ -133,9 +133,13 @@ fun SettingsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Settings") },
+                // Null when Settings is a bottom-nav destination rather than a pushed
+                // screen — a back arrow that goes nowhere is worse than no arrow.
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        }
                     }
                 },
             )

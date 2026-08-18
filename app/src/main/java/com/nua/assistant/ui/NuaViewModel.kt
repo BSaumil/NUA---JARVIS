@@ -18,6 +18,8 @@ import com.nua.assistant.ai.TaskPlanner
 import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.ai.UsageTracker
 import com.nua.assistant.automation.NuaIntentRouter
+import com.nua.assistant.automation.SkillCatalog
+import com.nua.assistant.automation.SkillDescriptor
 import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.briefing.BriefingScheduleStore
@@ -143,6 +145,7 @@ class NuaViewModel @Inject constructor(
     private val decisionRepository: DecisionRepository,
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
     private val nuaStateRepository: NuaStateRepository,
+    private val skillCatalog: SkillCatalog,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -174,6 +177,12 @@ class NuaViewModel @Inject constructor(
     /** Populated only after the user asks — never pre-generated, since it costs a Claude call. */
     private val _nextBestAction = MutableStateFlow<String?>(null)
     val nextBestAction: StateFlow<String?> = _nextBestAction.asStateFlow()
+
+    /**
+     * What NUA can actually do, read from the registered skill bindings — so the Act
+     * screen can't drift from what's really dispatchable.
+     */
+    val skills: List<SkillDescriptor> = skillCatalog.all()
 
     private val _diagnostics = MutableStateFlow<List<DiagnosticCheck>>(emptyList())
     val diagnostics: StateFlow<List<DiagnosticCheck>> = _diagnostics.asStateFlow()
@@ -860,6 +869,14 @@ class NuaViewModel @Inject constructor(
     /** Called when Settings opens — usage isn't worth keeping live-updated, just fresh on view. */
     fun refreshUsage() {
         viewModelScope.launch { _usageThisMonth.value = usageTracker.summaryThisMonth() }
+    }
+
+    /** Called when the Act destination appears: pending work plus the recent-action log. */
+    fun refreshAct() {
+        viewModelScope.launch {
+            _nuaState.value = nuaStateRepository.currentState()
+            _actionOutcomes.value = trustRepository.recentOutcomes()
+        }
     }
 
     /** Called when Settings opens — same reasoning as [refreshUsage]. Permission checks are cheap, but not worth polling. */
