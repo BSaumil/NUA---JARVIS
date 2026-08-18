@@ -351,9 +351,23 @@ demo content.
   declared manifests turned outward — the inputs, permissions, and autonomy tier that
   constrain dispatch are exactly what a user needs to see to know what NUA may do on
   their behalf.
-- **Animation language & accessibility** (`#41`, `#42`) — the 150/250/400–600ms timing
-  scale, and dynamic type, TalkBack, reduced motion, and haptics as requirements for this
-  phase, not an afterthought.
+- ✅ **Animation language & accessibility** (`#41`, `#42`) — `NuaMotion` names the three
+  bands (150ms instant feedback / 250ms transition / 450–600ms expressive) so motion is
+  one system rather than a scatter of magic numbers. Ambient looping motion — the Orb's
+  breath — deliberately sits *outside* the scale and is far slower, because a breathing
+  element cycling at interaction speed reads as panicking rather than resting, and
+  `NuaMotionTest` asserts that relationship holds.
+
+  `rememberMotionEnabled` moved out of `NuaOrb` into `ui/theme`, where it belongs: it was
+  private to one component, which meant every *other* animated surface silently ignored
+  the system "remove animations" setting. The pure `motionDuration` collapses any duration
+  to an instant cut when motion is off — state still changes, nothing moves — and is unit
+  tested, since "respects reduced motion" is exactly the kind of claim that quietly stops
+  being true. Haptics fire on *commit* only (the step-up gate, where something actually
+  changes in the world), never on ordinary navigation — buzzing everywhere is the same
+  mistake as colouring everything. Dynamic type was already covered by sizing the whole
+  type scale in `sp`, and TalkBack descriptions ship with each component rather than being
+  retrofitted.
 
 ## Phase 13 — Voice-First & Personality Depth
 

@@ -1,6 +1,5 @@
 package com.nua.assistant.ui.orb
 
-import android.provider.Settings
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -17,7 +16,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
@@ -27,6 +25,7 @@ import com.nua.assistant.ui.theme.NeuralViolet
 import com.nua.assistant.ui.theme.NuaCritical
 import com.nua.assistant.ui.theme.NuaOrange
 import com.nua.assistant.ui.theme.NuaSuccess
+import com.nua.assistant.ui.theme.rememberMotionEnabled
 import com.nua.assistant.ui.theme.NuaWarning
 import kotlin.math.cos
 import kotlin.math.sin
@@ -54,7 +53,7 @@ fun NuaOrb(
     contentDescription: String = orbContentDescription(state),
 ) {
     val appearance = remember(state) { appearanceFor(state) }
-    val animationsEnabled = animationsEnabled()
+    val animationsEnabled = rememberMotionEnabled()
     // Held in a local so the semantics block below doesn't shadow it — inside
     // `semantics { }`, `contentDescription` resolves to the write-only semantics property.
     val orbDescription = contentDescription
@@ -174,18 +173,4 @@ private fun paletteColors(palette: OrbPalette): List<Color> = when (palette) {
     OrbPalette.SUCCESS -> listOf(NuaSuccess, NuaSuccess.copy(alpha = 0.55f))
     OrbPalette.CRITICAL -> listOf(NuaCritical, NuaCritical.copy(alpha = 0.55f))
     OrbPalette.MUTED -> listOf(NuaOrange.copy(alpha = 0.5f), NeuralViolet.copy(alpha = 0.5f))
-}
-
-/**
- * Reads the system animator duration scale. 0 means the user has turned animations off
- * (Developer options, or "Remove animations" under Accessibility on many devices).
- */
-@Composable
-private fun animationsEnabled(): Boolean {
-    val context = LocalContext.current
-    return remember(context) {
-        runCatching {
-            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
-        }.getOrDefault(true)
-    }
 }
