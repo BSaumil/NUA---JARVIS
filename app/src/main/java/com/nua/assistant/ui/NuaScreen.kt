@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.History
@@ -97,6 +98,11 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val documents by viewModel.documents.collectAsState()
     val diagnostics by viewModel.diagnostics.collectAsState()
     val testingApiConnection by viewModel.testingApiConnection.collectAsState()
+    val nuaState by viewModel.nuaState.collectAsState()
+    val latestInsight by viewModel.latestInsight.collectAsState()
+    val nextBestAction by viewModel.nextBestAction.collectAsState()
+    // The Command Centre is the default surface — chat is a destination, not the whole UI.
+    var showChat by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showSecondBrainSearch by remember { mutableStateOf(false) }
     var showTimeline by remember { mutableStateOf(false) }
@@ -176,10 +182,68 @@ fun NuaScreen(viewModel: NuaViewModel) {
         return
     }
 
+    if (!showChat) {
+        LaunchedEffect(Unit) { viewModel.refreshNuaState() }
+        val state = nuaState
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("NUA") },
+                    actions = {
+                        NotificationSummaryChip(notificationSummary)
+                        IconButton(onClick = { showSecondBrainSearch = true }) {
+                            Icon(Icons.Filled.Search, contentDescription = "Search your Second Brain")
+                        }
+                        IconButton(onClick = { showTimeline = true }) {
+                            Icon(Icons.Filled.History, contentDescription = "Timeline")
+                        }
+                        IconButton(onClick = { showDocuments = true }) {
+                            Icon(Icons.Filled.Description, contentDescription = "Documents")
+                        }
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                        }
+                    },
+                )
+            },
+        ) { padding ->
+            Box(modifier = Modifier.padding(padding)) {
+                if (state == null) {
+                    // Genuinely still loading — deliberately not fake zeroes.
+                    CircularProgressIndicator(modifier = Modifier.padding(24.dp))
+                } else {
+                    CommandCentreScreen(
+                        greeting = greetingFor(state),
+                        state = state,
+                        orbState = viewModel.currentOrbState(),
+                        insight = latestInsight,
+                        nextAction = nextBestAction,
+                        onOrbTap = viewModel::onWakeWordDetected,
+                        onOpenChat = { showChat = true },
+                        onAskWhatNow = {
+                            viewModel.whatShouldIDoNow()
+                            showChat = true
+                        },
+                    )
+                }
+            }
+        }
+
+        if (uiState.needsApiKey) {
+            ApiKeyDialog(onSave = viewModel::saveApiKey)
+        }
+        return
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("NUA") },
+                navigationIcon = {
+                    IconButton(onClick = { showChat = false }) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back to home")
+                    }
+                },
                 actions = {
                     NotificationSummaryChip(notificationSummary)
                     IconButton(onClick = viewModel::whatShouldIDoNow, enabled = !uiState.isProcessing) {

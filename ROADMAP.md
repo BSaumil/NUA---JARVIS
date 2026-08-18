@@ -259,14 +259,32 @@ sequenced after Phases 7–9 so the dashboard has Goals, Context Engine, and Dre
 actually show — building the shell first would mean either empty cards or fabricated
 demo content.
 
-- **NUA Inner Life** (`#8`) — a `NuaState` model (focus, confidence, current objective,
-  current context, workload, recent mistakes, pending tasks, user availability) computed
-  from data Phases 6–9 already produce, not new fabricated state. The home screen becomes
-  a rendering of this state ("3 things need your attention") rather than a chat window.
-- **Personal Command Centre** (`#13`) — the home screen itself: today's summary, an
-  intelligence card ("NUA noticed something," sourced from Dreams), an action card
-  (sourced from What Now), and the Orb/voice entry point. Chat remains reachable, just
-  not the default surface.
+- ✅ **NUA Inner Life** (`#8`) — `state/NuaState` covers all eight specified dimensions
+  (focus, confidence, current objective, current context, workload, recent mistakes,
+  pending tasks, user availability), every one computed from data Phases 6–9 already
+  produce: active goals, the trust score earned from real action outcomes, ranked
+  notifications, today's calendar, documents nearing expiry, due vision monitors, and
+  recent goal observations. `NuaStateRepository` gathers the signals; the pure
+  `deriveNuaState` turns them into state, so the model is JVM-testable — the same split
+  `SelfDiagnosticsRepository`/`evaluateDiagnostics` uses.
+
+  Absent signals stay absent rather than defaulting to something plausible: `confidence`
+  is null until NUA has action history to be scored on (zero would read as
+  "untrustworthy"), and an unreadable calendar yields `UserAvailability.UNKNOWN`, never
+  `FREE` — the repository checks `READ_CALENDAR` separately because `eventsBetween`
+  returns an empty list both for "no events" and "no permission", and silently rendering
+  "can't see your calendar" as "your day is clear" would be NUA claiming to know
+  something it doesn't. `NuaStateTest` covers all of this, including that derivation is
+  deterministic. The home screen that renders it is the next slice.
+- ✅ **Personal Command Centre** (`#13`) — `CommandCentreScreen` is now the app's default
+  surface, and chat is a destination behind a back arrow rather than the whole UI. It
+  renders `NuaState`: a time-of-day greeting, a live status line (readiness · focus ·
+  context), a hero TODAY card with the real counts, an intelligence card sourced from an
+  actual Dream, an action card from What Now, the pending-work list, and a card where NUA
+  owns what it got wrong — on the home screen, not buried in Settings. Cards with no data
+  are omitted rather than filled with placeholder content, and the trust metric shows an
+  em dash rather than `0` when NUA hasn't earned a score yet. If the calendar can't be
+  read, the card says the numbers may be incomplete instead of quietly under-reporting.
 - ✅ **Visual identity & dark UI** (`#14`, `#15`, `#16`) — shipped as the token layer in
   `ui/theme/`. `NuaPalette` holds every value as a plain ARGB long (no Compose types) so
   it's the single source of truth and unit-testable on the JVM; `NuaColors` derives the
@@ -295,11 +313,21 @@ demo content.
   Design language: extremely clean, large typography, soft glass surfaces, subtle
   gradients, thin borders, large rounded cards, micro-animations, strong hierarchy,
   almost no clutter — explicitly *not* a traditional AI-chatbot look.
-- **The NUA Orb** (`#17`) — one component, eight distinct states, meant to be
-  recognizable on sight rather than a generic glowing circle: idle (slow breathing),
-  listening (expands subtly), thinking (internal particles move), acting (directional
-  energy movement), warning (orange pulse), success (short confirmation animation),
-  error (controlled red pulse), offline (muted/static).
+- ✅ **The NUA Orb** (`#17`) — `NuaOrb`, one component with all eight states: idle (slow
+  4s breath), listening (expands, reaches into Future Pink), thinking (six orbiting
+  internal particles), acting (rotating sweep gradient — energy directed outward),
+  warning (orange pulse), success (short 600ms confirmation), error (controlled red
+  pulse), offline (muted, dimmed, and genuinely static). The drawing parameters live in
+  the pure `appearanceFor`, so `OrbStateTest` can assert the things that actually matter:
+  that all eight states render distinguishably, that only THINKING has particles and only
+  ACTING sweeps, that error pulses *slower and smaller* than warning so a failure reads as
+  controlled rather than frantic, and that offline doesn't breathe at all. Motion honours
+  the system "remove animations" setting — an always-moving orb is exactly what makes an
+  app unusable for someone who needs animation off — and every state announces itself to
+  TalkBack rather than being decorative.
+- ✅ **Orb state derivation** — `NuaViewModel.currentOrbState()` derives the Orb from state
+  NUA already tracks (processing, offline, recent mistakes, pending work) rather than
+  being driven independently, so the Orb can't contradict the rest of the screen.
 - **Command Palette** (`#37`) — a global search/action surface (`⌘/`-equivalent) over
   memories, people, tasks, actions, and settings.
 - **Navigation & information hierarchy** (`#38`, `#40`) — the five destinations plus the

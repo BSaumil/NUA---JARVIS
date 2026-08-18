@@ -29,6 +29,9 @@ import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.SelfDiagnosticsRepository
 import com.nua.assistant.documents.DocumentAnalyzer
 import com.nua.assistant.security.UserUtterance
+import com.nua.assistant.state.NuaState
+import com.nua.assistant.state.NuaStateRepository
+import com.nua.assistant.ui.orb.OrbState
 import com.nua.assistant.documents.DocumentRepository
 import com.nua.assistant.documents.DocumentType
 import com.nua.assistant.documents.DocxTextExtractor
@@ -139,6 +142,7 @@ class NuaViewModel @Inject constructor(
     private val dreamRepository: DreamRepository,
     private val decisionRepository: DecisionRepository,
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
+    private val nuaStateRepository: NuaStateRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -158,6 +162,18 @@ class NuaViewModel @Inject constructor(
 
     private val _usageThisMonth = MutableStateFlow<UsageSummary?>(null)
     val usageThisMonth: StateFlow<UsageSummary?> = _usageThisMonth.asStateFlow()
+
+    /** Null until the first refresh completes — the Command Centre shows a quiet loading state rather than fake zeroes. */
+    private val _nuaState = MutableStateFlow<NuaState?>(null)
+    val nuaState: StateFlow<NuaState?> = _nuaState.asStateFlow()
+
+    /** The most recent Dream, surfaced on the Command Centre's intelligence card. Null when there genuinely isn't one. */
+    private val _latestInsight = MutableStateFlow<String?>(null)
+    val latestInsight: StateFlow<String?> = _latestInsight.asStateFlow()
+
+    /** Populated only after the user asks — never pre-generated, since it costs a Claude call. */
+    private val _nextBestAction = MutableStateFlow<String?>(null)
+    val nextBestAction: StateFlow<String?> = _nextBestAction.asStateFlow()
 
     private val _diagnostics = MutableStateFlow<List<DiagnosticCheck>>(emptyList())
     val diagnostics: StateFlow<List<DiagnosticCheck>> = _diagnostics.asStateFlow()
@@ -797,6 +813,7 @@ class NuaViewModel @Inject constructor(
                 return@launch
             }
             val recommendation = whatNowAdvisor.recommend(_pinnedLanguage.value)
+            _nextBestAction.value = recommendation
             respond(recommendation, extractFacts = false)
         }
     }
@@ -808,6 +825,36 @@ class NuaViewModel @Inject constructor(
 
     fun removeGoal(id: Long) {
         viewModelScope.launch { goalRepository.deactivateGoal(id) }
+    }
+
+    /**
+     * Recomputes the Command Centre's state from real sources. Called when the home
+     * surface appears rather than polled — every input is a cheap local read, but none of
+     * them change often enough to be worth a live subscription.
+     */
+    fun refreshNuaState() {
+        viewModelScope.launch {
+            _nuaState.value = nuaStateRepository.currentState()
+            // The insight card shows a real Dream or nothing at all; it is never
+            // generated on demand to fill the slot.
+            _latestInsight.value = runCatching { dreamRepository.recent(limit = 1).firstOrNull()?.text }.getOrNull()
+        }
+    }
+
+    /**
+     * What the Orb should be showing. Derived from state NUA already tracks rather than
+     * being driven separately, so the Orb can't disagree with the rest of the screen.
+     */
+    fun currentOrbState(): OrbState {
+        val state = _nuaState.value
+        return when {
+            _uiState.value.isProcessing -> OrbState.THINKING
+            state == null -> OrbState.IDLE
+            state.isOffline -> OrbState.OFFLINE
+            state.recentMistakes.isNotEmpty() -> OrbState.ERROR
+            state.pendingTasks.isNotEmpty() -> OrbState.WARNING
+            else -> OrbState.IDLE
+        }
     }
 
     /** Called when Settings opens — usage isn't worth keeping live-updated, just fresh on view. */
