@@ -41,22 +41,28 @@ fun TimelineScreen(entries: List<TimelineEntry>, onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        if (entries.isEmpty()) {
-            Column(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
-                Text(
-                    text = "Nothing here yet — facts, dreams, decisions, and goal observations will show up as they happen.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(entries) { entry -> TimelineEntryCard(entry) }
-            }
+        TimelineContent(entries = entries, modifier = Modifier.padding(padding))
+    }
+}
+
+/** Body without a Scaffold, so the Memory destination can host it as a section. */
+@Composable
+fun TimelineContent(entries: List<TimelineEntry>, modifier: Modifier = Modifier) {
+    if (entries.isEmpty()) {
+        Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+            Text(
+                text = "Nothing here yet — facts, dreams, decisions, and goal observations will show up as they happen.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    } else {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(entries) { entry -> TimelineEntryCard(entry) }
         }
     }
 }
