@@ -61,6 +61,7 @@ import com.nua.assistant.security.BiometricGate
 import com.nua.assistant.ui.components.NuaBottomBar
 import com.nua.assistant.ui.nav.MemorySection
 import com.nua.assistant.ui.nav.NuaDestination
+import com.nua.assistant.ui.theme.rememberCommitHaptic
 import com.nua.assistant.security.requiresStepUpAuth
 import com.nua.assistant.trust.AutonomyTier
 
@@ -521,12 +522,19 @@ private fun PlanConfirmationDialog(plan: TaskPlan, onConfirm: () -> Unit, onDism
 @Composable
 private fun rememberStepUpGatedAction(tier: AutonomyTier, title: String, subtitle: String, action: () -> Unit): () -> Unit {
     val context = LocalContext.current
+    // Haptic on commit only — these are the moments something actually changes in the
+    // world. Buzzing on ordinary navigation too would stop it meaning anything.
+    val confirmHaptic = rememberCommitHaptic()
     return {
         val activity = context.findFragmentActivity()
-        if (requiresStepUpAuth(tier) && activity != null && BiometricGate.isAvailable(context)) {
-            BiometricGate.authenticate(activity, title, subtitle) { success -> if (success) action() }
-        } else {
+        val commit = {
+            confirmHaptic()
             action()
+        }
+        if (requiresStepUpAuth(tier) && activity != null && BiometricGate.isAvailable(context)) {
+            BiometricGate.authenticate(activity, title, subtitle) { success -> if (success) commit() }
+        } else {
+            commit()
         }
     }
 }

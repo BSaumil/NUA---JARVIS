@@ -498,6 +498,14 @@ email to two more capabilities — both built on official, on-device APIs, no OA
   once. Only Now, Alert, and Insight carry distinct colour; colouring all seven would make
   the palette say nothing.
 
+- **Motion is a system, and it's optional.** `NuaMotion` names three timing bands (150ms
+  instant / 250ms transition / 450–600ms expressive) instead of scattering magic numbers.
+  `rememberMotionEnabled` lives in the theme rather than inside one component — it started
+  private to the Orb, which meant every other animated surface ignored the system "remove
+  animations" setting — and `motionDuration` collapses any duration to an instant cut when
+  motion is off, so state still changes but nothing moves. Haptics fire only where
+  something actually changes in the world, never on navigation.
+
 ## Languages
 
 NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,
