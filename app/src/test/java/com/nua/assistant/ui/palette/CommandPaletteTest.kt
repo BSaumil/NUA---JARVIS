@@ -115,6 +115,59 @@ class CommandPaletteTest {
         assertEquals(8, entries.size)
     }
 
+    // -----------------------------------------------------------------------------------
+    // Edge cases. Each of these was a real defect found by probing the ranking directly.
+    // -----------------------------------------------------------------------------------
+
+    @Test
+    fun `a non-positive limit yields an empty palette rather than throwing`() {
+        // take(limit - 1) throws IllegalArgumentException on a negative count.
+        assertEquals(emptyList<PaletteEntry>(), buildPalette("meeting", SKILLS, MEMORIES, limit = 0))
+        assertEquals(emptyList<PaletteEntry>(), buildPalette("", SKILLS, MEMORIES, limit = 0))
+    }
+
+    @Test
+    fun `the empty-query palette honours the limit too`() {
+        assertEquals(3, buildPalette("", SKILLS, MEMORIES, limit = 3).size)
+    }
+
+    @Test
+    fun `a repeated word does not inflate a memory's rank`() {
+        val padded = PaletteMemory("coffee coffee coffee", "Memory")
+        val real = PaletteMemory("Drinks coffee only before noon", "Memory")
+        val entries = buildPalette("coffee", SKILLS, listOf(padded, real))
+        val scores = entries.filter { it.action is PaletteAction.OpenMemory }.map { it.score }
+        assertEquals("repetition must not outrank relevance", 1, scores.distinct().size)
+    }
+
+    @Test
+    fun `a repeated query term does not inflate scores either`() {
+        val one = buildPalette("coffee", SKILLS, listOf(PaletteMemory("Likes coffee", "Memory")))
+        val twice = buildPalette("coffee coffee", SKILLS, listOf(PaletteMemory("Likes coffee", "Memory")))
+        assertEquals(
+            one.first { it.action is PaletteAction.OpenMemory }.score,
+            twice.first { it.action is PaletteAction.OpenMemory }.score,
+        )
+    }
+
+    @Test
+    fun `identical memories collapse to one row`() {
+        val duplicated = listOf(
+            PaletteMemory("Allergic to penicillin", "Memory"),
+            PaletteMemory("Allergic to penicillin", "Insight"),
+        )
+        val rows = buildPalette("penicillin", SKILLS, duplicated).count { it.action is PaletteAction.OpenMemory }
+        assertEquals(1, rows)
+    }
+
+    @Test
+    fun `a hyphenated name still matches at its word boundary`() {
+        // "smart-home" is two words to a reader; splitting on spaces alone made "home"
+        // a mere substring match and buried the skill.
+        assertEquals(matchScore("Read your notifications", "notifications"),
+            matchScore("Control smart-home devices", "home"))
+    }
+
     @Test
     fun `higher-scoring entries sort first`() {
         val entries = buildPalette("Open an app", SKILLS, MEMORIES)

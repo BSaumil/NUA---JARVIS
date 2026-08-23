@@ -76,7 +76,10 @@ internal fun matchScore(title: String, query: String): Int {
     if (needle.isEmpty()) return 0
     return when {
         haystack.startsWith(needle) -> SCORE_PREFIX
-        haystack.split(' ').any { it.startsWith(needle) } -> SCORE_WORD
+        // Same tokenizer as the memory path, so a word boundary means the same thing on
+        // both. Splitting on ' ' alone treated "smart-home" as one word and demoted
+        // "home" to a substring match.
+        tokenize(haystack).any { it.startsWith(needle) } -> SCORE_WORD
         haystack.contains(needle) -> SCORE_SUBSTRING
         else -> 0
     }
@@ -97,6 +100,10 @@ fun buildPalette(
     memories: List<PaletteMemory>,
     limit: Int = DEFAULT_LIMIT,
 ): List<PaletteEntry> {
+    // A palette with no room for rows is an empty palette, not a crash: `take(limit - 1)`
+    // below would throw on a non-positive limit.
+    if (limit <= 0) return emptyList()
+
     val trimmed = query.trim()
 
     if (trimmed.isEmpty()) {
@@ -107,7 +114,7 @@ fun buildPalette(
                 action = PaletteAction.Navigate(destination),
                 score = SCORE_PREFIX,
             )
-        }
+        }.take(limit)
     }
 
     val destinationHits = NuaDestination.entries.mapNotNull { destination ->
@@ -135,9 +142,13 @@ fun buildPalette(
         )
     }
 
-    val queryTokens = tokenize(trimmed)
-    val memoryHits = memories.mapNotNull { memory ->
-        val overlap = tokenize(memory.text).count { it in queryTokens }
+    // Distinct tokens on both sides, so the score measures "how much of what you typed is
+    // in this memory" rather than how often the memory repeats itself. Counting raw tokens
+    // let "coffee coffee coffee" outrank a memory that actually answers the query.
+    val queryTokens = tokenize(trimmed).toSet()
+    val memoryHits = memories.distinctBy { it.text }.mapNotNull { memory ->
+        val memoryTokens = tokenize(memory.text).toSet()
+        val overlap = queryTokens.count { it in memoryTokens }
         if (overlap == 0) return@mapNotNull null
         PaletteEntry(
             title = memory.text,
