@@ -192,15 +192,6 @@ class NuaViewModel @Inject constructor(
     private val _paletteQuery = MutableStateFlow("")
     val paletteQuery: StateFlow<String> = _paletteQuery.asStateFlow()
 
-    /**
-     * What the palette can search over. Facts and dreams only — the things NUA actually
-     * remembers — rather than every row in the database, so the palette stays a shortcut.
-     */
-    val paletteMemories: StateFlow<List<PaletteMemory>> =
-        combine(facts, dreams) { facts, dreams ->
-            facts.map { PaletteMemory(it.value, "Memory") } + dreams.map { PaletteMemory(it.text, "Insight") }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
     private val _diagnostics = MutableStateFlow<List<DiagnosticCheck>>(emptyList())
     val diagnostics: StateFlow<List<DiagnosticCheck>> = _diagnostics.asStateFlow()
 
@@ -240,6 +231,18 @@ class NuaViewModel @Inject constructor(
 
     val decisions: StateFlow<List<DecisionEntity>> = decisionRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * What the palette can search over. Facts and dreams only — the things NUA actually
+     * remembers — rather than every row in the database, so the palette stays a shortcut.
+     *
+     * Declared after [facts] and [dreams]: property initialisers run in declaration order,
+     * so a flow built from later-declared properties won't compile.
+     */
+    val paletteMemories: StateFlow<List<PaletteMemory>> =
+        combine(facts, dreams) { facts, dreams ->
+            facts.map { PaletteMemory(it.value, "Memory") } + dreams.map { PaletteMemory(it.text, "Insight") }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val timeline: StateFlow<List<TimelineEntry>> =
         combine(facts, dreams, decisions, goalObservations) { facts, dreams, decisions, goalObservations ->
