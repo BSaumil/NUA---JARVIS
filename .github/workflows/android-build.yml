@@ -30,6 +30,12 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # Catches the class of defect that shipped in 32887d3: a property initialiser
+      # reading a member declared below it. Self-tests against that known defect first,
+      # so a broken detector fails the build rather than reporting a false zero.
+      - name: Forward-reference audit
+        run: python3 tools/forward_ref_audit.py
+
       - name: Run unit tests
         run: ./gradlew test --stacktrace
 
