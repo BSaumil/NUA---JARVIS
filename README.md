@@ -624,11 +624,14 @@ needs to change, including the multi-keyword detection code in `NuaForegroundSer
 ## Continuous Integration
 
 `.github/workflows/android-build.yml` builds the app on GitHub's own runners (which have
-normal internet access, unlike the sandbox above) on every push and PR: it sets up the
-Android SDK, runs `./gradlew test`, then `./gradlew assembleDebug`, and uploads the debug
-APK and test reports as workflow artifacts. This is the real, end-to-end build
-verification for this project — check the Actions tab for current status rather than
-assuming a hand-reviewed diff compiles.
+normal internet access, unlike the sandbox above) on every push and PR: a forward-
+reference static audit (`tools/forward_ref_audit.py`), then `./gradlew test`, then
+`./gradlew assembleDebug`, uploading the debug APK and test reports as workflow
+artifacts. This is the real, end-to-end build verification for this project — check the
+Actions tab for the current status of the *exact commit* you care about, rather than
+assuming a hand-reviewed diff compiles or that "the branch is green" covers your commit
+specifically. See `docs/ENGINEERING.md` for the verification gate this project holds
+itself to, and `docs/HISTORY.md` for the incident that made it explicit.
 
 ## Building
 
