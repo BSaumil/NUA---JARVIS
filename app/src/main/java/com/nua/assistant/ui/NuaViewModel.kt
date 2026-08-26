@@ -108,6 +108,14 @@ data class NuaUiState(
     val pendingPlan: TaskPlan? = null,
     val pendingReply: NuaRouteResult.ReplyProposed? = null,
     val pendingSms: NuaRouteResult.SmsProposed? = null,
+    /**
+     * Whether the current pending* action was auto-approved (see [NuaViewModel.enableAutoApprove]).
+     * Tells the UI to skip the "do you want to do this?" tap and trigger its gated confirm
+     * immediately — it must NOT be read as license to skip step-up. Exactly one pending*
+     * field is ever non-null at a time (sendMessage routes to at most one proposal per
+     * turn), so a single flag is enough to describe all three.
+     */
+    val autoApprovedPending: Boolean = false,
     val needsApiKey: Boolean = false,
 )
 
@@ -443,29 +451,42 @@ class NuaViewModel @Inject constructor(
 
             when (val routed = intentRouter.route(UserUtterance(message), _pinnedLanguage.value)) {
                 is NuaRouteResult.ActionTaken -> respond(routed.message, extractFacts = false)
-                is NuaRouteResult.PlanProposed -> {
-                    if (trustRepository.isAutoApproved(NuaActionType.PLAN_TASK)) {
-                        executeConfirmedPlan(routed.plan)
-                    } else {
-                        _uiState.update { it.copy(isProcessing = false, pendingPlan = routed.plan) }
-                    }
-                }
-                is NuaRouteResult.ReplyProposed -> {
-                    if (trustRepository.isAutoApproved(NuaActionType.REPLY_TO_NOTIFICATION)) {
-                        executeConfirmedReply(routed)
-                    } else {
-                        _uiState.update { it.copy(isProcessing = false, pendingReply = routed) }
-                    }
-                }
-                is NuaRouteResult.SmsProposed -> {
-                    if (trustRepository.isAutoApproved(NuaActionType.SMS_SEND)) {
-                        executeConfirmedSms(routed)
-                    } else {
-                        _uiState.update { it.copy(isProcessing = false, pendingSms = routed) }
-                    }
-                }
+                // "Always allow" (see enableAutoApprove) answers one question — do you want
+                // to be asked "do you want to do this?" every time — and answers only that
+                // one. It must never also answer "is this actually you?": these actions are
+                // T3/T4, and biometric step-up is gated on the tier alone (requiresStepUpAuth),
+                // not on whether a confirmation dialog is shown. So every proposal still goes
+                // through pendingEffectFor and the same rememberStepUpGatedAction the manual-
+                // confirm path uses in NuaScreen — auto-approve only tells the UI to skip the
+                // "do you want to?" tap and trigger that gated action immediately. A prior
+                // version of this branch called executeConfirmed* here directly, which
+                // skipped step-up entirely — fixed after an architecture review found it.
+                // See pendingEffectFor's doc comment for the full story.
+                is NuaRouteResult.PlanProposed -> applyPendingEffect(
+                    PendingProposal.Plan(routed.plan), NuaActionType.PLAN_TASK,
+                )
+                is NuaRouteResult.ReplyProposed -> applyPendingEffect(
+                    PendingProposal.Reply(routed), NuaActionType.REPLY_TO_NOTIFICATION,
+                )
+                is NuaRouteResult.SmsProposed -> applyPendingEffect(
+                    PendingProposal.Sms(routed), NuaActionType.SMS_SEND,
+                )
                 NuaRouteResult.FallThroughToChat -> replyConversationally(message)
             }
+        }
+    }
+
+    /** Publishes a routed proposal to [NuaUiState] via [pendingEffectFor] — see that function's doc comment. */
+    private suspend fun applyPendingEffect(proposal: PendingProposal, actionType: NuaActionType) {
+        val effect = pendingEffectFor(proposal, autoApproved = trustRepository.isAutoApproved(actionType))
+        _uiState.update {
+            it.copy(
+                isProcessing = false,
+                pendingPlan = effect.pendingPlan,
+                pendingReply = effect.pendingReply,
+                pendingSms = effect.pendingSms,
+                autoApprovedPending = effect.autoApprovedPending,
+            )
         }
     }
 

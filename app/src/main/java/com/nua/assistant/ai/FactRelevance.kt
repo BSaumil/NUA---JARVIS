@@ -1,6 +1,7 @@
 package com.nua.assistant.ai
 
 import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.text.tokenize
 
 private const val MAX_FACTS_IN_PROMPT = 12
 private const val RECENCY_BONUS_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
@@ -36,7 +37,4 @@ object FactRelevance {
             .take(limit)
             .map { it.first }
     }
-
-    private fun tokenize(text: String): Set<String> =
-        text.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
 }

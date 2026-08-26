@@ -1,6 +1,7 @@
 package com.nua.assistant.ui.palette
 
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.text.tokenize
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.ui.nav.NuaDestination
 
@@ -61,9 +62,6 @@ private const val SCORE_PREFIX = 100
 private const val SCORE_WORD = 60
 private const val SCORE_SUBSTRING = 30
 private const val SCORE_MEMORY_TOKEN = 10
-
-internal fun tokenize(text: String): List<String> =
-    text.lowercase().split(Regex("[^a-z0-9]+")).filter { it.isNotBlank() }
 
 /**
  * Ranks one candidate title against the query. Pure, so the whole palette's behaviour is
@@ -142,12 +140,13 @@ fun buildPalette(
         )
     }
 
-    // Distinct tokens on both sides, so the score measures "how much of what you typed is
-    // in this memory" rather than how often the memory repeats itself. Counting raw tokens
-    // let "coffee coffee coffee" outrank a memory that actually answers the query.
-    val queryTokens = tokenize(trimmed).toSet()
+    // tokenize() already returns a distinct Set on both sides, so the score measures "how
+    // much of what you typed is in this memory" rather than how often the memory repeats
+    // itself — counting raw occurrences let "coffee coffee coffee" outrank a memory that
+    // actually answers the query.
+    val queryTokens = tokenize(trimmed)
     val memoryHits = memories.distinctBy { it.text }.mapNotNull { memory ->
-        val memoryTokens = tokenize(memory.text).toSet()
+        val memoryTokens = tokenize(memory.text)
         val overlap = queryTokens.count { it in memoryTokens }
         if (overlap == 0) return@mapNotNull null
         PaletteEntry(
