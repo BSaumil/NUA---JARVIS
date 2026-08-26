@@ -86,7 +86,7 @@ class TrustRepository @Inject constructor(
 
     /** Action types that have been approved enough times to suggest auto-approving, but aren't yet. */
     suspend fun autonomySuggestions(): List<AutonomyPreferenceEntity> =
-        autonomyPreferenceDao.getAll().filter { it.approvedCount >= AUTONOMY_SUGGESTION_THRESHOLD && !it.autoApproveEnabled }
+        autonomyPreferenceDao.getAll().filter { isAutonomySuggested(it, AUTONOMY_SUGGESTION_THRESHOLD) }
 
     suspend fun allAutonomyPreferences(): List<AutonomyPreferenceEntity> = autonomyPreferenceDao.getAll()
 
@@ -97,21 +97,15 @@ class TrustRepository @Inject constructor(
      * so it can never become a recurring interruption.
      */
     suspend fun pendingSelfReport(currentTier: FamiliarityTier): String? {
-        if (currentTier != FamiliarityTier.ESTABLISHED) return null
-
         val lastReportAt = prefs.getLong(KEY_LAST_SELF_REPORT_AT, 0L)
+        val now = System.currentTimeMillis()
         val minIntervalMillis = TimeUnit.DAYS.toMillis(SELF_REPORT_MIN_INTERVAL_DAYS)
-        if (System.currentTimeMillis() - lastReportAt < minIntervalMillis) return null
+        if (!selfReportEligible(currentTier, lastReportAt, now, minIntervalMillis)) return null
 
         val since = trustLedgerDao.since(lastReportAt)
-        if (since.isEmpty()) return null
+        val message = selfReportMessage(since) ?: return null
 
-        prefs.edit().putLong(KEY_LAST_SELF_REPORT_AT, System.currentTimeMillis()).apply()
-
-        val breakdown = since.groupingBy { it.type }.eachCount()
-            .entries.joinToString(", ") { (type, count) -> "$count time${if (count == 1) "" else "s"} ${type.label}" }
-        val count = since.size
-        return "Since we last talked about it, I've gotten $count thing${if (count == 1) "" else "s"} wrong: $breakdown. " +
-            "Figured you'd rather hear it from me than notice it yourself."
+        prefs.edit().putLong(KEY_LAST_SELF_REPORT_AT, now).apply()
+        return message
     }
 }
