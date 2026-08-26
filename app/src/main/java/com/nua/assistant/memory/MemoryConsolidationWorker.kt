@@ -7,6 +7,8 @@ import androidx.work.WorkerParameters
 import com.nua.assistant.ai.CLAUDE_MODEL_UTILITY
 import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
+import com.nua.assistant.ai.WorkerOutcome
+import com.nua.assistant.ai.outcomeForWorkerRun
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -49,7 +51,17 @@ class MemoryConsolidationWorker @AssistedInject constructor(
             maxTokens = 300,
         )
 
-        val summary = (result as? ClaudeResult.Success)?.text?.trim().orEmpty()
+        if (outcomeForWorkerRun(result is ClaudeResult.Success, runAttemptCount) == WorkerOutcome.RETRY) return Result.retry()
+        // A failed call — even after retries are exhausted — means Claude was never
+        // actually consulted about this batch, so its content is unknown. The messages
+        // must not be deleted on this path: deletion is only correct once Claude has
+        // actually looked at the batch, whether or not it judged anything durable enough
+        // to summarize. Found by inspection while adding retry handling: the pre-existing
+        // code deleted the batch unconditionally on any failure, discarding up to
+        // CONSOLIDATION_BATCH_SIZE messages with no summary ever written for them.
+        if (result !is ClaudeResult.Success) return Result.success()
+
+        val summary = result.text.trim()
         if (summary.length > 10) {
             memoryDao.upsertFact(
                 key = "conversation_summary_${batch.last().timestamp}",
