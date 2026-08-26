@@ -238,6 +238,77 @@ architecture review before any new feature work.
 
 ---
 
+## August 26 (continued) — Architecture review, round two: HISTORY reconciled against code
+
+A second directive asked for the same discipline applied one level up: don't trust
+`docs/HISTORY.md`'s own claims either — reconstruct real repository state, reconcile
+every major claim against actual source, and only then decide what's next. Its stated
+baseline (`aaa5fe2` as "latest") was itself three commits and a merge stale — `Main` was
+already at `e9b2d6d`, PR #22 merged and green. Reported and corrected before proceeding,
+per the standing rule that a HISTORY/repository disagreement gets reported before any
+broad change is made.
+
+### Reconciliation
+
+A background sweep (Explore agent) plus direct verification of the highest-risk claims —
+`NuaIntentRouter.route` (exactly one call site, `NuaViewModel.kt:452`), `SkillModule`'s
+Hilt multibinding (12 skills, one per non-`CHAT` `NuaActionType`, no dynamic registration
+path), and `autonomyTierFor` (an exhaustive `when` over all 13 `NuaActionType` values,
+no `else` — the compiler forbids an unmapped action type, not a runtime check) —
+confirmed the action-authorization boundary is genuinely what `ROADMAP.md` claims: one
+path, closed set, no bypass found. No case was found anywhere of documentation language
+("shipped ✅") overstating something that turned out absent — `email`/`WhatsApp`/Wear/Auto/
+owner-voice-verification are all self-disclosed as scaffold in the same breath as the
+claim, and the code matches.
+
+One real, previously undocumented defect *was* found: **every WorkManager worker that
+calls Claude returns `Result.success()` unconditionally**, never `Result.retry()`,
+regardless of whether the call actually succeeded. `MemoryConsolidationWorker` compounded
+this into data loss — on any Claude failure it still fell through to
+`memoryDao.deleteMessagesByIds(batch)`, discarding up to 100 messages with no summary
+ever written for them.
+
+### Feature/Fix
+Bounded retry for `DreamSynthesisWorker`, `GoalReviewWorker`, and
+`MemoryConsolidationWorker` on Claude API failure; `MemoryConsolidationWorker` no longer
+deletes a message batch it never got to summarize.
+
+### Root Cause
+All three workers used `(result as? ClaudeResult.Success)?.text ?: <fallback>` or
+equivalent, collapsing "Claude said nothing worth keeping" and "the API call failed" into
+the same code path. `GoalReviewWorker` calls Claude once per active goal with no
+per-item checkpointing, and `GoalRepository.recordObservation` has no idempotency check —
+a naive blanket retry would have duplicated any goal that already succeeded.
+
+### Implementation
+`ai/WorkerRetryPolicy.kt` — a single pure function, `outcomeForWorkerRun(madeProgress,
+attempt, maxAttempts = 3)`, deciding `RETRY` vs `DONE` without any Android/WorkManager
+type in its signature (`androidx.work.ListenableWorker.Result` needs the Android runtime
+to reference at all, and this project has no Robolectric). Each worker computes its own
+`madeProgress` and maps the result onto `Result.retry()`/`Result.success()` in one line.
+`GoalReviewWorker`'s `madeProgress` is specifically `!anyCallFailed ||
+anyObservationRecorded` — retry only a run that wrote nothing at all, never a run where
+something already succeeded, so retrying can't duplicate a goal's observation.
+`MemoryConsolidationWorker`'s delete is now reached only when `result is
+ClaudeResult.Success`, on any path — including after retries are exhausted.
+
+### Verification
+`WorkerRetryPolicyTest` (7 cases: progress-made-is-always-done regardless of attempt
+count, retry-while-attempts-remain, give-up-once-exhausted, the bound itself, and the
+three `GoalReviewWorker` shapes — all-succeed-nothing-recorded, fully-failed,
+partial-failure-with-something-written). Forward-reference audit clean.
+`tools/forward_ref_audit.py` and `./gradlew test`/`assembleDebug` both green in CI at the
+exact commit below — 11/11 steps, including the forward-reference audit and unit tests
+explicitly confirmed as having run (not inferred from the overall conclusion).
+
+### Commit
+`8569458` — pushed to `claude/new-session-efg0ha`, **not yet merged to `Main`** as of
+this entry (no merge was requested this round).
+
+### Status
+VERIFIED (fix itself, at its exact SHA) / the underlying `NuaViewModel` decomposition
+this review recommends as the next architectural priority is PLANNED, not started.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

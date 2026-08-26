@@ -7,7 +7,9 @@ import androidx.work.WorkerParameters
 import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
 import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
+import com.nua.assistant.ai.WorkerOutcome
 import com.nua.assistant.ai.extractJsonPayload
+import com.nua.assistant.ai.outcomeForWorkerRun
 import com.nua.assistant.context.ContextEngine
 import com.nua.assistant.context.describe
 import com.nua.assistant.goals.GoalRepository
@@ -93,6 +95,7 @@ class DreamSynthesisWorker @AssistedInject constructor(
             maxTokens = 250,
         )
 
+        if (outcomeForWorkerRun(result is ClaudeResult.Success, runAttemptCount) == WorkerOutcome.RETRY) return Result.retry()
         val text = (result as? ClaudeResult.Success)?.text ?: return Result.success()
         val dto = runCatching {
             json.decodeFromString(DreamDto.serializer(), extractJsonPayload(text))

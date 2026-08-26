@@ -36,6 +36,7 @@ import com.nua.assistant.state.NuaStateRepository
 import com.nua.assistant.ui.orb.OrbState
 import com.nua.assistant.ui.palette.PaletteMemory
 import com.nua.assistant.ui.palette.PaletteSkill
+import com.nua.assistant.ui.trust.TrustUiController
 import com.nua.assistant.documents.DocumentRepository
 import com.nua.assistant.documents.DocumentType
 import com.nua.assistant.documents.DocxTextExtractor
@@ -149,6 +150,7 @@ class NuaViewModel @Inject constructor(
     private val geofenceDao: GeofenceDao,
     private val usageTracker: UsageTracker,
     private val trustRepository: TrustRepository,
+    private val trustUiController: TrustUiController,
     private val goalRepository: GoalRepository,
     private val whatNowAdvisor: WhatNowAdvisor,
     private val dreamRepository: DreamRepository,
@@ -206,17 +208,19 @@ class NuaViewModel @Inject constructor(
     private val _testingApiConnection = MutableStateFlow(false)
     val testingApiConnection: StateFlow<Boolean> = _testingApiConnection.asStateFlow()
 
-    private val _trustScore = MutableStateFlow<Int?>(null)
-    val trustScore: StateFlow<Int?> = _trustScore.asStateFlow()
-
-    private val _trustLedger = MutableStateFlow<List<TrustLedgerEntity>>(emptyList())
-    val trustLedger: StateFlow<List<TrustLedgerEntity>> = _trustLedger.asStateFlow()
+    // trustScore/trustLedger/autonomySuggestions moved to TrustUiController (ui/trust/) —
+    // the first ViewModel-decomposition seam, per an architecture review that found this
+    // class's size (1008 lines, 35 dependencies at the time) the proven origin of two
+    // serious bugs this session. Re-exposed here unchanged: same StateFlow instances (not
+    // copies), same public names and types, so NuaScreen.kt/SettingsScreen.kt need no
+    // changes at all. actionOutcomes stays here — it's shared with the Act destination
+    // (refreshAct()), which is out of scope for the Trust/Autonomy seam.
+    val trustScore: StateFlow<Int?> = trustUiController.trustScore
+    val trustLedger: StateFlow<List<TrustLedgerEntity>> = trustUiController.trustLedger
+    val autonomySuggestions: StateFlow<List<AutonomyPreferenceEntity>> = trustUiController.autonomySuggestions
 
     private val _actionOutcomes = MutableStateFlow<List<ActionOutcomeEntity>>(emptyList())
     val actionOutcomes: StateFlow<List<ActionOutcomeEntity>> = _actionOutcomes.asStateFlow()
-
-    private val _autonomySuggestions = MutableStateFlow<List<AutonomyPreferenceEntity>>(emptyList())
-    val autonomySuggestions: StateFlow<List<AutonomyPreferenceEntity>> = _autonomySuggestions.asStateFlow()
 
     val notificationSummary: StateFlow<NotificationSummary> = notificationRepository.notifications
         .map { notificationRepository.summary() }
@@ -948,18 +952,13 @@ class NuaViewModel @Inject constructor(
     /** Called when Settings opens — same reasoning as [refreshUsage]. */
     fun refreshTrust() {
         viewModelScope.launch {
-            _trustScore.value = trustRepository.scoreSnapshot()
-            _trustLedger.value = trustRepository.recentLedger()
+            trustUiController.refresh()
             _actionOutcomes.value = trustRepository.recentOutcomes()
-            _autonomySuggestions.value = trustRepository.autonomySuggestions()
         }
     }
 
     fun enableAutoApprove(actionType: NuaActionType) {
-        viewModelScope.launch {
-            trustRepository.setAutoApprove(actionType, enabled = true)
-            _autonomySuggestions.value = trustRepository.autonomySuggestions()
-        }
+        viewModelScope.launch { trustUiController.enableAutoApprove(actionType) }
     }
 
     fun resetVoiceEnrollment() {

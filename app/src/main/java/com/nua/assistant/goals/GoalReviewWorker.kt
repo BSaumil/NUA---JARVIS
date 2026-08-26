@@ -7,6 +7,8 @@ import androidx.work.WorkerParameters
 import com.nua.assistant.ai.CLAUDE_MODEL_UTILITY
 import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
+import com.nua.assistant.ai.WorkerOutcome
+import com.nua.assistant.ai.outcomeForWorkerRun
 import com.nua.assistant.context.ContextEngine
 import com.nua.assistant.context.describe
 import dagger.assisted.Assisted
@@ -41,6 +43,8 @@ class GoalReviewWorker @AssistedInject constructor(
         if (activeGoals.isEmpty()) return Result.success()
 
         val snapshot = contextEngine.currentSnapshot().describe()
+        var anyCallFailed = false
+        var anyObservationRecorded = false
 
         activeGoals.forEach { goal ->
             val prompt = "Goal: ${goal.text}\n\nCurrent situation:\n$snapshot"
@@ -50,11 +54,24 @@ class GoalReviewWorker @AssistedInject constructor(
                 model = CLAUDE_MODEL_UTILITY,
                 maxTokens = 200,
             )
-            val observation = (result as? ClaudeResult.Success)?.text?.trim().orEmpty()
+            if (result !is ClaudeResult.Success) {
+                anyCallFailed = true
+                return@forEach
+            }
+            val observation = result.text.trim()
             if (observation.length > 10) {
                 goalRepository.recordObservation(goal.id, observation)
+                anyObservationRecorded = true
             }
         }
+
+        // Retrying re-processes every active goal from scratch, and recordObservation has
+        // no idempotency check — so retrying after anything was already written would
+        // duplicate that goal's observation. Only retry a run where nothing was written
+        // yet; a goal whose call failed after something else succeeded is picked up again
+        // on next week's scheduled run instead.
+        val madeProgress = !anyCallFailed || anyObservationRecorded
+        if (outcomeForWorkerRun(madeProgress, runAttemptCount) == WorkerOutcome.RETRY) return Result.retry()
 
         return Result.success()
     }
