@@ -3,6 +3,7 @@ package com.nua.assistant.ai
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.text.tokenize
 
 private const val DEFAULT_LIMIT = 30
 
@@ -53,7 +54,4 @@ object SecondBrainSearch {
             .sortedByDescending { it.score }
             .take(limit)
     }
-
-    private fun tokenize(text: String): Set<String> =
-        text.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
 }

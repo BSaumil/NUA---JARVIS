@@ -34,6 +34,8 @@ import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.state.NuaState
 import com.nua.assistant.state.NuaStateRepository
 import com.nua.assistant.ui.orb.OrbState
+import com.nua.assistant.ui.palette.PaletteMemory
+import com.nua.assistant.ui.palette.PaletteSkill
 import com.nua.assistant.documents.DocumentRepository
 import com.nua.assistant.documents.DocumentType
 import com.nua.assistant.documents.DocxTextExtractor
@@ -106,6 +108,14 @@ data class NuaUiState(
     val pendingPlan: TaskPlan? = null,
     val pendingReply: NuaRouteResult.ReplyProposed? = null,
     val pendingSms: NuaRouteResult.SmsProposed? = null,
+    /**
+     * Whether the current pending* action was auto-approved (see [NuaViewModel.enableAutoApprove]).
+     * Tells the UI to skip the "do you want to do this?" tap and trigger its gated confirm
+     * immediately — it must NOT be read as license to skip step-up. Exactly one pending*
+     * field is ever non-null at a time (sendMessage routes to at most one proposal per
+     * turn), so a single flag is enough to describe all three.
+     */
+    val autoApprovedPending: Boolean = false,
     val needsApiKey: Boolean = false,
 )
 
@@ -184,6 +194,12 @@ class NuaViewModel @Inject constructor(
      */
     val skills: List<SkillDescriptor> = skillCatalog.all()
 
+    /** The same capabilities, flattened for the command palette's pure ranking. */
+    val paletteSkills: List<PaletteSkill> = skills.map { PaletteSkill(it.action, it.displayName, it.tier) }
+
+    private val _paletteQuery = MutableStateFlow("")
+    val paletteQuery: StateFlow<String> = _paletteQuery.asStateFlow()
+
     private val _diagnostics = MutableStateFlow<List<DiagnosticCheck>>(emptyList())
     val diagnostics: StateFlow<List<DiagnosticCheck>> = _diagnostics.asStateFlow()
 
@@ -223,6 +239,18 @@ class NuaViewModel @Inject constructor(
 
     val decisions: StateFlow<List<DecisionEntity>> = decisionRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * What the palette can search over. Facts and dreams only — the things NUA actually
+     * remembers — rather than every row in the database, so the palette stays a shortcut.
+     *
+     * Declared after [facts] and [dreams]: property initialisers run in declaration order,
+     * so a flow built from later-declared properties won't compile.
+     */
+    val paletteMemories: StateFlow<List<PaletteMemory>> =
+        combine(facts, dreams) { facts, dreams ->
+            facts.map { PaletteMemory(it.value, "Memory") } + dreams.map { PaletteMemory(it.text, "Insight") }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val timeline: StateFlow<List<TimelineEntry>> =
         combine(facts, dreams, decisions, goalObservations) { facts, dreams, decisions, goalObservations ->
@@ -423,29 +451,42 @@ class NuaViewModel @Inject constructor(
 
             when (val routed = intentRouter.route(UserUtterance(message), _pinnedLanguage.value)) {
                 is NuaRouteResult.ActionTaken -> respond(routed.message, extractFacts = false)
-                is NuaRouteResult.PlanProposed -> {
-                    if (trustRepository.isAutoApproved(NuaActionType.PLAN_TASK)) {
-                        executeConfirmedPlan(routed.plan)
-                    } else {
-                        _uiState.update { it.copy(isProcessing = false, pendingPlan = routed.plan) }
-                    }
-                }
-                is NuaRouteResult.ReplyProposed -> {
-                    if (trustRepository.isAutoApproved(NuaActionType.REPLY_TO_NOTIFICATION)) {
-                        executeConfirmedReply(routed)
-                    } else {
-                        _uiState.update { it.copy(isProcessing = false, pendingReply = routed) }
-                    }
-                }
-                is NuaRouteResult.SmsProposed -> {
-                    if (trustRepository.isAutoApproved(NuaActionType.SMS_SEND)) {
-                        executeConfirmedSms(routed)
-                    } else {
-                        _uiState.update { it.copy(isProcessing = false, pendingSms = routed) }
-                    }
-                }
+                // "Always allow" (see enableAutoApprove) answers one question — do you want
+                // to be asked "do you want to do this?" every time — and answers only that
+                // one. It must never also answer "is this actually you?": these actions are
+                // T3/T4, and biometric step-up is gated on the tier alone (requiresStepUpAuth),
+                // not on whether a confirmation dialog is shown. So every proposal still goes
+                // through pendingEffectFor and the same rememberStepUpGatedAction the manual-
+                // confirm path uses in NuaScreen — auto-approve only tells the UI to skip the
+                // "do you want to?" tap and trigger that gated action immediately. A prior
+                // version of this branch called executeConfirmed* here directly, which
+                // skipped step-up entirely — fixed after an architecture review found it.
+                // See pendingEffectFor's doc comment for the full story.
+                is NuaRouteResult.PlanProposed -> applyPendingEffect(
+                    PendingProposal.Plan(routed.plan), NuaActionType.PLAN_TASK,
+                )
+                is NuaRouteResult.ReplyProposed -> applyPendingEffect(
+                    PendingProposal.Reply(routed), NuaActionType.REPLY_TO_NOTIFICATION,
+                )
+                is NuaRouteResult.SmsProposed -> applyPendingEffect(
+                    PendingProposal.Sms(routed), NuaActionType.SMS_SEND,
+                )
                 NuaRouteResult.FallThroughToChat -> replyConversationally(message)
             }
+        }
+    }
+
+    /** Publishes a routed proposal to [NuaUiState] via [pendingEffectFor] — see that function's doc comment. */
+    private suspend fun applyPendingEffect(proposal: PendingProposal, actionType: NuaActionType) {
+        val effect = pendingEffectFor(proposal, autoApproved = trustRepository.isAutoApproved(actionType))
+        _uiState.update {
+            it.copy(
+                isProcessing = false,
+                pendingPlan = effect.pendingPlan,
+                pendingReply = effect.pendingReply,
+                pendingSms = effect.pendingSms,
+                autoApprovedPending = effect.autoApprovedPending,
+            )
         }
     }
 
@@ -869,6 +910,10 @@ class NuaViewModel @Inject constructor(
     /** Called when Settings opens — usage isn't worth keeping live-updated, just fresh on view. */
     fun refreshUsage() {
         viewModelScope.launch { _usageThisMonth.value = usageTracker.summaryThisMonth() }
+    }
+
+    fun updatePaletteQuery(query: String) {
+        _paletteQuery.value = query
     }
 
     /** Called when the Act destination appears: pending work plus the recent-action log. */

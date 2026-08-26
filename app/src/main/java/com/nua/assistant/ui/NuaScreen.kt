@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -36,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,11 +58,16 @@ import androidx.fragment.app.FragmentActivity
 import com.nua.assistant.ai.PlannedStep
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.automation.NuaRouteResult
+import com.nua.assistant.automation.displayNameFor
 import com.nua.assistant.memory.MessageRole
 import com.nua.assistant.security.BiometricGate
 import com.nua.assistant.ui.components.NuaBottomBar
 import com.nua.assistant.ui.nav.MemorySection
 import com.nua.assistant.ui.nav.NuaDestination
+import com.nua.assistant.ui.palette.CommandPaletteSheet
+import com.nua.assistant.ui.palette.PaletteAction
+import com.nua.assistant.ui.palette.buildPalette
+import com.nua.assistant.ui.theme.NuaTheme
 import com.nua.assistant.ui.theme.rememberCommitHaptic
 import com.nua.assistant.security.requiresStepUpAuth
 import com.nua.assistant.trust.AutonomyTier
@@ -96,6 +103,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val latestInsight by viewModel.latestInsight.collectAsState()
     val nextBestAction by viewModel.nextBestAction.collectAsState()
     val skills = viewModel.skills
+    val paletteQuery by viewModel.paletteQuery.collectAsState()
+    val paletteMemories by viewModel.paletteMemories.collectAsState()
+    var showPalette by remember { mutableStateOf(false) }
     // One destination enum replaces the pile of boolean show* flags this screen used to
     // navigate with — each new screen used to mean another flag and another early return,
     // and the user got no sense of where they were.
@@ -125,6 +135,17 @@ fun NuaScreen(viewModel: NuaViewModel) {
 
     Scaffold(
         bottomBar = { NuaBottomBar(current = destination, onSelect = { destination = it }, alertOn = alerts) },
+        floatingActionButton = {
+            // The palette is reachable from every destination — that's what makes it a
+            // palette rather than another screen you have to navigate to first.
+            FloatingActionButton(
+                onClick = { showPalette = true },
+                containerColor = NuaTheme.colors.surfaceElevated,
+                contentColor = NuaTheme.colors.brandIdentity,
+            ) {
+                Icon(Icons.Filled.Search, contentDescription = "Open command palette")
+            }
+        },
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (destination) {
@@ -225,9 +246,46 @@ fun NuaScreen(viewModel: NuaViewModel) {
         ApiKeyDialog(onSave = viewModel::saveApiKey)
     }
 
+    if (showPalette) {
+        CommandPaletteSheet(
+            query = paletteQuery,
+            onQueryChange = viewModel::updatePaletteQuery,
+            entries = buildPalette(paletteQuery, viewModel.paletteSkills, paletteMemories),
+            onChoose = { entry ->
+                showPalette = false
+                viewModel.updatePaletteQuery("")
+                when (val chosen = entry.action) {
+                    is PaletteAction.Navigate -> destination = chosen.destination
+                    is PaletteAction.OpenMemory -> {
+                        viewModel.updateSecondBrainQuery(chosen.query)
+                        memorySection = MemorySection.SEARCH
+                        destination = NuaDestination.MEMORY
+                    }
+                    // Both of these go through sendMessage, so routing, the autonomy
+                    // tier, and the confirmation dialogs all still apply — the palette
+                    // never becomes a second, less-guarded way to run an action.
+                    is PaletteAction.RunSkill -> {
+                        // The plain capability name, not the decorated row label — the
+                        // classifier should see a clean utterance. A gated skill with no
+                        // details yet ("Send a text") correctly falls through to chat so
+                        // NUA can ask who and what, rather than half-firing.
+                        viewModel.sendMessage(displayNameFor(chosen.action))
+                        destination = NuaDestination.ASK
+                    }
+                    is PaletteAction.AskNua -> {
+                        viewModel.sendMessage(chosen.utterance)
+                        destination = NuaDestination.ASK
+                    }
+                }
+            },
+            onDismiss = { showPalette = false },
+        )
+    }
+
     uiState.pendingPlan?.let { plan ->
         PlanConfirmationDialog(
             plan = plan,
+            autoApproved = uiState.autoApprovedPending,
             onConfirm = viewModel::confirmPendingPlan,
             onDismiss = viewModel::dismissPendingPlan,
         )
@@ -236,6 +294,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
     uiState.pendingReply?.let { pending ->
         ReplyConfirmationDialog(
             pending = pending,
+            autoApproved = uiState.autoApprovedPending,
             onConfirm = viewModel::confirmPendingReply,
             onDismiss = viewModel::dismissPendingReply,
         )
@@ -244,6 +303,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
     uiState.pendingSms?.let { pending ->
         SmsConfirmationDialog(
             pending = pending,
+            autoApproved = uiState.autoApprovedPending,
             onConfirm = viewModel::confirmPendingSms,
             onDismiss = viewModel::dismissPendingSms,
         )
@@ -448,13 +508,21 @@ private fun ApiKeyDialog(onSave: (String) -> Unit) {
 }
 
 @Composable
-private fun ReplyConfirmationDialog(pending: NuaRouteResult.ReplyProposed, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun ReplyConfirmationDialog(
+    pending: NuaRouteResult.ReplyProposed,
+    autoApproved: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val gatedConfirm = rememberStepUpGatedAction(
         tier = AutonomyTier.T3,
         title = "Confirm reply",
         subtitle = "Verify it's you before NUA sends this reply.",
         action = onConfirm,
     )
+    // "Always allow" skips the tap on this dialog, never the step-up inside gatedConfirm —
+    // see the comment on autoApprovedPending in NuaViewModel.
+    LaunchedEffect(pending) { if (autoApproved) gatedConfirm() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Reply to ${pending.notification.title}?") },
@@ -466,7 +534,12 @@ private fun ReplyConfirmationDialog(pending: NuaRouteResult.ReplyProposed, onCon
 
 /** SMS permission is requested lazily, right here on first send attempt, rather than upfront at launch — most users never send a text via NUA. */
 @Composable
-private fun SmsConfirmationDialog(pending: NuaRouteResult.SmsProposed, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun SmsConfirmationDialog(
+    pending: NuaRouteResult.SmsProposed,
+    autoApproved: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> onConfirm() }
     val requestPermissionThenSend: () -> Unit = {
@@ -482,6 +555,9 @@ private fun SmsConfirmationDialog(pending: NuaRouteResult.SmsProposed, onConfirm
         subtitle = "Verify it's you before NUA texts ${pending.contactName}.",
         action = requestPermissionThenSend,
     )
+    // "Always allow" skips the tap on this dialog, never the step-up inside gatedConfirm —
+    // see the comment on autoApprovedPending in NuaViewModel.
+    LaunchedEffect(pending) { if (autoApproved) gatedConfirm() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Text ${pending.contactName}?") },
@@ -492,13 +568,21 @@ private fun SmsConfirmationDialog(pending: NuaRouteResult.SmsProposed, onConfirm
 }
 
 @Composable
-private fun PlanConfirmationDialog(plan: TaskPlan, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun PlanConfirmationDialog(
+    plan: TaskPlan,
+    autoApproved: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val gatedConfirm = rememberStepUpGatedAction(
         tier = AutonomyTier.T4,
         title = "Confirm plan",
         subtitle = "Verify it's you before NUA schedules this plan.",
         action = onConfirm,
     )
+    // "Always allow" skips the tap on this dialog, never the step-up inside gatedConfirm —
+    // see the comment on autoApprovedPending in NuaViewModel.
+    LaunchedEffect(plan) { if (autoApproved) gatedConfirm() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(plan.summary) },

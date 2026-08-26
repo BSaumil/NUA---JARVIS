@@ -506,6 +506,14 @@ email to two more capabilities — both built on official, on-device APIs, no OA
   motion is off, so state still changes but nothing moves. Haptics fire only where
   something actually changes in the world, never on navigation.
 
+- **Command palette.** One search surface over destinations, capabilities, and memories,
+  reachable from anywhere. Ranking is a pure function (`buildPalette`), so it's unit
+  tested rather than eyeballed. Crucially it is *not* a bypass: anything above Tier 2 is
+  phrased as a request, tinted so you can see it needs confirmation before you tap, and
+  routed through the normal `sendMessage` path where the confirmation dialog and biometric
+  step-up still apply — with a test asserting no high-tier entry ever reports itself as
+  immediately executable.
+
 ## Languages
 
 NUA understands and replies in ten languages: English, Hindi, Gujarati, Marathi,
@@ -616,11 +624,14 @@ needs to change, including the multi-keyword detection code in `NuaForegroundSer
 ## Continuous Integration
 
 `.github/workflows/android-build.yml` builds the app on GitHub's own runners (which have
-normal internet access, unlike the sandbox above) on every push and PR: it sets up the
-Android SDK, runs `./gradlew test`, then `./gradlew assembleDebug`, and uploads the debug
-APK and test reports as workflow artifacts. This is the real, end-to-end build
-verification for this project — check the Actions tab for current status rather than
-assuming a hand-reviewed diff compiles.
+normal internet access, unlike the sandbox above) on every push and PR: a forward-
+reference static audit (`tools/forward_ref_audit.py`), then `./gradlew test`, then
+`./gradlew assembleDebug`, uploading the debug APK and test reports as workflow
+artifacts. This is the real, end-to-end build verification for this project — check the
+Actions tab for the current status of the *exact commit* you care about, rather than
+assuming a hand-reviewed diff compiles or that "the branch is green" covers your commit
+specifically. See `docs/ENGINEERING.md` for the verification gate this project holds
+itself to, and `docs/HISTORY.md` for the incident that made it explicit.
 
 ## Building
 

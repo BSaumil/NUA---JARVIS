@@ -31,6 +31,62 @@ private const val TAG = "SkillSandbox"
  * dispatch path can't invoke an undeclared tool, can't pass a skill inputs it never
  * declared, can't run one unbounded, and can't lose the result from the audit trail.
  */
+/**
+ * The full agent-sandbox decision: preflight (missing parameters, ungranted permissions),
+ * parameter narrowing, timeout enforcement, and exception containment. Pure aside from
+ * [skill]'s own suspend body — no [Context], no `android.util.Log`, both unavailable to
+ * this project's JVM unit tests (no Robolectric) — so [SkillSandboxTest] can exercise the
+ * real coroutine timeout/cancellation/exception-mapping behaviour directly, not just the
+ * already-tested [missingRequiredParameters]/[filterToDeclaredParameters] pieces it calls.
+ *
+ * [SkillSandbox.execute] is a thin wrapper supplying [hasPermission] from a real
+ * [Context] and the same log lines this function used to have inline, via the `on*`
+ * callbacks — kept out of the pure core rather than duplicated around it.
+ */
+suspend fun executeSandboxed(
+    skill: NuaSkill,
+    intent: ClassifiedIntent,
+    originalUtterance: String,
+    pinnedLanguage: NuaLanguage?,
+    hasPermission: (String) -> Boolean,
+    onRefusedMissingParameters: (List<String>) -> Unit = {},
+    onTimedOut: (TimeoutCancellationException) -> Unit = {},
+    onThrew: (Exception) -> Unit = {},
+): NuaRouteResult {
+    val manifest = skill.manifest
+
+    // A required parameter missing means the classifier misread the request, not that
+    // the user asked for something impossible — fall through to chat, same as before.
+    val missing = missingRequiredParameters(manifest, intent.parameters)
+    if (missing.isNotEmpty()) {
+        onRefusedMissingParameters(missing)
+        return NuaRouteResult.FallThroughToChat
+    }
+
+    val ungranted = manifest.requiredPermissions.filterNot(hasPermission)
+    if (ungranted.isNotEmpty()) {
+        val needed = ungranted.joinToString(" and ", transform = ::describePermission)
+        return NuaRouteResult.ActionTaken("That needs $needed, which isn't granted yet.", succeeded = false)
+    }
+
+    val sandboxed = intent.copy(parameters = filterToDeclaredParameters(manifest, intent.parameters))
+
+    return try {
+        withTimeout(manifest.timeoutMillis) {
+            skill.execute(sandboxed, originalUtterance, pinnedLanguage)
+        }
+    } catch (timeout: TimeoutCancellationException) {
+        onTimedOut(timeout)
+        NuaRouteResult.ActionTaken("That took too long, so NUA stopped it rather than leaving it hanging.", succeeded = false)
+    } catch (cancellation: CancellationException) {
+        // Genuine cancellation (the ViewModel scope going away) — never swallow it.
+        throw cancellation
+    } catch (failure: Exception) {
+        onThrew(failure)
+        NuaRouteResult.ActionTaken("That failed unexpectedly — ${failure.message ?: failure::class.simpleName}.", succeeded = false)
+    }
+}
+
 @Singleton
 class SkillSandbox @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -41,40 +97,20 @@ class SkillSandbox @Inject constructor(
         intent: ClassifiedIntent,
         originalUtterance: String,
         pinnedLanguage: NuaLanguage?,
-    ): NuaRouteResult {
-        val manifest = skill.manifest
-
-        // A required parameter missing means the classifier misread the request, not that
-        // the user asked for something impossible — fall through to chat, same as before.
-        val missing = missingRequiredParameters(manifest, intent.parameters)
-        if (missing.isNotEmpty()) {
+    ): NuaRouteResult = executeSandboxed(
+        skill = skill,
+        intent = intent,
+        originalUtterance = originalUtterance,
+        pinnedLanguage = pinnedLanguage,
+        hasPermission = ::hasPermission,
+        onRefusedMissingParameters = { missing ->
             Log.i(TAG, "Refused ${intent.action}: missing required parameter(s) ${missing.joinToString()}")
-            return NuaRouteResult.FallThroughToChat
-        }
-
-        val ungranted = manifest.requiredPermissions.filterNot(::hasPermission)
-        if (ungranted.isNotEmpty()) {
-            val needed = ungranted.joinToString(" and ", transform = ::describePermission)
-            return NuaRouteResult.ActionTaken("That needs $needed, which isn't granted yet.", succeeded = false)
-        }
-
-        val sandboxed = intent.copy(parameters = filterToDeclaredParameters(manifest, intent.parameters))
-
-        return try {
-            withTimeout(manifest.timeoutMillis) {
-                skill.execute(sandboxed, originalUtterance, pinnedLanguage)
-            }
-        } catch (timeout: TimeoutCancellationException) {
-            Log.w(TAG, "Skill ${intent.action} exceeded ${manifest.timeoutMillis}ms and was stopped", timeout)
-            NuaRouteResult.ActionTaken("That took too long, so NUA stopped it rather than leaving it hanging.", succeeded = false)
-        } catch (cancellation: CancellationException) {
-            // Genuine cancellation (the ViewModel scope going away) — never swallow it.
-            throw cancellation
-        } catch (failure: Exception) {
-            Log.e(TAG, "Skill ${intent.action} threw", failure)
-            NuaRouteResult.ActionTaken("That failed unexpectedly — ${failure.message ?: failure::class.simpleName}.", succeeded = false)
-        }
-    }
+        },
+        onTimedOut = { timeout ->
+            Log.w(TAG, "Skill ${intent.action} exceeded ${skill.manifest.timeoutMillis}ms and was stopped", timeout)
+        },
+        onThrew = { failure -> Log.e(TAG, "Skill ${intent.action} threw", failure) },
+    )
 
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
