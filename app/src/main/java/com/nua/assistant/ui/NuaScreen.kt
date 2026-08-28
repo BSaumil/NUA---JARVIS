@@ -69,6 +69,7 @@ import com.nua.assistant.ui.palette.PaletteAction
 import com.nua.assistant.ui.palette.buildPalette
 import com.nua.assistant.ui.theme.NuaTheme
 import com.nua.assistant.ui.theme.rememberCommitHaptic
+import com.nua.assistant.security.mayStartStepUp
 import com.nua.assistant.security.requiresStepUpAuth
 import com.nua.assistant.trust.AutonomyTier
 

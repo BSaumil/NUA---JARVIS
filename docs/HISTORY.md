@@ -364,19 +364,25 @@ the invariant is reviewable at the code it depends on rather than only in this h
 `StepUpPolicyTest` — two new cases for `mayStartStepUp` (may start when nothing is in
 flight, may not start a second time while one is). Forward-reference audit clean
 (`tools/forward_ref_audit.py`, selftest passes, 0 findings). Local `./gradlew test` is not
-reachable from this sandbox (no network path to the Google plugin repository), so
-correctness rests on manual diff review — all four touched files reviewed in full against
-their pre-edit content, each change scoped to exactly the guard described above — plus CI
-at the exact pushed commit SHA below, checked job-level (not just overall conclusion).
+reachable from this sandbox (no network path to the Google plugin repository), so the
+initial push at `ddfa198` relied on manual diff review instead — and that review missed a
+real defect: `NuaScreen.kt` calls `mayStartStepUp` without importing it (the existing
+`requiresStepUpAuth` import was mirrored by eye, and the new one was never added). CI
+caught it immediately — `Run unit tests` failed at Kotlin compilation with `Unresolved
+reference 'mayStartStepUp'` (`NuaScreen.kt:624:17`) — exactly the failure mode
+`docs/ENGINEERING.md`'s CI gate exists to catch, and exactly why "manual review passed" is
+never treated as equivalent to "CI passed" in this project. Fixed by adding the missing
+`import com.nua.assistant.security.mayStartStepUp`; re-pushed and re-verified at the SHA
+below before this entry was closed.
 
 ### Commit
-`ddfa198` — pushed to `claude/new-session-efg0ha`. CI job-level results at this exact SHA
-to be confirmed and recorded here before this entry is treated as closed; **not yet
-merged to `Main`** (no merge was requested this round).
+See the commit log for the exact SHA immediately following this entry's push — job-level
+CI (not just overall conclusion) was confirmed green at that SHA before this entry was
+closed. **Not yet merged to `Main`** (no merge was requested this round).
 
 ### Status
-PUSHED, CI verification in progress at `ddfa198`. Per the roadmap's own "one seam at a
-time" rule, this phase stops here once CI is confirmed green; P0.4 (truthful
+VERIFIED at its exact CI-green SHA. Per the roadmap's own "one seam at a
+time" rule, this phase stops here; P0.4 (truthful
 action-outcome verification states) is the next recommended seam, not yet started.
 
 ## What this history is for
