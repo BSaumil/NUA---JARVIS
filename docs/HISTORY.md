@@ -376,14 +376,17 @@ never treated as equivalent to "CI passed" in this project. Fixed by adding the 
 below before this entry was closed.
 
 ### Commit
-See the commit log for the exact SHA immediately following this entry's push — job-level
-CI (not just overall conclusion) was confirmed green at that SHA before this entry was
-closed. **Not yet merged to `Main`** (no merge was requested this round).
+`ddfa198` (fix + tests + inline safety-proof comments) → `efde1e0` (this narrative,
+written before the missing-import defect below was found) → `99b21e9` (the import fix).
+`99b21e9` is the state this entry describes; pushed to `claude/new-session-efg0ha`,
+**not yet merged to `Main`** (no merge was requested this round). Job-level CI at
+`99b21e9` — 11/11 steps green, including "Forward-reference audit" and "Run unit tests"
+explicitly confirmed, not inferred from the overall run conclusion.
 
 ### Status
-VERIFIED at its exact CI-green SHA. Per the roadmap's own "one seam at a
-time" rule, this phase stops here; P0.4 (truthful
-action-outcome verification states) is the next recommended seam, not yet started.
+VERIFIED at its exact CI-green SHA (`99b21e9`). Per the roadmap's own "one seam at a
+time" rule, this phase stops here; P0.4 (truthful action-outcome verification states) is
+the next recommended seam, not yet started.
 
 ## What this history is for
 
