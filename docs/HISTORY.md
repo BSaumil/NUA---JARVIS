@@ -309,6 +309,76 @@ this entry (no merge was requested this round).
 VERIFIED (fix itself, at its exact SHA) / the underlying `NuaViewModel` decomposition
 this review recommends as the next architectural priority is PLANNED, not started.
 
+## August 28 — P0.1 merged, then P0.3: pending-action concurrency/idempotency
+
+A master roadmap document (`NUA_PERSONAL_INTELLIGENCE_OS_ROADMAP.md`) arrived with an
+explicit instruction to start only with P0.1 (the `NuaViewModel` Trust/Autonomy
+extraction) and stop. Its own stated baseline was already stale — it named a HEAD three
+commits behind the real one — because P0.1 had, in fact, already been completed and
+squash-merged as `5683752` in the session immediately preceding this one (`ui/trust/
+TrustUiController.kt`, extracting `trustScore`/`trustLedger`/`autonomySuggestions` and
+their refresh/enable-autoapprove logic out of `NuaViewModel`, backed by pure functions
+`refreshedTrustState` and `autonomySuggestionsAfterEnabling`, six tests, verified green at
+`0e657f8` before merge). Reported before proceeding, per the same reconciliation
+discipline as the round above. The roadmap's own baseline flagged the next real gap
+itself: *"repeated-tap/concurrent execution around pending SMS/reply/plan confirmation"*
+(P0.3) — so that, not P0.1 again and not P1, is what this entry covers.
+
+### Investigation
+Traced `confirmPendingPlan`/`confirmPendingReply`/`confirmPendingSms` end to end rather
+than assuming a guard was missing. Three independently-verified facts rule out a literal
+double-tap causing double execution: `viewModelScope` uses the standard, unmodified
+`Dispatchers.Main.immediate` (confirmed no override exists anywhere in the codebase); each
+`confirm*` function clears its pending-state guard (`_uiState.update { pending = null }`)
+synchronously, before the coroutine's first real suspension point (a Room call inside
+`trustRepository`); and Android's Looper serializes all main-thread events, so two "taps"
+are never actually concurrent at the code level. Process death, lifecycle recreation,
+worker-driven retry, and idempotency-keyed resubmission were each checked and ruled out
+as inapplicable or out of scope for this seam (pending state is `ViewModel`-scoped, not
+persisted — losing it on process death is a UX gap, not a duplication risk; these
+functions are never invoked from a `Worker`; neither `SmsManager` nor notification
+`RemoteInput` replies support an idempotency key in the underlying Android APIs).
+
+One real, previously undocumented gap *was* found in the process: `rememberStepUpGatedAction`
+(`NuaScreen.kt`) had no guard against starting a second `BiometricPrompt` before the first
+resolved. A gated dialog can trigger its own confirm lambda from two places while still on
+screen — a `LaunchedEffect` auto-firing an auto-approved action, and a manual tap on the
+same dialog's visible confirm button — and `BiometricPrompt` has no documented support for
+concurrent sessions on one `Activity`. Confirmed this could not cause a double-send (the
+downstream `confirmPendingX` guard holds regardless of which caller triggers it), but is a
+real, narrowly-scoped Android-API-misuse risk worth closing on its own terms.
+
+### Implementation
+`security/StepUpPolicy.kt` — added `mayStartStepUp(promptAlreadyInFlight: Boolean):
+Boolean`, a one-line pure predicate alongside the existing `requiresStepUpAuth`.
+`ui/NuaScreen.kt` — `rememberStepUpGatedAction` now tracks `promptInFlight` via
+`remember { mutableStateOf(false) }`, sets it before calling `BiometricGate.authenticate`,
+and clears it inside the `onResult` callback (covering both the success and error/terminal
+paths; the non-terminal `onAuthenticationFailed` path was already, correctly, not wired to
+`onResult` at all, so a retryable wrong-match attempt doesn't clear the guard mid-prompt).
+`ui/NuaViewModel.kt` — documented the double-execution safety proof as a comment directly
+on `confirmPendingPlan`, the shared shape all three `confirmPending*` functions follow, so
+the invariant is reviewable at the code it depends on rather than only in this history.
+
+### Verification
+`StepUpPolicyTest` — two new cases for `mayStartStepUp` (may start when nothing is in
+flight, may not start a second time while one is). Forward-reference audit clean
+(`tools/forward_ref_audit.py`, selftest passes, 0 findings). Local `./gradlew test` is not
+reachable from this sandbox (no network path to the Google plugin repository), so
+correctness rests on manual diff review — all four touched files reviewed in full against
+their pre-edit content, each change scoped to exactly the guard described above — plus CI
+at the exact pushed commit SHA below, checked job-level (not just overall conclusion).
+
+### Commit
+`ddfa198` — pushed to `claude/new-session-efg0ha`. CI job-level results at this exact SHA
+to be confirmed and recorded here before this entry is treated as closed; **not yet
+merged to `Main`** (no merge was requested this round).
+
+### Status
+PUSHED, CI verification in progress at `ddfa198`. Per the roadmap's own "one seam at a
+time" rule, this phase stops here once CI is confirmed green; P0.4 (truthful
+action-outcome verification states) is the next recommended seam, not yet started.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
