@@ -690,6 +690,17 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch { visionMonitorRepository.stop(id) }
     }
 
+    // confirmPendingPlan/Reply/Sms cannot execute their underlying action twice from a
+    // duplicated or retried confirm (double tap, auto-approve racing a manual tap, etc.):
+    // viewModelScope uses Dispatchers.Main.immediate, so a tap on the already-foregrounded
+    // main thread runs this coroutine body inline, synchronously, up to its first real
+    // suspension point — and the `_uiState.update { pending = null }` guard clear happens
+    // before that point (the first suspend call is inside trustRepository/executeConfirmed*,
+    // which hits Room). A second tap that lands before the first coroutine's clear has
+    // committed cannot happen either, because Android's Looper serializes all main-thread
+    // events — there is no genuine concurrency between two taps to race in the first place.
+    // The equivalent dismissPendingPlan/Reply/Sms clear the guard synchronously outside the
+    // launch entirely, so they carry the same guarantee with no ambiguity at all.
     fun confirmPendingPlan() {
         val plan = _uiState.value.pendingPlan ?: return
         viewModelScope.launch {

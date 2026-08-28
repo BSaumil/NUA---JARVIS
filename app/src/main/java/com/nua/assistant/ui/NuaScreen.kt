@@ -609,6 +609,11 @@ private fun rememberStepUpGatedAction(tier: AutonomyTier, title: String, subtitl
     // Haptic on commit only — these are the moments something actually changes in the
     // world. Buzzing on ordinary navigation too would stop it meaning anything.
     val confirmHaptic = rememberCommitHaptic()
+    // A confirmation dialog can trigger this same returned lambda twice while still on
+    // screen — an auto-approved action's LaunchedEffect firing alongside a manual tap on
+    // the dialog's own confirm button — so guard against starting a second BiometricPrompt
+    // before the first has resolved (see mayStartStepUp).
+    var promptInFlight by remember { mutableStateOf(false) }
     return {
         val activity = context.findFragmentActivity()
         val commit = {
@@ -616,7 +621,13 @@ private fun rememberStepUpGatedAction(tier: AutonomyTier, title: String, subtitl
             action()
         }
         if (requiresStepUpAuth(tier) && activity != null && BiometricGate.isAvailable(context)) {
-            BiometricGate.authenticate(activity, title, subtitle) { success -> if (success) commit() }
+            if (mayStartStepUp(promptInFlight)) {
+                promptInFlight = true
+                BiometricGate.authenticate(activity, title, subtitle) { success ->
+                    promptInFlight = false
+                    if (success) commit()
+                }
+            }
         } else {
             commit()
         }

@@ -13,3 +13,13 @@ fun requiresStepUpAuth(tier: AutonomyTier): Boolean = when (tier) {
     AutonomyTier.T0, AutonomyTier.T1, AutonomyTier.T2 -> false
     AutonomyTier.T3, AutonomyTier.T4, AutonomyTier.T5 -> true
 }
+
+/**
+ * Whether a new step-up `BiometricPrompt` may be started. A gated confirmation dialog can
+ * trigger its confirm action from two independent places while still on screen — a
+ * `LaunchedEffect` auto-triggering an auto-approved action, and a manual tap on the same
+ * dialog's confirm button — and `BiometricPrompt` has no documented support for concurrent
+ * sessions on one `Activity`. Callers must not start a second prompt while one is already
+ * in flight for the same gated action.
+ */
+fun mayStartStepUp(promptAlreadyInFlight: Boolean): Boolean = !promptAlreadyInFlight
