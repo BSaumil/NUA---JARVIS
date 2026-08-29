@@ -31,7 +31,12 @@ gives every later phase something to build on.
   skill dispatch is tagged with.
 - **Action Audit Trail** (`#24`) — every Tier action dispatch (and every plan/reply
   confirm-or-reject) is logged to `ActionOutcomeEntity`: what, tier, result, timestamp.
-  Visible in Settings.
+  Visible in Settings. The result is `ActionOutcomeState` (P0.4) — `ATTEMPTED`/`ACCEPTED`/
+  `COMPLETED`/`VERIFIED`/`FAILED`/`UNKNOWN`, not a plain succeeded/failed boolean — so a
+  fire-and-forget SMS/notification-reply send that the OS accepted but NUA can't confirm
+  was delivered isn't recorded identically to one that's actually confirmed done, and a
+  partially-completed plan (some reminders saved, some didn't) isn't recorded as an
+  unqualified success.
 - **Adaptive autonomy** (`#4`, the "would you like me to handle this automatically"
   behavior) — `AutonomyPreferenceEntity` tracks approvals per action type; once a type
   crosses a threshold, Settings surfaces a one-tap "always allow automatically" toggle
@@ -189,11 +194,15 @@ gives every later phase something to build on.
   1. **Type-level dispatch boundary.** `security/UserUtterance` is a value class wrapping
      only the user's own literal chat/voice turn. `NuaIntentRouter.route` and
      `IntentClassifier.classify` — the single, audited entry point into action
-     dispatch (`NuaViewModel.kt:398` is the only call site of `route`) — now require it
+     dispatch (`NuaViewModel.kt:457` is the only call site of `route`) — now require it
      instead of a bare `String`. A future feature that wants to route
      document/vision/notification/email-derived text into dispatch has to explicitly
      construct a `UserUtterance` around content that didn't come from the user, which is
-     visible in code review, not a silent pass-through.
+     visible in code review, not a silent pass-through. `tools/injection_boundary_audit.py`
+     (P0.5) turns that "visible in code review" guarantee into a CI-gated one: it fails the
+     build if any production file outside the reviewed allowlist ever constructs a
+     `UserUtterance(...)`, the same self-testing-static-check discipline as the
+     forward-reference audit.
   2. **Untrusted-content delimiting.** `security/UntrustedContent.kt`'s `wrapUntrusted`
      wraps external text (document/photo content) in an explicit `<untrusted_...>` tag
      before it reaches a Claude prompt, and neutralizes any `<untrusted_...>`-shaped tag
@@ -241,7 +250,10 @@ gives every later phase something to build on.
   to notification, plan confirmation — behind a successful biometric check, but only when
   the device actually has one enrolled; gating on hardware that doesn't exist would just
   lock users out, not add security, so it falls back to the existing confirm-only flow and
-  the Security card says so honestly. `security/EncryptionAudit` (unit tested,
+  the Security card says so honestly. `mayStartStepUp` (unit tested, P0.3) guards against a
+  second `BiometricPrompt` starting before the first resolves — reachable when an
+  auto-approved action's `LaunchedEffect` fires the same confirm lambda a manual tap on the
+  still-visible dialog can also trigger. `security/EncryptionAudit` (unit tested,
   `encryptionAuditEntries`) lists what's actually encrypted today — the Claude API key and
   owner voice profile (`EncryptedSharedPreferences`/Android Keystore) — versus what isn't:
   the plain Room database (messages, facts, documents, decisions, goals), which relies only

@@ -59,7 +59,7 @@ class ClaudeApiClient @Inject constructor(
         val request = requestBuilder(apiKey, requestBody).build()
 
         try {
-            okHttpClient.newCall(request).execute().use { response ->
+            executeCancellably(okHttpClient, request).use { response ->
                 val bodyString = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     return@withContext ClaudeResult.Failure(parseErrorMessage(bodyString, response.code))
@@ -195,7 +195,7 @@ class ClaudeApiClient @Inject constructor(
         val request = requestBuilder(apiKey, json.encodeToString(ClaudeMultimodalRequest.serializer(), body)).build()
 
         try {
-            okHttpClient.newCall(request).execute().use { response ->
+            executeCancellably(okHttpClient, request).use { response ->
                 val bodyString = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     return@withContext ClaudeResult.Failure(parseErrorMessage(bodyString, response.code))

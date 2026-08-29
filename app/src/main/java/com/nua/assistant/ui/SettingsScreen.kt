@@ -71,6 +71,8 @@ import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.DiagnosticStatus
 import com.nua.assistant.security.BiometricGate
 import com.nua.assistant.security.encryptionAuditEntries
+import com.nua.assistant.trust.badgeLabel
+import com.nua.assistant.trust.countsAsFailure
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
@@ -610,9 +612,9 @@ private fun AuditTrailCard(actionOutcomes: List<ActionOutcomeEntity>) {
                             Text(outcome.tier.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
                         Text(
-                            text = if (outcome.succeeded) "OK" else if (outcome.wasRejection) "Declined" else "Failed",
+                            text = if (outcome.wasRejection) "Declined" else outcome.outcomeState.badgeLabel(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (outcome.succeeded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            color = if (outcome.outcomeState.countsAsFailure()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                         )
                     }
                 }

@@ -6,6 +6,7 @@ import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.notifications.NotificationEntry
 import com.nua.assistant.security.UserUtterance
+import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.autonomyTierFor
 import com.nua.assistant.voice.NuaLanguage
@@ -66,11 +67,15 @@ class NuaIntentRouter @Inject constructor(
         // Only ActionTaken resolves immediately — proposals (Plan/Reply) are logged by the
         // ViewModel once the user actually confirms or declines them.
         if (result is NuaRouteResult.ActionTaken) {
+            // Every ActionTaken(succeeded=...) site is a synchronous, in-hand confirmation
+            // (a Result, a nullable check, an exception boundary) — not a fire-and-forget
+            // OS call — so a direct boolean-to-terminal-state mapping is honest here. That's
+            // not true of confirmPendingSms/Reply/Plan in NuaViewModel.kt; see there.
             trustRepository.recordOutcome(
                 actionType = intent.action.name,
                 tier = autonomyTierFor(intent.action),
                 summary = result.message,
-                succeeded = result.succeeded,
+                outcome = if (result.succeeded) ActionOutcomeState.COMPLETED else ActionOutcomeState.FAILED,
             )
         }
         return result

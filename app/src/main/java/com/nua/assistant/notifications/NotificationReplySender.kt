@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.core.app.RemoteInput
+import com.nua.assistant.trust.ActionOutcomeState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,7 +21,12 @@ class NotificationReplySender @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
 
-    fun sendReply(action: NotificationReplyAction, text: String): Boolean {
+    /**
+     * [ActionOutcomeState.ACCEPTED], never COMPLETED, on the clean path: `PendingIntent.send()`
+     * is fire-and-forget — a call that doesn't throw means the target app's action was
+     * invoked, not that it actually posted the reply.
+     */
+    fun sendReply(action: NotificationReplyAction, text: String): ActionOutcomeState {
         return try {
             val fillInIntent = Intent()
             val resultsBundle = Bundle().apply { putCharSequence(action.remoteInputResultKey, text) }
@@ -30,9 +36,9 @@ class NotificationReplySender @Inject constructor(
                 resultsBundle,
             )
             action.pendingIntent.send(context, 0, fillInIntent)
-            true
+            ActionOutcomeState.ACCEPTED
         } catch (e: PendingIntent.CanceledException) {
-            false
+            ActionOutcomeState.FAILED
         }
     }
 }

@@ -20,6 +20,8 @@ import com.nua.assistant.automation.describePermission
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.state.PendingTask
 import com.nua.assistant.trust.AutonomyTier
+import com.nua.assistant.trust.countsAsFailure
+import com.nua.assistant.trust.pastTenseClause
 import com.nua.assistant.ui.components.GlassCard
 import com.nua.assistant.ui.components.LabelledSection
 import com.nua.assistant.ui.nav.InfoLabel
@@ -163,15 +165,11 @@ private fun ActionOutcomeRow(outcome: ActionOutcomeEntity) {
                 append(outcome.tier.label)
                 append(" · ")
                 append(
-                    when {
-                        outcome.wasRejection -> "you declined"
-                        outcome.succeeded -> "worked"
-                        else -> "failed"
-                    },
+                    if (outcome.wasRejection) "you declined" else outcome.outcomeState.pastTenseClause(),
                 )
             },
             style = MaterialTheme.typography.labelSmall,
-            color = if (!outcome.succeeded && !outcome.wasRejection) NuaTheme.colors.critical else NuaTheme.colors.textSecondary,
+            color = if (outcome.outcomeState.countsAsFailure() && !outcome.wasRejection) NuaTheme.colors.critical else NuaTheme.colors.textSecondary,
         )
     }
 }

@@ -20,4 +20,14 @@ class StepUpPolicyTest {
         assertTrue(requiresStepUpAuth(AutonomyTier.T4))
         assertTrue(requiresStepUpAuth(AutonomyTier.T5))
     }
+
+    @Test
+    fun `a new step-up prompt may start when none is in flight`() {
+        assertTrue(mayStartStepUp(promptAlreadyInFlight = false))
+    }
+
+    @Test
+    fun `a second step-up prompt may not start while one is already in flight`() {
+        assertFalse(mayStartStepUp(promptAlreadyInFlight = true))
+    }
 }

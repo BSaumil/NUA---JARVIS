@@ -1,6 +1,15 @@
 package com.nua.assistant.security
 
-/** Where externally-sourced, potentially attacker-authored text came from. */
+/**
+ * Where externally-sourced, potentially attacker-authored text came from. Only
+ * [DOCUMENT] and [VISION] have a live producer today (DocumentAnalyzer.kt,
+ * VisionAnalyzer.kt) — nothing in this codebase currently forwards raw notification or
+ * email body text into a Claude prompt (ReadNotificationsSkill and MorningBriefing/
+ * WhatNowAdvisor's notification data is aggregate counts only, never a notification's
+ * own text). [NOTIFICATION] and [EMAIL] are named now so that whichever feature first
+ * needs to hand that text to Claude has the source to wrap it with already in place,
+ * rather than inventing an ad hoc, unreviewed path in the moment.
+ */
 enum class UntrustedSource {
     DOCUMENT,
     VISION,
