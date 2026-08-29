@@ -713,11 +713,13 @@ clean. Local `./gradlew test` unreachable from this sandbox — reviewed field-b
 then verified job-level green in CI at the exact SHA below.
 
 ### Commit
-See the commit log for the exact SHA this entry closes on — job-level CI (not just
-overall conclusion) was confirmed green at that SHA before this entry was closed.
+`9719f11` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI — 13/13 steps, including the DB version 10→11 migration compiling and running cleanly
+under "Run unit tests" and "Verify tests actually ran" — not inferred from the overall
+run conclusion.
 
 ### Status
-VERIFIED at its exact CI-green SHA. P1.10 (Memory OS) is next in the roadmap's stated
+VERIFIED at its exact CI-green SHA (`9719f11`). P1.10 (Memory OS) is next in the roadmap's stated
 order — largely already satisfied by `UserFactEntity`'s existing `memoryType`/`source`/
 `confidence`/`lastUsedAt` fields (Phase 6/8), so that seam is likely mostly verification
 and gap-filling rather than new architecture; not yet investigated.
