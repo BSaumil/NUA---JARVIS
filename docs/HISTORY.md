@@ -554,18 +554,35 @@ eventSource.cancel() }`) and needed no change.
 `CancellableHttpCallTest.kt` (new) — against a real local `MockWebServer` socket, not
 virtual time, since the property under test (does cancelling the coroutine actually kill
 an in-flight request) is genuine runtime behavior no test-dispatcher trick can stand in
-for: an ordinary call still returns its body, and cancelling a coroutine mid-request
-against a server configured to respond after 10s resolves in well under 2s instead of
-waiting out the delay. Added `mockwebserver:4.12.0` as a test-only dependency — same
-publisher/version as the existing production `okhttp` dependency. Forward-reference and
-injection-boundary audits both clean. Local `./gradlew test` unreachable from this
-sandbox — reviewed field-by-field, then verified job-level green in CI at the exact SHA
-below.
+for. Added `mockwebserver:4.12.0` as a test-only dependency — same publisher/version as
+the existing production `okhttp` dependency.
+
+The first push of this test (`d93bc64`) failed CI — a real mistake in the test itself,
+not the fix: it configured the mock server's delay with `MockResponse.setBodyDelay()`,
+which only holds back the response *body*; OkHttp's `onResponse()` callback fires as soon
+as the status line and headers arrive, so the call completed normally almost
+instantly — there was nothing left in flight for cancellation to interrupt, and the
+assertion that the coroutine actually completed via cancellation correctly failed. Fixed
+by switching to `setHeadersDelay()`, which genuinely holds the response back, so
+cancellation has something real to race against. Also hardened the timing assertion to
+be relative to the configured delay rather than an absolute millisecond figure (avoids
+CI-timing fragility) and made `tearDown()` tolerant of the harness-level `IOException`
+`MockWebServer.shutdown()` can throw when a just-cancelled, still-notionally-delaying
+response's dispatch thread hasn't noticed the closed socket yet — a race in the test
+harness itself, not a defect in the code under test.
+
+An ordinary call still returns its body correctly (first test case, unaffected by the
+above), and cancelling a coroutine mid-request against a server withholding its headers
+for 10s now resolves in well under a quarter of that delay instead of waiting it out —
+re-verified at the exact SHA below. Forward-reference and injection-boundary audits both
+clean. Local `./gradlew test` unreachable from this sandbox — reviewed field-by-field
+after the fix, then verified job-level green in CI.
 
 ### Commit
-See the commit log for the exact SHA this entry closes on — job-level CI (not just
-overall conclusion) was confirmed green at that SHA before this entry was closed.
-**Not yet merged to `Main`** (no merge was requested this round).
+`d93bc64` (the fix + first version of the test) → the SHA this entry closes on (the test
+fix). See the commit log for that exact SHA — job-level CI (not just overall conclusion)
+was confirmed green at that SHA before this entry was closed. **Not yet merged to
+`Main`** (no merge was requested this round).
 
 ### Status
 VERIFIED at its exact CI-green SHA. This closes the P0 checklist items covered so far
