@@ -496,15 +496,15 @@ from this sandbox — reviewed field-by-field, then verified job-level green in 
 exact SHA below.
 
 ### Commit
-See the commit log for the exact SHA this entry closes on — job-level CI (not just
-overall conclusion) was confirmed green at that SHA before this entry was closed,
-including the new "Injection-boundary audit" step explicitly. **Not yet merged to
-`Main`** (no merge was requested this round).
+`1560452` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI — 12/12 steps, including the new "Injection-boundary audit" step explicitly confirmed
+alongside "Forward-reference audit" and "Run unit tests", not inferred from the overall
+run conclusion. **Not yet merged to `Main`** (no merge was requested this round).
 
 ### Status
-VERIFIED at its exact CI-green SHA. P0.6 (further worker-reliability hardening —
-duplicate execution, cancellation, partial completion) is next in the roadmap's stated
-order, not yet started.
+VERIFIED at its exact CI-green SHA (`1560452`). P0.6 (further worker-reliability
+hardening — duplicate execution, cancellation, partial completion) is next in the
+roadmap's stated order, not yet started.
 
 ## What this history is for
 
