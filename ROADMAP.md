@@ -395,7 +395,31 @@ demo content.
   type scale in `sp`, and TalkBack descriptions ship with each component rather than being
   retrofitted.
 
-## Phase 13 — Voice-First & Personality Depth
+## Phase 13 — World Model 🟡 RFC + initial layer shipped
+
+- **World Model RFC** (`docs/WORLD_MODEL_RFC.md`) — before any code, an RFC covering data
+  model, temporal model, provenance, confidence, privacy, retention, deletion, indexing,
+  retrieval, migration, performance, and offline behavior, per the master roadmap's
+  explicit "do NOT automatically add a graph database — first create an RFC" instruction.
+  Grounded in the actual entity landscape (grepped every `@Entity` in `MemoryStore.kt`
+  first) rather than assumed: every existing entity — facts, goals, decisions, dreams,
+  documents, vision monitors — lives in total isolation from every other; nothing records
+  that a decision was made *from* a goal, or that a document *supports* a decision. The
+  RFC's recommendation, and what shipped: not a graph database, not a rewrite of any
+  existing table — an additive `world_relationships` table of typed, confidence-scored,
+  attributed edges referencing existing entities by `(type, id)`, resolved by a new
+  `WorldModelRepository` (`world/`). Endpoints that no longer resolve drop to zero
+  confidence rather than being deleted — the same "keep the audit trail" reasoning the
+  Trust Ledger already uses for past mistakes (tested:
+  `confidenceAfterResolutionCheck`/`isActiveRelationship`).
+- **Deliberately not yet built**: read-side resolution back into real entity objects, and
+  any writer. The RFC recommends Dreams as the first writer — it already computes which
+  facts/goals/ledger entries it cross-referenced to produce an insight, but currently only
+  as prose, and wiring it honestly requires extending `DreamSynthesisWorker`'s Claude
+  response schema to name what it connected structurally, not inferring it after the fact.
+  That's its own seam, not bundled in here.
+
+## Phase 14 — Voice-First & Personality Depth
 
 - **Barge-in / interruption handling** (`#18`) — four distinct behaviours on top of the
   existing `SpeechRecognizer`/TTS foundation: *natural interruption* (mid-utterance
@@ -412,7 +436,7 @@ demo content.
 - **Deeper multilingual code-switching** (`#20`) — mid-sentence language mixing (the
   Gujarati/English example), beyond the current per-message language pinning.
 
-## Phase 14 — Ecosystem
+## Phase 15 — Ecosystem
 
 - **Skills Marketplace** (`#21`) — builds directly on Phase 5's pluggable `NuaSkill`
   architecture; each skill declares permissions, tools, memory access, and risk tier.
@@ -426,7 +450,7 @@ demo content.
   contacts, critical info surfacing. Explicitly never positioned as a replacement for
   emergency services.
 
-## Phase 15 — Quality Bar
+## Phase 16 — Quality Bar
 
 - **NUA Agent Test Lab** (`#43`) — automated tests for intent accuracy, permission
   enforcement, tool selection, hallucination, action recovery, offline behavior,

@@ -14,6 +14,7 @@ import com.nua.assistant.memory.NuaDatabase
 import com.nua.assistant.memory.TrustLedgerDao
 import com.nua.assistant.memory.UsageDao
 import com.nua.assistant.memory.VisionMonitorDao
+import com.nua.assistant.memory.WorldRelationshipDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -71,6 +72,9 @@ object AppModule {
 
     @Provides
     fun provideDocumentDao(database: NuaDatabase): DocumentDao = database.documentDao()
+
+    @Provides
+    fun provideWorldRelationshipDao(database: NuaDatabase): WorldRelationshipDao = database.worldRelationshipDao()
 
     @Provides
     @Singleton
