@@ -657,6 +657,71 @@ inferred from the overall run conclusion.
 VERIFIED at its exact CI-green SHA (`7c103e6`). This completes every P0 item in the
 roadmap's priority order (P0.1–P0.8). P1 (Intelligence Core) is next, not yet started.
 
+## August 29 (continued) — P1.9: World Model RFC + initial relationship layer
+
+Per explicit instruction to proceed into P1 (Intelligence Core) after every P0 item
+shipped and merged. Read the master roadmap's P1 section in full before writing anything
+— it names 14 sub-items (World Model, Memory OS, Context Engine, What Now?, Goal Engine,
+Decision Engine, Earned Autonomy, Daily Intelligence, Dreams 2.0, Personal Memory Vault,
+Privacy Centre, Multimodal, Document Intelligence, Communication Centre) in priority
+order, the first of which — per the roadmap's own explicit instruction — is "Do NOT
+automatically add a graph database. First create a World Model RFC."
+
+Checked, before writing the RFC, whether the other 13 P1 items were genuinely greenfield:
+several substantially already exist under this project's own Phase 6–12 numbering (Goal
+Engine ≈ Phase 7's Goals, Decision Engine ≈ Phase 8's Decision Journal, Dreams 2.0 ≈
+Phase 8's Dreams, Document Intelligence ≈ Phase 9, Communication Centre ≈ Phase 10
+partial). The master roadmap's own framing ("isolated memories, not a connected
+representation") pointed at the one thing that's genuinely missing across all of them:
+every entity — facts, goals, decisions, dreams, documents, vision monitors — lives with
+zero references to any other. Confirmed by grepping every `@Entity` in `MemoryStore.kt`
+rather than assuming it, same discipline as every P0 seam.
+
+### Implementation
+`docs/WORLD_MODEL_RFC.md` (new) — covers every topic the roadmap's P1.9 section requires
+(data model, temporal model, provenance, confidence, privacy, retention, deletion,
+indexing, retrieval, migration, performance, offline behaviour), grounded in the actual
+entity landscape rather than written in the abstract. Recommends, and explicitly rejects
+the two obvious over-builds: not a graph database (no evidence Room/SQLite can't handle a
+single user's relationship volume), not a rewrite of every existing entity into one
+polymorphic table (would be exactly the "multiple large refactors simultaneously" rule 38
+forbids). The recommendation: an additive `world_relationships` table of typed,
+confidence-scored, attributed edges naming existing entities by `(type, id)` — deliberately
+not a Room foreign key, so a relationship whose endpoint is later deleted becomes a
+detectable orphan (confidence dropped to zero, row kept) rather than silently cascading —
+the same "keep the audit trail" reasoning the Trust Ledger already uses for past mistakes.
+
+Shipped the RFC's recommended layer as infrastructure this round: `WorldRelationshipEntity`/
+`WorldRelationshipDao` (`memory/MemoryStore.kt`, DB version 10→11, additive — no existing
+table's shape changed), `world/WorldModelRepository.kt` (the two pure functions the
+orphan-mark decision reduces to, `confidenceAfterResolutionCheck`/`isActiveRelationship`,
+plus the thin repository wrapper), DI wiring in `di/AppModule.kt`.
+
+**Deliberately not shipped this round**: any writer, and read-side resolution of
+`(type, id)` pairs back into real entity objects. The RFC recommends Dreams as the first
+writer — `DreamSynthesisWorker` already computes which facts/goals/ledger entries it
+cross-referenced to produce an insight, but only as prose (its Claude response schema is
+`{"category", "insight"}`, no structured references) — wiring it honestly requires
+extending that schema to name what it connected, which is its own seam with its own
+test/verification cycle, not something to bundle into an RFC round. Building read-side
+resolution before any writer exists would be exactly the speculative work rule 8 forbids.
+
+### Verification
+`WorldModelRepositoryTest.kt` (new, 4 cases) covers the one real design decision the RFC
+made (§8: orphan-mark, not cascade). Forward-reference and injection-boundary audits both
+clean. Local `./gradlew test` unreachable from this sandbox — reviewed field-by-field,
+then verified job-level green in CI at the exact SHA below.
+
+### Commit
+See the commit log for the exact SHA this entry closes on — job-level CI (not just
+overall conclusion) was confirmed green at that SHA before this entry was closed.
+
+### Status
+VERIFIED at its exact CI-green SHA. P1.10 (Memory OS) is next in the roadmap's stated
+order — largely already satisfied by `UserFactEntity`'s existing `memoryType`/`source`/
+`confidence`/`lastUsedAt` fields (Phase 6/8), so that seam is likely mostly verification
+and gap-filling rather than new architecture; not yet investigated.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

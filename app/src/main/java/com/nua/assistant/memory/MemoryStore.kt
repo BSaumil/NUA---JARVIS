@@ -360,6 +360,49 @@ interface DreamDao {
     fun observeRecent(limit: Int): Flow<List<DreamEntity>>
 }
 
+/**
+ * One typed, attributed, confidence-scored edge between two existing entities — the
+ * additive relationship layer the World Model RFC (`docs/WORLD_MODEL_RFC.md`) recommends
+ * in place of a graph database or a rewrite of every existing table. [fromType]/[toType]
+ * name an existing entity table (e.g. "DECISION", "GOAL", "FACT", "DREAM") and
+ * [fromId]/[toId] are that table's own primary key — deliberately not a Room foreign key,
+ * since a relationship naming a since-deleted row should be detectable (see
+ * [com.nua.assistant.world.isActiveRelationship]) rather than silently cascade-deleted.
+ */
+@Entity(
+    tableName = "world_relationships",
+    indices = [Index(value = ["fromType", "fromId"]), Index(value = ["toType", "toId"])],
+)
+data class WorldRelationshipEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fromType: String,
+    val fromId: Long,
+    val relation: String,
+    val toType: String,
+    val toId: Long,
+    /** 0-1, same scale as [UserFactEntity.confidence]. Lowered to 0 rather than the row
+     *  being deleted once an endpoint no longer resolves — see the RFC's §8. */
+    val confidence: Float,
+    /** What produced this edge, e.g. "dream synthesis" — same idea as [UserFactEntity.source]. */
+    val source: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface WorldRelationshipDao {
+    @Insert
+    suspend fun insert(entity: WorldRelationshipEntity): Long
+
+    @Query("SELECT * FROM world_relationships WHERE fromType = :type AND fromId = :id")
+    suspend fun outgoingFrom(type: String, id: Long): List<WorldRelationshipEntity>
+
+    @Query("SELECT * FROM world_relationships WHERE toType = :type AND toId = :id")
+    suspend fun incomingTo(type: String, id: Long): List<WorldRelationshipEntity>
+
+    @Query("UPDATE world_relationships SET confidence = :confidence WHERE id = :id")
+    suspend fun updateConfidence(id: Long, confidence: Float)
+}
+
 @Dao
 interface MemoryDao {
 
@@ -453,9 +496,9 @@ interface MemoryDao {
         MessageEntity::class, UserFactEntity::class, UsageLogEntity::class, GeofenceEntity::class,
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
-        VisionMonitorEntity::class, DocumentEntity::class,
+        VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -470,4 +513,5 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun decisionDao(): DecisionDao
     abstract fun visionMonitorDao(): VisionMonitorDao
     abstract fun documentDao(): DocumentDao
+    abstract fun worldRelationshipDao(): WorldRelationshipDao
 }
