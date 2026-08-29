@@ -589,6 +589,72 @@ VERIFIED at its exact CI-green SHA (`15cf833`). This closes the P0 checklist ite
 covered so far (P0.1 merged; P0.3–P0.6 pushed, not yet merged). Remaining P0 items not
 yet started: P0.7 (CI/test gate refinements), P0.8 (architecture/HISTORY reconciliation).
 
+## August 29 (continued) — P0.7: a CI gate for "tests actually ran," and P0.8: ROADMAP.md reconciliation
+
+Continuing straight from P0.6, same instruction, closing out the P0 checklist.
+
+### P0.7 — CI/test gate refinements
+
+Investigated before writing anything, the same as every other seam. Checked whether
+GitHub branch protection on `Main` requires the "Android Build" check before merge —
+no tool in this session's toolset can read or change repository branch-protection
+settings, and changing repository administration settings (as opposed to files in the
+repo) is outside what a code-level seam should do unprompted, so that's flagged here
+rather than acted on: **`Main` does not appear to have branch protection enforced from
+what's checkable here — worth the user's own attention, not fixed by this seam.**
+
+Within the repo itself: `./gradlew test` only wires up `:app:testDebugUnitTest` (not
+`:app:testReleaseUnitTest`) — confirmed this is standard Android Gradle Plugin default
+behavior (the `testBuildType`, debug by default), not a defect, by checking that no test
+content differs between build types here. Not a real finding.
+
+The one genuine, evidence-backed gap: `docs/ENGINEERING.md` already documents the lesson
+that would have prevented it — "a passing test suite is not proof a specific test ran...
+`NO-SOURCE` means a module has no tests" — but that was a rule a human had to remember to
+check by eye, never something CI itself enforced. Gradle reports `BUILD SUCCESSFUL`
+whether `:app:testDebugUnitTest` ran 263 tests or zero. A future refactor that
+accidentally excludes the test source set, misconfigures a variant, or moves a directory
+Gradle stops picking up would still show green — the exact shape of the founding incident
+this project's whole verification discipline responds to (`32887d3`: believed shipped
+while its test's evidence had never executed once).
+
+`tools/verify_tests_ran.py` (new) — parses the JUnit XML reports `:app:testDebugUnitTest`
+produces and fails if no report files exist or if their combined test count is zero. Same
+self-test discipline as `forward_ref_audit.py`/`injection_boundary_audit.py`: builds one
+fixture with real results and one empty (the NO-SOURCE shape) and asserts the detector
+tells them apart before trusting its own pass/fail. Wired into CI as a new "Verify tests
+actually ran" step, right after "Run unit tests."
+
+### P0.8 — ROADMAP.md reconciliation
+
+Same discipline as the August 26 HISTORY-vs-code reconciliation, applied to
+`ROADMAP.md` this time (the phase-by-phase feature doc, distinct from this file).
+Checked every claim P0.1–P0.6 could plausibly have made stale, rather than re-reading
+the whole document — found three: a call-site line number drifted from `NuaViewModel.
+kt:398` to `:457` across this session's edits to that file; the prompt-injection section
+didn't mention `tools/injection_boundary_audit.py` (P0.5), the CI-enforced version of a
+guarantee the doc described as merely "visible in code review"; the security-architecture
+section didn't mention `mayStartStepUp` (P0.3); and the audit-trail section still
+described a plain succeeded/failed result after P0.4 replaced it with `ActionOutcomeState`.
+All four corrected in place — accuracy edits, not narrative ones; no code changed.
+`docs/HISTORY.md`'s own claims were spot-checked against `git log` (every SHA cited in
+the P0.3–P0.6 entries above matches actual commit history exactly) rather than assumed
+correct because this document wrote them.
+
+### Verification
+`tools/verify_tests_ran.py --selftest` passes. Forward-reference and injection-boundary
+audits both clean. Local `./gradlew test` unreachable from this sandbox — reviewed
+field-by-field, then verified job-level green in CI at the exact SHA below, including the
+new "Verify tests actually ran" step.
+
+### Commit
+See the commit log for the exact SHA this entry closes on — job-level CI (not just
+overall conclusion) was confirmed green at that SHA before this entry was closed.
+
+### Status
+VERIFIED at its exact CI-green SHA. This completes every P0 item in the roadmap's
+priority order (P0.1–P0.8). P1 (Intelligence Core) is next, not yet started.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

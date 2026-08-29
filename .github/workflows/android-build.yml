@@ -45,6 +45,12 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --stacktrace
 
+      # A green "Run unit tests" step proves the task completed, not that it exercised
+      # anything: Gradle reports BUILD SUCCESSFUL whether 263 tests ran or zero
+      # (NO-SOURCE). This fails the build if that ever happens for :app:testDebugUnitTest.
+      - name: Verify tests actually ran
+        run: python3 tools/verify_tests_ran.py
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
