@@ -36,6 +36,12 @@ jobs:
       - name: Forward-reference audit
         run: python3 tools/forward_ref_audit.py
 
+      # Catches the prompt-injection firewall's structural half silently eroding: a new
+      # call site constructing UserUtterance from document/vision/notification/email
+      # text instead of genuine user input. Self-tests first, same discipline as above.
+      - name: Injection-boundary audit
+        run: python3 tools/injection_boundary_audit.py
+
       - name: Run unit tests
         run: ./gradlew test --stacktrace
 
