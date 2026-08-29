@@ -441,14 +441,15 @@ against every touched file before push, then verified job-level green in CI at t
 SHA below, per the discipline P0.3 restated after `ddfa198`'s missing-import miss.
 
 ### Commit
-See the commit log for the exact SHA this entry closes on — job-level CI (not just overall
-conclusion) was confirmed green at that SHA before this entry was closed. **Not yet merged
-to `Main`** (no merge was requested this round).
+`a1fbbdb` — pushed to `claude/new-session-efg0ha` and green on the first push (no
+follow-up fix needed this time). Job-level CI — 11/11 steps, "Forward-reference audit"
+and "Run unit tests" explicitly confirmed, not inferred from the overall run conclusion.
+**Not yet merged to `Main`** (no merge was requested this round).
 
 ### Status
-VERIFIED at its exact CI-green SHA. P0.5 (prompt-injection adversarial tests) and P0.6
-(further worker-reliability hardening) are next in the roadmap's stated order, not yet
-started.
+VERIFIED at its exact CI-green SHA (`a1fbbdb`). P0.5 (prompt-injection adversarial tests)
+and P0.6 (further worker-reliability hardening) are next in the roadmap's stated order,
+not yet started.
 
 ## What this history is for
 
