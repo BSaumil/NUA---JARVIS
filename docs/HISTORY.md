@@ -506,6 +506,72 @@ VERIFIED at its exact CI-green SHA (`1560452`). P0.6 (further worker-reliability
 hardening — duplicate execution, cancellation, partial completion) is next in the
 roadmap's stated order, not yet started.
 
+## August 29 (continued) — P0.6: worker cancellation, checked against duplicate execution and partial completion
+
+Continuing straight from P0.5, same instruction. Investigated all three named concerns
+against the three Claude-calling workers (`GoalReviewWorker`, `DreamSynthesisWorker`,
+`MemoryConsolidationWorker`) before writing anything.
+
+### Findings
+1. **Duplicate execution via scheduling** — checked. Every periodic worker is enqueued
+   with `enqueueUniquePeriodicWork(..., ExistingPeriodicWorkPolicy.KEEP)`, and the one
+   ad hoc worker (`MorningBriefingWorker`) with `enqueueUniqueWork(..., REPLACE)`. Correct
+   as-is; no change needed.
+2. **Duplicate execution via retry-after-write** — checked. All three workers already
+   place their own `Result.retry()` decision strictly before any database write —
+   established in the prior session's worker-reliability fix and consistently followed
+   since (`GoalReviewWorker` even documents the reasoning inline: retrying after a
+   partial write would duplicate a goal's observation, so a partial-failure run reports
+   success and picks up the missed goal on the next scheduled run instead of retrying).
+   No change needed.
+3. **Cancellation — a real gap, found by inspection.** `ClaudeApiClient.sendMessage`/
+   `describeImage` — used by every one of these workers via `complete()` — called OkHttp's
+   plain `Call.execute()` inside `withContext(Dispatchers.IO)`. That's a blocking call with
+   no suspension point of its own: cancelling the wrapping coroutine (WorkManager stopping
+   a `CoroutineWorker`) does not interrupt it. The request keeps running on its thread
+   until it naturally completes or hits OkHttp's own connect/read/write timeout (15s/30s/
+   15s, so bounded — not indefinite — but real wasted network, battery, and Claude API
+   cost for a result nothing will use). Traced the consequence through: because every
+   write in all three workers happens strictly after the Claude call resolves, this
+   couldn't cause a duplicate write on its own — but "wastes resources on a stopped
+   worker" was still a genuine, fixable defect in what "cancellation" is supposed to mean.
+4. **Partial completion** — `GoalReviewWorker` is the one worker with a real
+   multi-item batch (N goals in a loop); its `madeProgress` guard (finding 2) already
+   handles this correctly. `MemoryConsolidationWorker` is naturally safe by construction
+   (`upsertFact` on a deterministic key, delete only after the write). `DreamSynthesisWorker`
+   is single-shot — one Claude call, one possible write — so partial completion doesn't
+   apply to it.
+
+### Implementation
+`ai/CancellableHttpCall.kt` (new) — `executeCancellably(client, request)`, using
+`Call.enqueue()` + `suspendCancellableCoroutine` with `invokeOnCancellation { call.cancel() }`
+instead of `Call.execute()`. `ClaudeApiClient.sendMessage`/`describeImage` now call this
+instead of `okHttpClient.newCall(request).execute()` — the streaming chat path
+(`streamMessage`) already used the correct pattern (`callbackFlow` + `awaitClose {
+eventSource.cancel() }`) and needed no change.
+
+### Verification
+`CancellableHttpCallTest.kt` (new) — against a real local `MockWebServer` socket, not
+virtual time, since the property under test (does cancelling the coroutine actually kill
+an in-flight request) is genuine runtime behavior no test-dispatcher trick can stand in
+for: an ordinary call still returns its body, and cancelling a coroutine mid-request
+against a server configured to respond after 10s resolves in well under 2s instead of
+waiting out the delay. Added `mockwebserver:4.12.0` as a test-only dependency — same
+publisher/version as the existing production `okhttp` dependency. Forward-reference and
+injection-boundary audits both clean. Local `./gradlew test` unreachable from this
+sandbox — reviewed field-by-field, then verified job-level green in CI at the exact SHA
+below.
+
+### Commit
+See the commit log for the exact SHA this entry closes on — job-level CI (not just
+overall conclusion) was confirmed green at that SHA before this entry was closed.
+**Not yet merged to `Main`** (no merge was requested this round).
+
+### Status
+VERIFIED at its exact CI-green SHA. This closes the P0 checklist items covered so far
+(P0.1 merged; P0.3–P0.6 pushed, not yet merged). Remaining P0 items not yet started:
+P0.7 (CI/test gate refinements), P0.8 (architecture/HISTORY reconciliation).
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
