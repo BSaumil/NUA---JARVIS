@@ -388,6 +388,68 @@ VERIFIED at its exact CI-green SHA (`99b21e9`). Per the roadmap's own "one seam 
 time" rule, this phase stops here; P0.4 (truthful action-outcome verification states) is
 the next recommended seam, not yet started.
 
+## August 29 — P0.4: truthful action-outcome states
+
+Continuing straight from P0.3 per explicit instruction not to stop at the checkpoint.
+`ActionOutcomeEntity.succeeded: Boolean` — the Trust Engine's entire audit trail — conflated
+two different claims: "NUA has evidence this worked" and "no synchronous exception was
+thrown." Three concrete, evidence-backed instances of that conflation were found, not
+assumed in advance:
+
+1. **`SmsSender.send()` and `NotificationReplySender.sendReply()`** both return `true` the
+   moment `SmsManager.sendMultipartTextMessage`/`PendingIntent.send()` accept a request —
+   both are fire-and-forget across a process boundary, with no synchronous delivery
+   confirmation. A clean call means "handed off," not "sent," but the UI said "Sent."
+2. **`NuaViewModel.executeConfirmedPlan`** was the sharpest of the three: it discarded
+   `TaskPlanner.confirmPlan(plan)`'s return value — one `Result<Long>` per reminder —
+   entirely, and unconditionally told the user "Done — I've added reminders for that." and
+   recorded `succeeded = true`, even when every reminder failed to save.
+
+### Implementation
+`trust/ActionOutcomeState.kt` (new) — a 6-state enum (`ATTEMPTED`, `ACCEPTED`, `COMPLETED`,
+`VERIFIED`, `FAILED`, `UNKNOWN`) replacing the boolean, plus `countsAsFailure()` (only
+`FAILED` counts against the trust score — `ACCEPTED`/`COMPLETED`/`VERIFIED` are all "no
+evidence this went wrong," not evidence it did) and two UI-label extensions. Only
+`ATTEMPTED`, `ACCEPTED`, `COMPLETED`, and `FAILED` have a producer today — `VERIFIED` and
+`UNKNOWN` are named and exhaustively handled everywhere but not wired to anything, since no
+skill here can confirm delivery after the fact and no code path here loses track of an
+outcome outright. `ui/ActionConfirmationOutcomes.kt` (new) — four pure functions
+(`smsConfirmationMessage`, `replyConfirmationMessage`, `planConfirmationOutcome`,
+`planConfirmationMessage`) pulled out of `NuaViewModel` for the same reason every prior
+extraction this session was: `NuaViewModel` can't be constructed on the JVM. `SmsSender.
+send`/`NotificationReplySender.sendReply` now return `ActionOutcomeState.ACCEPTED` (never
+`COMPLETED`) on their clean path. `executeConfirmedPlan` now reports the true per-reminder
+count ("Added 2 of 3 reminders — the rest didn't save.") instead of a blanket "Done."
+`ActionOutcomeEntity.outcomeState` replaces `succeeded` (Room 2.6.1 stores the enum
+natively, same as the existing `AutonomyTier`/`TrustEventType` fields — no `TypeConverter`
+needed); DB version 9 → 10, destructive migration (already configured, same as every prior
+schema change this session). `TrustScoreEngine`, `TrustRepository.recordOutcome`,
+`NuaIntentRouter` (a mechanical boolean→state mapping — every `ActionTaken.succeeded` site
+is a genuine synchronous confirmation, not fire-and-forget, so nothing lossy there),
+`SettingsScreen`'s audit-trail card, `ActScreen`'s outcome list, and `NuaStateRepository`'s
+mood-relevant failure filter were all updated to the new field.
+
+### Verification
+`ActionOutcomeStateTest` (exhaustiveness + only-FAILED-counts), `ActionConfirmationOutcomesTest`
+(9 cases, including the exact partial-plan-batch scenario that was the sharpest bug: 2 of 3
+reminders succeeding must read `FAILED`/"Added 2 of 3," never `COMPLETED`/"Done").
+`TrustScoreEngineTest` updated to the new field, behavior unchanged (verified by inspection
+— the test still asserts the same scores from the same success/failure shapes). Forward-
+reference audit clean. Local `./gradlew test` is unreachable from this sandbox (no network
+path to the Google plugin repository) — this entry's commit was reviewed field-by-field
+against every touched file before push, then verified job-level green in CI at the exact
+SHA below, per the discipline P0.3 restated after `ddfa198`'s missing-import miss.
+
+### Commit
+See the commit log for the exact SHA this entry closes on — job-level CI (not just overall
+conclusion) was confirmed green at that SHA before this entry was closed. **Not yet merged
+to `Main`** (no merge was requested this round).
+
+### Status
+VERIFIED at its exact CI-green SHA. P0.5 (prompt-injection adversarial tests) and P0.6
+(further worker-reliability hardening) are next in the roadmap's stated order, not yet
+started.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

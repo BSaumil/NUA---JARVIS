@@ -12,6 +12,7 @@ import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import com.nua.assistant.documents.DocumentType
 import com.nua.assistant.dreams.DreamCategory
+import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.TrustEventType
 import kotlinx.coroutines.flow.Flow
@@ -134,7 +135,9 @@ data class ActionOutcomeEntity(
     val actionType: String,
     val tier: AutonomyTier,
     val summary: String,
-    val succeeded: Boolean,
+    /** How definitively this result is known — see ActionOutcomeState's own doc for why this
+     *  isn't a plain succeeded/failed boolean. */
+    val outcomeState: ActionOutcomeState,
     /** True when this outcome came from the user declining a proposed reply/plan, not an execution failure. */
     val wasRejection: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
@@ -452,7 +455,7 @@ interface MemoryDao {
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {

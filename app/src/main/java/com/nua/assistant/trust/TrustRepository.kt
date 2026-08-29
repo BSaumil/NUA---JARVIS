@@ -38,7 +38,7 @@ class TrustRepository @Inject constructor(
         actionType: String,
         tier: AutonomyTier,
         summary: String,
-        succeeded: Boolean,
+        outcome: ActionOutcomeState,
         wasRejection: Boolean = false,
     ) {
         actionOutcomeDao.insert(
@@ -46,11 +46,11 @@ class TrustRepository @Inject constructor(
                 actionType = actionType,
                 tier = tier,
                 summary = summary,
-                succeeded = succeeded,
+                outcomeState = outcome,
                 wasRejection = wasRejection,
             ),
         )
-        if (!succeeded) {
+        if (outcome.countsAsFailure()) {
             val type = if (wasRejection) TrustEventType.REJECTED_PLAN else TrustEventType.FAILED_ACTION
             trustLedgerDao.insert(TrustLedgerEntity(type = type, description = summary))
         }

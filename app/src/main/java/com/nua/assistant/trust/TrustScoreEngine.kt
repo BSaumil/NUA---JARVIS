@@ -20,7 +20,7 @@ object TrustScoreEngine {
         outcomes.forEach { outcome ->
             val weight = if (outcome.wasRejection) REJECTION_WEIGHT else 1.0
             totalWeight += weight
-            if (!outcome.succeeded) badWeight += weight
+            if (outcome.outcomeState.countsAsFailure()) badWeight += weight
         }
         if (totalWeight == 0.0) return 100
         return (100 * (1 - badWeight / totalWeight)).roundToInt().coerceIn(0, 100)

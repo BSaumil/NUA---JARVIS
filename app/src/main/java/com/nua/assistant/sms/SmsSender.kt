@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.telephony.SmsManager
 import androidx.core.content.ContextCompat
+import com.nua.assistant.trust.ActionOutcomeState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,15 +23,20 @@ class SmsSender @Inject constructor(
     fun hasPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
 
-    fun send(phoneNumber: String, message: String): Boolean {
-        if (!hasPermission()) return false
+    /**
+     * [ActionOutcomeState.ACCEPTED], never COMPLETED, on the clean path:
+     * `sendMultipartTextMessage` is fire-and-forget across a process boundary — a call that
+     * doesn't throw means the OS accepted the request, not that the SMS was delivered.
+     */
+    fun send(phoneNumber: String, message: String): ActionOutcomeState {
+        if (!hasPermission()) return ActionOutcomeState.FAILED
         return try {
             val smsManager = context.getSystemService(SmsManager::class.java)
             val parts = smsManager.divideMessage(message)
             smsManager.sendMultipartTextMessage(phoneNumber, null, parts, null, null)
-            true
+            ActionOutcomeState.ACCEPTED
         } catch (t: Exception) {
-            false
+            ActionOutcomeState.FAILED
         }
     }
 }

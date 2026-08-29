@@ -6,7 +6,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private fun outcome(succeeded: Boolean, wasRejection: Boolean = false) =
-    ActionOutcomeEntity(actionType = "X", tier = AutonomyTier.T1, summary = "s", succeeded = succeeded, wasRejection = wasRejection)
+    ActionOutcomeEntity(
+        actionType = "X",
+        tier = AutonomyTier.T1,
+        summary = "s",
+        outcomeState = if (succeeded) ActionOutcomeState.COMPLETED else ActionOutcomeState.FAILED,
+        wasRejection = wasRejection,
+    )
 
 /**
  * The Trust Engine's headline number had no test at all despite being pure — flagged in

@@ -66,6 +66,7 @@ import com.nua.assistant.notifications.NotificationSummary
 import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
+import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.memory.ActionOutcomeEntity
@@ -711,14 +712,15 @@ class NuaViewModel @Inject constructor(
     }
 
     private suspend fun executeConfirmedPlan(plan: TaskPlan) {
-        taskPlanner.confirmPlan(plan)
+        val results = taskPlanner.confirmPlan(plan)
+        val confirmation = planConfirmationMessage(results)
         trustRepository.recordOutcome(
             actionType = NuaActionType.PLAN_TASK.name,
             tier = AutonomyTier.T4,
-            summary = "Confirmed plan: ${plan.summary}",
-            succeeded = true,
+            summary = "Confirmed plan: ${plan.summary} — $confirmation",
+            outcome = planConfirmationOutcome(results),
         )
-        respond("Done — I've added reminders for that.", extractFacts = false)
+        respond(confirmation, extractFacts = false)
     }
 
     fun dismissPendingPlan() {
@@ -729,7 +731,7 @@ class NuaViewModel @Inject constructor(
                 actionType = NuaActionType.PLAN_TASK.name,
                 tier = AutonomyTier.T4,
                 summary = "Declined plan: ${plan.summary}",
-                succeeded = false,
+                outcome = ActionOutcomeState.FAILED,
                 wasRejection = true,
             )
         }
@@ -746,17 +748,17 @@ class NuaViewModel @Inject constructor(
 
     private suspend fun executeConfirmedReply(pending: NuaRouteResult.ReplyProposed) {
         val replyAction = pending.notification.replyAction
-        val sent = replyAction != null && notificationReplySender.sendReply(replyAction, pending.message)
-        val confirmation = if (sent) {
-            "Sent — replied to ${pending.notification.title}."
+        val outcome = if (replyAction != null) {
+            notificationReplySender.sendReply(replyAction, pending.message)
         } else {
-            "That reply didn't go through — the notification may have been dismissed."
+            ActionOutcomeState.FAILED
         }
+        val confirmation = replyConfirmationMessage(outcome, pending.notification.title)
         trustRepository.recordOutcome(
             actionType = NuaActionType.REPLY_TO_NOTIFICATION.name,
             tier = AutonomyTier.T3,
             summary = confirmation,
-            succeeded = sent,
+            outcome = outcome,
         )
         respond(confirmation, extractFacts = false)
     }
@@ -769,7 +771,7 @@ class NuaViewModel @Inject constructor(
                 actionType = NuaActionType.REPLY_TO_NOTIFICATION.name,
                 tier = AutonomyTier.T3,
                 summary = "Declined proposed reply to ${pending.notification.title}",
-                succeeded = false,
+                outcome = ActionOutcomeState.FAILED,
                 wasRejection = true,
             )
         }
@@ -785,19 +787,13 @@ class NuaViewModel @Inject constructor(
     }
 
     private suspend fun executeConfirmedSms(pending: NuaRouteResult.SmsProposed) {
-        val sent = smsSender.send(pending.phoneNumber, pending.message)
-        val confirmation = if (sent) {
-            "Sent — texted ${pending.contactName}."
-        } else if (!smsSender.hasPermission()) {
-            "Couldn't send that — NUA doesn't have permission to send texts yet."
-        } else {
-            "That text didn't go through."
-        }
+        val outcome = smsSender.send(pending.phoneNumber, pending.message)
+        val confirmation = smsConfirmationMessage(outcome, smsSender.hasPermission(), pending.contactName)
         trustRepository.recordOutcome(
             actionType = NuaActionType.SMS_SEND.name,
             tier = AutonomyTier.T3,
             summary = confirmation,
-            succeeded = sent,
+            outcome = outcome,
         )
         respond(confirmation, extractFacts = false)
     }
@@ -810,7 +806,7 @@ class NuaViewModel @Inject constructor(
                 actionType = NuaActionType.SMS_SEND.name,
                 tier = AutonomyTier.T3,
                 summary = "Declined proposed text to ${pending.contactName}",
-                succeeded = false,
+                outcome = ActionOutcomeState.FAILED,
                 wasRejection = true,
             )
         }

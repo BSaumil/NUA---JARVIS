@@ -10,6 +10,7 @@ import com.nua.assistant.goals.GoalRepository
 import com.nua.assistant.network.ConnectivityMonitor
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.trust.TrustRepository
+import com.nua.assistant.trust.countsAsFailure
 import com.nua.assistant.vision.VisionMonitorRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Calendar
@@ -66,7 +67,7 @@ class NuaStateRepository @Inject constructor(
 
         val failures = runCatching {
             trustRepository.recentOutcomes()
-                .filter { !it.succeeded && !it.wasRejection }
+                .filter { it.outcomeState.countsAsFailure() && !it.wasRejection }
                 .map { it.summary }
         }.getOrDefault(emptyList())
 
