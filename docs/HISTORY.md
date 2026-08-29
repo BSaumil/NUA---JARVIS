@@ -648,12 +648,14 @@ field-by-field, then verified job-level green in CI at the exact SHA below, incl
 new "Verify tests actually ran" step.
 
 ### Commit
-See the commit log for the exact SHA this entry closes on — job-level CI (not just
-overall conclusion) was confirmed green at that SHA before this entry was closed.
+`7c103e6` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI — 13/13 steps, including the new "Verify tests actually ran" step explicitly
+confirmed alongside "Forward-reference audit" and "Injection-boundary audit", not
+inferred from the overall run conclusion.
 
 ### Status
-VERIFIED at its exact CI-green SHA. This completes every P0 item in the roadmap's
-priority order (P0.1–P0.8). P1 (Intelligence Core) is next, not yet started.
+VERIFIED at its exact CI-green SHA (`7c103e6`). This completes every P0 item in the
+roadmap's priority order (P0.1–P0.8). P1 (Intelligence Core) is next, not yet started.
 
 ## What this history is for
 
