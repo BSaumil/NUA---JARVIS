@@ -579,15 +579,15 @@ clean. Local `./gradlew test` unreachable from this sandbox — reviewed field-b
 after the fix, then verified job-level green in CI.
 
 ### Commit
-`d93bc64` (the fix + first version of the test) → the SHA this entry closes on (the test
-fix). See the commit log for that exact SHA — job-level CI (not just overall conclusion)
-was confirmed green at that SHA before this entry was closed. **Not yet merged to
-`Main`** (no merge was requested this round).
+`d93bc64` (the fix + first version of the test) → `15cf833` (the test fix this entry
+describes). Job-level CI at `15cf833` — 12/12 steps, including "Injection-boundary
+audit" and "Run unit tests" explicitly confirmed, not inferred from the overall run
+conclusion. **Not yet merged to `Main`** (no merge was requested this round).
 
 ### Status
-VERIFIED at its exact CI-green SHA. This closes the P0 checklist items covered so far
-(P0.1 merged; P0.3–P0.6 pushed, not yet merged). Remaining P0 items not yet started:
-P0.7 (CI/test gate refinements), P0.8 (architecture/HISTORY reconciliation).
+VERIFIED at its exact CI-green SHA (`15cf833`). This closes the P0 checklist items
+covered so far (P0.1 merged; P0.3–P0.6 pushed, not yet merged). Remaining P0 items not
+yet started: P0.7 (CI/test gate refinements), P0.8 (architecture/HISTORY reconciliation).
 
 ## What this history is for
 
