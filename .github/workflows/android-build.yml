@@ -54,6 +54,18 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      # Uploaded here, right after the debug build, rather than after the release build
+      # below — if() conditions on GitHub Actions steps check every prior step in the
+      # job, not just the immediately preceding one, so a release-build failure must not
+      # be able to block uploading a debug APK that already built successfully.
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nua-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
       # isMinifyEnabled=true for release (app/build.gradle.kts), but nothing had ever
       # actually run R8 against this codebase before this step existed — CI only ever
       # built debug. R8 stripping/renaming a class Room, Hilt, or kotlinx.serialization
@@ -64,14 +76,6 @@ jobs:
       # publish time.
       - name: Build release APK (unsigned, verifies R8/minification)
         run: ./gradlew assembleRelease --stacktrace
-
-      - name: Upload APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nua-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
 
       - name: Upload release APK
         if: success()
