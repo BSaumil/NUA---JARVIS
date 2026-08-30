@@ -54,12 +54,31 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      # isMinifyEnabled=true for release (app/build.gradle.kts), but nothing had ever
+      # actually run R8 against this codebase before this step existed — CI only ever
+      # built debug. R8 stripping/renaming a class Room, Hilt, or kotlinx.serialization
+      # reach via reflection is exactly the failure mode that only shows up in a release
+      # build, at the worst possible time to discover it. Unsigned (no keystore secret
+      # is available here) — this verifies R8/resource shrinking completes cleanly, which
+      # is the release-specific risk; signing is a separate, standard step at actual
+      # publish time.
+      - name: Build release APK (unsigned, verifies R8/minification)
+        run: ./gradlew assembleRelease --stacktrace
+
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: nua-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nua-release-apk-unsigned
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
       - name: Upload test reports
