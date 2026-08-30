@@ -724,6 +724,56 @@ order — largely already satisfied by `UserFactEntity`'s existing `memoryType`/
 `confidence`/`lastUsedAt` fields (Phase 6/8), so that seam is likely mostly verification
 and gap-filling rather than new architecture; not yet investigated.
 
+## August 30 — Launch-readiness pass: verify the release build under R8
+
+Per an explicit "as if launch is tomorrow" directive: audited the project for concrete
+launch blockers rather than attempting to build the remaining multi-month roadmap (P1's
+other 13 items, all of P2/P3) overnight — the same "no speculative architecture, prove
+the need first" discipline this whole project has followed, applied to scope itself. A
+CTO facing a real launch deadline hardens what exists and flags what's outside code, not
+rushes half-built subsystems into a Play Store submission.
+
+### Finding
+`app/build.gradle.kts` sets `isMinifyEnabled = true` for the release build type, but
+`./gradlew assembleDebug` is the only build command this project's CI has ever run — R8
+and resource shrinking had **never once executed** against this codebase, in its entire
+history. That's exactly the failure mode (a class Room/Hilt/kotlinx.serialization reaches
+only through reflection getting stripped or renamed by R8) that only surfaces in a release
+build — discovered, if unverified, at the worst possible time: an actual Play Store
+submission the day of "launch."
+
+### Implementation
+Added "Build release APK (unsigned, verifies R8/minification)" as a new CI step. Unsigned
+deliberately — no keystore secret exists in this environment to sign with, and signing is
+a separate, standard concern from whether R8/shrinking completes cleanly, which is the
+release-specific risk this step actually verifies.
+
+### Verification
+Ran clean on the first push (`03ae70e`) — R8 processing completed successfully in ~5.5
+minutes with no errors, meaning the existing consumer ProGuard rules Room, Hilt, Compose,
+kotlinx.serialization, and OkHttp each ship with their own libraries are sufficient; no
+project-specific keep rules were needed. This does not prove zero runtime crashes from a
+missing keep rule on a code path R8's static analysis can't fully see (only a real device/
+emulator run could), but it's the strongest verification achievable without one, and it
+replaces "never checked" with "verified to build cleanly."
+
+### What's flagged, not fixed — outside code entirely
+Surfaced while reading `AndroidManifest.xml` for this pass, already noted in its own
+comments from earlier sessions: `SEND_SMS`, `ACCESS_BACKGROUND_LOCATION`, and the Android
+Auto `IOT` category each require a **Google Play Console declaration filed by the account
+holder** before a build using them can be published — not something fixable in source,
+and not something this session has credentials to file. Listed explicitly to the user
+rather than silently left for them to discover at submission time.
+
+### Commit
+`03ae70e` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI — 15/15 steps, including the new "Build release APK (unsigned, verifies R8/
+minification)" step explicitly confirmed successful (~5.5 minutes, no R8 errors), not
+inferred from the overall run conclusion.
+
+### Status
+VERIFIED at its exact CI-green SHA (`03ae70e`).
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
