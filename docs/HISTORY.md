@@ -813,11 +813,12 @@ CI at the exact SHA below (including both "Upload APK" and "Build release APK"
 succeeding independently).
 
 ### Commit
-See the commit log for the exact SHA this entry closes on — job-level CI (not just
-overall conclusion) was confirmed green at that SHA before this entry was closed.
+`410c80d` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI — 15/15 steps, "Upload APK" (debug) now runs and succeeds at step 12, before "Build
+release APK" at step 13, confirming the reordering took effect as intended.
 
 ### Status
-VERIFIED at its exact CI-green SHA.
+VERIFIED at its exact CI-green SHA (`410c80d`).
 
 ## What this history is for
 
