@@ -774,6 +774,52 @@ inferred from the overall run conclusion.
 ### Status
 VERIFIED at its exact CI-green SHA (`03ae70e`).
 
+## August 30 (continued) — a code review catches a regression in the release-build CI step
+
+A `/code-review` pass over the release-build CI change above, with a background agent
+verifying the finding before acting on it (not just trusting the raw output) — the same
+"a green check from an unvalidated source is worth nothing" discipline this project
+applies to its own static-analysis tools, applied here to review findings too.
+
+### Finding, confirmed
+GitHub Actions' `if: success()` checks every prior step in the *job*, not just the one
+immediately before it. The new "Build release APK" step sat between "Build debug APK"
+and "Upload APK" (the debug artifact), so a release-build failure — an R8/minification
+regression, the exact class of bug this step exists to catch — would also skip uploading
+the debug APK, even though the debug build itself succeeded and there was nothing wrong
+with it. Verified directly against the workflow file's actual step order and GitHub
+Actions' documented `success()` semantics before treating it as real, not just plausible.
+
+A second observation from the same pass — the release build now runs on every push to
+every branch, adding ~5.5–6 minutes to CI even for trivial or WIP commits — was
+considered and left as-is: this project's CI has run its full verification suite on
+every push to every branch since before this session (`on: push: branches: ["**"]`),
+and extending that same "every push gets full verification" standard to the release
+build is consistent with, not a departure from, how this project has always weighed
+verification cost against catching regressions early. Not a bug; a deliberate tradeoff
+already made once, applied consistently.
+
+### Fix
+Reordered the workflow: "Upload APK" (debug) now runs immediately after "Build debug
+APK" and before "Build release APK" — so at the point it evaluates `success()`, the
+release build hasn't run yet and can't have failed yet, decoupling the two artifacts'
+upload from each other's build outcome.
+
+### Verification
+YAML re-validated. Forward-reference and injection-boundary audits both clean. Local
+`./gradlew` unreachable from this sandbox — reviewed the reordering by hand against
+GitHub Actions' documented step-conditional semantics, then verified job-level green in
+CI at the exact SHA below (including both "Upload APK" and "Build release APK"
+succeeding independently).
+
+### Commit
+`410c80d` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI — 15/15 steps, "Upload APK" (debug) now runs and succeeds at step 12, before "Build
+release APK" at step 13, confirming the reordering took effect as intended.
+
+### Status
+VERIFIED at its exact CI-green SHA (`410c80d`).
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
