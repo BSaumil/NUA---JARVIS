@@ -78,6 +78,7 @@ import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.GoalEntity
 import com.nua.assistant.memory.GoalObservationEntity
+import com.nua.assistant.memory.MemoryPrivacyLevel
 import com.nua.assistant.memory.MemoryType
 import com.nua.assistant.memory.TrustLedgerEntity
 import com.nua.assistant.memory.UserFactEntity
@@ -92,6 +93,8 @@ fun SettingsScreen(
     facts: List<UserFactEntity>,
     onForgetFact: (Long) -> Unit,
     onForgetFactsByType: (MemoryType) -> Unit,
+    onCorrectFact: (id: Long, newValue: String) -> Unit,
+    onSetFactPrivacyLevel: (id: Long, level: MemoryPrivacyLevel) -> Unit,
     pinnedLanguage: NuaLanguage?,
     onLanguageSelected: (NuaLanguage?) -> Unit,
     briefingSchedule: BriefingSchedule,
@@ -204,6 +207,8 @@ fun SettingsScreen(
                 onForgetFact(fact.id)
                 selectedFact = null
             },
+            onCorrect = { newValue -> onCorrectFact(fact.id, newValue) },
+            onSetPrivacyLevel = { level -> onSetFactPrivacyLevel(fact.id, level) },
             onDismiss = { selectedFact = null },
         )
     }
@@ -225,10 +230,26 @@ private fun MemoryTypeFilterRow(selected: MemoryType?, onSelect: (MemoryType?) -
 }
 
 @Composable
-private fun FactDetailDialog(fact: UserFactEntity, onForget: () -> Unit, onDismiss: () -> Unit) {
+private fun FactDetailDialog(
+    fact: UserFactEntity,
+    onForget: () -> Unit,
+    onCorrect: (String) -> Unit,
+    onSetPrivacyLevel: (MemoryPrivacyLevel) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var isEditing by remember(fact.id) { mutableStateOf(false) }
+    var editValue by remember(fact.id) { mutableStateOf(fact.value) }
+    val isSensitive = fact.privacyLevel == MemoryPrivacyLevel.SENSITIVE
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(fact.value) },
+        title = {
+            if (isEditing) {
+                OutlinedTextField(value = editValue, onValueChange = { editValue = it }, singleLine = true)
+            } else {
+                Text(fact.value)
+            }
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 FactDetailRow("Category", fact.category)
@@ -238,10 +259,30 @@ private fun FactDetailDialog(fact: UserFactEntity, onForget: () -> Unit, onDismi
                 FactDetailRow("Learned", relativeDaysAgo(fact.createdAt))
                 FactDetailRow("Last updated", relativeDaysAgo(fact.updatedAt))
                 FactDetailRow("Last used in conversation", fact.lastUsedAt?.let { relativeDaysAgo(it) } ?: "Never")
+                if (!isEditing) {
+                    TextButton(onClick = { onSetPrivacyLevel(if (isSensitive) MemoryPrivacyLevel.STANDARD else MemoryPrivacyLevel.SENSITIVE) }) {
+                        Text(if (isSensitive) "Remove sensitive mark" else "Mark as sensitive")
+                    }
+                }
             }
         },
-        confirmButton = { TextButton(onClick = onForget) { Text("Forget this") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = {
+            if (isEditing) {
+                TextButton(onClick = { onCorrect(editValue); isEditing = false }) { Text("Save") }
+            } else {
+                TextButton(onClick = onForget) { Text("Forget this") }
+            }
+        },
+        dismissButton = {
+            if (isEditing) {
+                TextButton(onClick = { isEditing = false; editValue = fact.value }) { Text("Cancel") }
+            } else {
+                Row {
+                    TextButton(onClick = { isEditing = true }) { Text("Correct this") }
+                    TextButton(onClick = onDismiss) { Text("Close") }
+                }
+            }
+        },
     )
 }
 
@@ -263,7 +304,11 @@ private fun FactRow(fact: UserFactEntity, onTap: () -> Unit, onForget: () -> Uni
             Column {
                 Text(text = fact.value, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    text = "${fact.category} · ${fact.memoryType.name.lowercase()}",
+                    text = if (fact.privacyLevel == MemoryPrivacyLevel.SENSITIVE) {
+                        "${fact.category} · ${fact.memoryType.name.lowercase()} · sensitive"
+                    } else {
+                        "${fact.category} · ${fact.memoryType.name.lowercase()}"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )

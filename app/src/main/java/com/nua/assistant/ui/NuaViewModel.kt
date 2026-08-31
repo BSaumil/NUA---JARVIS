@@ -53,6 +53,7 @@ import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.GoalEntity
 import com.nua.assistant.memory.GoalObservationEntity
 import com.nua.assistant.memory.MemoryDao
+import com.nua.assistant.memory.MemoryPrivacyLevel
 import com.nua.assistant.memory.MessageEntity
 import com.nua.assistant.memory.MessageRole
 import com.nua.assistant.memory.MemoryType
@@ -825,6 +826,15 @@ class NuaViewModel @Inject constructor(
 
     fun forgetFactsByType(memoryType: MemoryType) {
         viewModelScope.launch { memoryDao.deleteFactsByType(memoryType) }
+    }
+
+    fun correctFact(factId: Long, newValue: String) {
+        if (newValue.isBlank()) return
+        viewModelScope.launch { memoryDao.correctFact(factId, newValue.trim(), System.currentTimeMillis()) }
+    }
+
+    fun setFactPrivacyLevel(factId: Long, privacyLevel: MemoryPrivacyLevel) {
+        viewModelScope.launch { memoryDao.updatePrivacyLevel(factId, privacyLevel) }
     }
 
     /** Null pins nothing — NUA goes back to auto-mirroring whatever language the user writes/speaks in. */
