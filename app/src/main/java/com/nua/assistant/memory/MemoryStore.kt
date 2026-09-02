@@ -51,6 +51,8 @@ data class UserFactEntity(
     val confidence: Float = 0.9f,
     /** Last time this fact was actually pulled into a conversation — see MemoryDao.touchFactUsage. */
     val lastUsedAt: Long? = null,
+    /** User-set sensitivity, e.g. for a future "exclude from briefings" filter. Defaults to STANDARD. */
+    val privacyLevel: MemoryPrivacyLevel = MemoryPrivacyLevel.STANDARD,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )
@@ -457,6 +459,15 @@ interface MemoryDao {
     @Query("UPDATE user_facts SET lastUsedAt = :usedAt WHERE key = :key")
     suspend fun touchFactUsage(key: String, usedAt: Long)
 
+    @Query("UPDATE user_facts SET privacyLevel = :privacyLevel WHERE id = :id")
+    suspend fun updatePrivacyLevel(id: Long, privacyLevel: MemoryPrivacyLevel)
+
+    /** User-initiated correction of a fact NUA got wrong, keyed by [id] (not [UserFactEntity.key],
+     * which callers editing from Settings don't have reason to know). Resets confidence to 1.0 —
+     * a fact the user just typed themselves is as certain as memory gets. */
+    @Query("UPDATE user_facts SET value = :value, confidence = 1.0, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun correctFact(id: Long, value: String, updatedAt: Long)
+
     /**
      * Insert a new fact or overwrite the value of an existing one with the same [UserFactEntity.key].
      * Room's REPLACE conflict strategy would delete-and-reinsert, losing [UserFactEntity.createdAt];
@@ -498,7 +509,7 @@ interface MemoryDao {
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {

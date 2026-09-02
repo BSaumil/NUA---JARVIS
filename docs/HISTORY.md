@@ -820,6 +820,47 @@ release APK" at step 13, confirming the reordering took effect as intended.
 ### Status
 VERIFIED at its exact CI-green SHA (`410c80d`).
 
+## August 31 — P1.10 Memory OS: privacy classification and fact correction
+
+### Investigation
+Read the roadmap's Memory OS requirements against actual code before writing anything.
+Found most of the checklist already satisfied by earlier phases: `UserFactEntity` already
+carries `memoryType` (6 categories), `source` ("why NUA remembers this"), `confidence`,
+`createdAt`/`updatedAt`/`lastUsedAt`; `FactRelevance.rank()` already does recency- and
+overlap-weighted retrieval capped at 12 facts; `SettingsScreen`'s `FactDetailDialog`
+already surfaces all of the above plus per-fact and bulk-by-type deletion. Two
+requirements were genuinely absent: **privacy classification** (no field existed at all)
+and **correction** (only delete existed — no edit path).
+
+### Implementation
+- `MemoryPrivacyLevel` enum (STANDARD/SENSITIVE) — a user-set toggle, deliberately not an
+  automatic classifier; NUA doesn't guess what's sensitive, the user marks it.
+- `UserFactEntity.privacyLevel` field, default STANDARD (DB v11→12, additive, relies on
+  the already-configured `fallbackToDestructiveMigration()`).
+- `MemoryDao.updatePrivacyLevel` and `MemoryDao.correctFact` (keyed by `id`, distinct
+  from the existing key-keyed `updateFact` used internally by `upsertFact`); `correctFact`
+  resets confidence to 1.0 — a fact the user just typed themselves is as certain as memory
+  gets.
+- `NuaViewModel.correctFact` / `setFactPrivacyLevel` thin wrappers, matching the existing
+  `forgetFact`/`forgetFactsByType` style.
+- Settings UI: `FactDetailDialog` gained an inline "Correct this" edit mode (title becomes
+  an `OutlinedTextField`, Save/Cancel replace Forget/Close while editing) and a "Mark as
+  sensitive" / "Remove sensitive mark" toggle; `FactRow` shows a "sensitive" tag inline
+  with category/type when set.
+
+### Verification
+Forward-reference and injection-boundary audits both clean locally. No dedicated pure-
+logic extraction — `correctFact`'s confidence-reset is a trivial one-line DAO query, same
+precedent as `DecisionRepository.recordOutcome`, not over-extracted into its own tested
+function. Job-level CI confirmed green at the exact SHA below (15/15 steps, including the
+release-build/R8 step).
+
+### Commit
+`a38aeab` — pushed to `claude/new-session-efg0ha` and green on the first push.
+
+### Status
+VERIFIED at its exact CI-green SHA (`a38aeab`).
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
