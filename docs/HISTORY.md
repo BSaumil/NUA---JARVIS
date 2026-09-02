@@ -912,12 +912,13 @@ entry above); relying on CI for the actual test run, as established practice alr
 does whenever local Gradle isn't reachable.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; CI verification pending at time of
-writing this entry (updated once confirmed, per this project's own "never claim a test
-ran without checking" rule).
+`04d35a1` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI confirmed — 15/15 steps, including the release-build/R8 step and both new test files
+(`IdempotencyKeyTest`, the added `countsAsCommitted` case) running under "Run unit tests"
+(step conclusion checked directly via the workflow-run API, not inferred).
 
 ### Status
-PENDING CI verification at time of writing.
+VERIFIED at its exact CI-green SHA (`04d35a1`).
 
 ## What this history is for
 
