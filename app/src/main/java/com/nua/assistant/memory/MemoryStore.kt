@@ -142,6 +142,9 @@ data class ActionOutcomeEntity(
     val outcomeState: ActionOutcomeState,
     /** True when this outcome came from the user declining a proposed reply/plan, not an execution failure. */
     val wasRejection: Boolean = false,
+    /** Set only for actions that go through TrustRepository.wasRecentlyExecuted's dedup check
+     *  (see trust/IdempotencyKey.kt) — null for outcomes that predate this field or don't need it. */
+    val idempotencyKey: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
 )
 
@@ -158,6 +161,9 @@ interface ActionOutcomeDao {
 
     @Query("SELECT * FROM action_outcomes")
     suspend fun getAll(): List<ActionOutcomeEntity>
+
+    @Query("SELECT * FROM action_outcomes WHERE idempotencyKey = :key AND timestamp >= :sinceMillis ORDER BY timestamp DESC LIMIT 1")
+    suspend fun mostRecentByIdempotencyKey(key: String, sinceMillis: Long): ActionOutcomeEntity?
 }
 
 /**
@@ -509,7 +515,7 @@ interface MemoryDao {
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {

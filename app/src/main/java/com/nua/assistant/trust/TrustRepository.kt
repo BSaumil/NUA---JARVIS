@@ -18,6 +18,9 @@ private const val PREFS_NAME = "nua_trust_prefs"
 private const val KEY_LAST_SELF_REPORT_AT = "last_self_report_at"
 private const val SELF_REPORT_MIN_INTERVAL_DAYS = 14L
 private const val AUTONOMY_SUGGESTION_THRESHOLD = 5
+/** How long a committed idempotency key blocks a repeat — long enough to catch a
+ *  replayed confirmation or retry, short enough not to block a genuine same-day resend. */
+private const val IDEMPOTENCY_WINDOW_MILLIS = 5 * 60_000L
 
 /**
  * Owns everything the Trust Engine needs: the audit trail of what NUA did (and whether it
@@ -40,6 +43,7 @@ class TrustRepository @Inject constructor(
         summary: String,
         outcome: ActionOutcomeState,
         wasRejection: Boolean = false,
+        idempotencyKey: String? = null,
     ) {
         actionOutcomeDao.insert(
             ActionOutcomeEntity(
@@ -48,12 +52,25 @@ class TrustRepository @Inject constructor(
                 summary = summary,
                 outcomeState = outcome,
                 wasRejection = wasRejection,
+                idempotencyKey = idempotencyKey,
             ),
         )
         if (outcome.countsAsFailure()) {
             val type = if (wasRejection) TrustEventType.REJECTED_PLAN else TrustEventType.FAILED_ACTION
             trustLedgerDao.insert(TrustLedgerEntity(type = type, description = summary))
         }
+    }
+
+    /**
+     * True when [idempotencyKey] already has a committed (accepted/completed/verified)
+     * outcome recorded within [windowMillis] — the caller should suppress re-executing the
+     * real-world side effect rather than call recordOutcome/dispatch again. A prior FAILED
+     * or unresolved attempt never blocks — only a call that actually went out does.
+     */
+    suspend fun wasRecentlyExecuted(idempotencyKey: String, windowMillis: Long = IDEMPOTENCY_WINDOW_MILLIS): Boolean {
+        val sinceMillis = System.currentTimeMillis() - windowMillis
+        val mostRecent = actionOutcomeDao.mostRecentByIdempotencyKey(idempotencyKey, sinceMillis)
+        return mostRecent?.outcomeState?.countsAsCommitted() == true
     }
 
     suspend fun recordMistake(type: TrustEventType, description: String) {

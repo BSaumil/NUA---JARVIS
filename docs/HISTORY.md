@@ -861,6 +861,64 @@ release-build/R8 step).
 ### Status
 VERIFIED at its exact CI-green SHA (`a38aeab`).
 
+## September 2 — scale-up directive audit; P1.8/P1.14 idempotency protection
+
+A new master directive (`NUA_JARVIS_UNBEATABLE_SCALE_UP_CLAUDE_CODE.md`) arrived,
+restating the mission across an expanded P0–P3 priority set. Its own §4.1 requires a
+start-up audit before any implementation — see the separate entry above/`docs/
+P1_INTELLIGENCE_CORE_EXECUTION_PLAN.md` for that. This entry covers the first real
+implementation seam the audit identified as highest-leverage: idempotency protection for
+the action-execution path (the directive's P1.8/P1.14, and Absolute Laws 5/6).
+
+### Investigation
+Traced every side-effecting action path by hand rather than assuming a duplicate-
+execution bug exists: `SkillSandbox.executeSandboxed` has no retry logic at all (single
+attempt, timeout-bounded); P0.3's prior investigation already proved `confirmPendingSms/
+Reply/Plan` can't double-fire from a UI double-tap (`Dispatchers.Main.immediate` +
+synchronous guard-clear + Looper serialization). So today's actual risk isn't a live bug
+— it's a missing structural guarantee that the next P1 items (Earned Autonomy's
+auto-approval, in particular) would need before they can safely widen unattended
+execution. `SmsSender.send()` and `CalendarInviteSkill.execute()` had no dedup guard of
+any kind; a future retried dispatch or replayed confirmation would send a duplicate text
+or create a duplicate calendar event with nothing to catch it.
+
+### Implementation
+- `trust/IdempotencyKey.kt` — `idempotencyKeyFor(actionType, vararg components)`, a pure
+  deterministic joiner (not a random token — two dispatches of the *same* action produce
+  the same key on purpose).
+- `ActionOutcomeState.countsAsCommitted()` — ACCEPTED/COMPLETED/VERIFIED count as "this
+  really went out"; FAILED/ATTEMPTED/UNKNOWN never block a retry.
+- `ActionOutcomeEntity.idempotencyKey: String?` (additive, DB v12→13) +
+  `ActionOutcomeDao.mostRecentByIdempotencyKey`.
+- `TrustRepository.wasRecentlyExecuted(key, windowMillis = 5 min)` — the single check
+  point every guarded call site uses.
+- Wired into the three ViewModel confirm flows that bypass `NuaIntentRouter` entirely
+  (`executeConfirmedSms`/`Reply`/`Plan`) and into `NuaIntentRouter.dispatch()` for
+  direct-execute skills — scoped to `NON_REPEATABLE_DIRECT_ACTIONS = {CALENDAR_INVITE}`
+  specifically, not every action type: `GET_WEATHER`/`READ_NOTIFICATIONS`/`OPEN_APP` are
+  safe and often desirable to repeat, and blanket-suppressing them would have been a real
+  UX regression, not a fix.
+- Each guarded path returns a suppressed-duplicate message instead of a silent no-op, so
+  the user sees NUA recognized the repeat rather than sees nothing happen.
+
+### Verification
+`IdempotencyKeyTest` (4 cases: same inputs → same key, a changed component → different
+key, a changed action type → different key even with identical components, zero
+components still stable) and an added `countsAsCommitted` case in
+`ActionOutcomeStateTest`. Forward-reference and injection-boundary audits both clean.
+`./gradlew` itself is unreachable from this sandbox — the Android Gradle Plugin can't
+resolve over this environment's network policy (same limitation noted in the Aug 30
+entry above); relying on CI for the actual test run, as established practice already
+does whenever local Gradle isn't reachable.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; CI verification pending at time of
+writing this entry (updated once confirmed, per this project's own "never claim a test
+ran without checking" rule).
+
+### Status
+PENDING CI verification at time of writing.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

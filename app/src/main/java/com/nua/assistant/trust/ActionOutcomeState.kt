@@ -49,6 +49,13 @@ enum class ActionOutcomeState {
  */
 fun ActionOutcomeState.countsAsFailure(): Boolean = this == ActionOutcomeState.FAILED
 
+/** Whether this state means the real-world side effect actually went out — the set an
+ *  idempotency check must treat as "already done, don't repeat." A FAILED or unresolved
+ *  (ATTEMPTED/UNKNOWN) prior attempt must never block a retry. */
+fun ActionOutcomeState.countsAsCommitted(): Boolean = this == ActionOutcomeState.ACCEPTED ||
+    this == ActionOutcomeState.COMPLETED ||
+    this == ActionOutcomeState.VERIFIED
+
 /** Short badge label for Settings' action-outcome list (e.g. "OK", "Failed"). */
 fun ActionOutcomeState.badgeLabel(): String = when (this) {
     ActionOutcomeState.ATTEMPTED -> "Pending"

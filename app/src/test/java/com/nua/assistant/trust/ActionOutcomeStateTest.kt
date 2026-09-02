@@ -31,4 +31,14 @@ class ActionOutcomeStateTest {
     fun `ACCEPTED is honest about being unconfirmed, not a plain success`() {
         assertTrue(ActionOutcomeState.ACCEPTED.pastTenseClause().contains("unconfirmed"))
     }
+
+    @Test
+    fun `only a committing outcome blocks an idempotency-key retry`() {
+        assertTrue(ActionOutcomeState.ACCEPTED.countsAsCommitted())
+        assertTrue(ActionOutcomeState.COMPLETED.countsAsCommitted())
+        assertTrue(ActionOutcomeState.VERIFIED.countsAsCommitted())
+        assertFalse(ActionOutcomeState.FAILED.countsAsCommitted())
+        assertFalse(ActionOutcomeState.ATTEMPTED.countsAsCommitted())
+        assertFalse(ActionOutcomeState.UNKNOWN.countsAsCommitted())
+    }
 }

@@ -70,6 +70,7 @@ import com.nua.assistant.timeline.TimelineEntry
 import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.TrustRepository
+import com.nua.assistant.trust.idempotencyKeyFor
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.memory.TrustLedgerEntity
@@ -703,6 +704,13 @@ class NuaViewModel @Inject constructor(
     // events — there is no genuine concurrency between two taps to race in the first place.
     // The equivalent dismissPendingPlan/Reply/Sms clear the guard synchronously outside the
     // launch entirely, so they carry the same guarantee with no ambiguity at all.
+    //
+    // That guarantee is specific to *this* UI path, though — it says nothing about a
+    // future caller that doesn't go through pendingPlan/Reply/Sms at all (a retried
+    // dispatch, a replayed confirmation from some other surface). executeConfirmedPlan/
+    // Reply/Sms each additionally check TrustRepository.wasRecentlyExecuted before
+    // calling out, so the real-world side effect itself can't repeat even from a caller
+    // this reasoning doesn't cover — see trust/IdempotencyKey.kt.
     fun confirmPendingPlan() {
         val plan = _uiState.value.pendingPlan ?: return
         viewModelScope.launch {
@@ -713,6 +721,12 @@ class NuaViewModel @Inject constructor(
     }
 
     private suspend fun executeConfirmedPlan(plan: TaskPlan) {
+        val stepsKey = plan.steps.joinToString("|") { "${it.title}@${it.suggestedReminder?.whenMillis ?: -1}" }
+        val idempotencyKey = idempotencyKeyFor(NuaActionType.PLAN_TASK.name, plan.summary, stepsKey)
+        if (trustRepository.wasRecentlyExecuted(idempotencyKey)) {
+            respond(DUPLICATE_PLAN_SUPPRESSED_MESSAGE, extractFacts = false)
+            return
+        }
         val results = taskPlanner.confirmPlan(plan)
         val confirmation = planConfirmationMessage(results)
         trustRepository.recordOutcome(
@@ -720,6 +734,7 @@ class NuaViewModel @Inject constructor(
             tier = AutonomyTier.T4,
             summary = "Confirmed plan: ${plan.summary} — $confirmation",
             outcome = planConfirmationOutcome(results),
+            idempotencyKey = idempotencyKey,
         )
         respond(confirmation, extractFacts = false)
     }
@@ -748,6 +763,15 @@ class NuaViewModel @Inject constructor(
     }
 
     private suspend fun executeConfirmedReply(pending: NuaRouteResult.ReplyProposed) {
+        val idempotencyKey = idempotencyKeyFor(
+            NuaActionType.REPLY_TO_NOTIFICATION.name,
+            pending.notification.title,
+            pending.message,
+        )
+        if (trustRepository.wasRecentlyExecuted(idempotencyKey)) {
+            respond(DUPLICATE_REPLY_SUPPRESSED_MESSAGE, extractFacts = false)
+            return
+        }
         val replyAction = pending.notification.replyAction
         val outcome = if (replyAction != null) {
             notificationReplySender.sendReply(replyAction, pending.message)
@@ -760,6 +784,7 @@ class NuaViewModel @Inject constructor(
             tier = AutonomyTier.T3,
             summary = confirmation,
             outcome = outcome,
+            idempotencyKey = idempotencyKey,
         )
         respond(confirmation, extractFacts = false)
     }
@@ -788,6 +813,11 @@ class NuaViewModel @Inject constructor(
     }
 
     private suspend fun executeConfirmedSms(pending: NuaRouteResult.SmsProposed) {
+        val idempotencyKey = idempotencyKeyFor(NuaActionType.SMS_SEND.name, pending.phoneNumber, pending.message)
+        if (trustRepository.wasRecentlyExecuted(idempotencyKey)) {
+            respond(DUPLICATE_SMS_SUPPRESSED_MESSAGE, extractFacts = false)
+            return
+        }
         val outcome = smsSender.send(pending.phoneNumber, pending.message)
         val confirmation = smsConfirmationMessage(outcome, smsSender.hasPermission(), pending.contactName)
         trustRepository.recordOutcome(
@@ -795,6 +825,7 @@ class NuaViewModel @Inject constructor(
             tier = AutonomyTier.T3,
             summary = confirmation,
             outcome = outcome,
+            idempotencyKey = idempotencyKey,
         )
         respond(confirmation, extractFacts = false)
     }
