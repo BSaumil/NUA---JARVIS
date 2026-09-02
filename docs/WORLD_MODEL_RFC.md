@@ -1,10 +1,15 @@
 # NUA World Model — RFC
 
-**Status:** Proposed (P1.9 — not yet implemented)
+**Status:** Accepted — additive relationship layer implemented and CI-verified (`b88fc69`,
+P1.9). See `docs/architecture/decisions/0001-world-model-storage-architecture.md` for the
+formal 5-option comparison (relational extensions / adjacency table / embedded graph /
+hybrid vector / cloud graph) this RFC's §2 recommendation maps onto.
 **Author's note:** Written per the master roadmap's explicit instruction — "Do NOT
 automatically add a graph database. First create a World Model RFC" — before any code for
-the World Model is written. This document is the seam; implementing it is a separate,
-subsequent seam, per "one architectural seam at a time."
+the World Model is written. The RFC was the first seam; the additive relationship table
+and `WorldModelRepository` were a separate, subsequent seam, per "one architectural seam
+at a time." Deliberately still unbuilt: read-side resolution into real entity objects
+beyond single-hop lookup, and any writer (Dreams is the RFC's recommended first writer).
 
 ## 1. Problem statement
 
