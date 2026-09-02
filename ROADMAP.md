@@ -418,6 +418,13 @@ demo content.
   as prose, and wiring it honestly requires extending `DreamSynthesisWorker`'s Claude
   response schema to name what it connected structurally, not inferring it after the fact.
   That's its own seam, not bundled in here.
+- **Memory OS: privacy classification and correction** (`#75`) — closed the last two gaps
+  against the Memory OS requirements checklist (everything else — source, confidence,
+  timestamps, relevance ranking, per-fact/bulk delete — already existed from Phase 6/8).
+  `MemoryPrivacyLevel` (STANDARD/SENSITIVE) is a user-set toggle, not an automatic
+  classifier. `FactDetailDialog` gained an inline "Correct this" edit path
+  (`MemoryDao.correctFact`, keyed by `id`) alongside the existing "Forget this" — the
+  first time a fact can be fixed rather than only deleted-and-relearned.
 
 ## Phase 14 — Voice-First & Personality Depth
 
