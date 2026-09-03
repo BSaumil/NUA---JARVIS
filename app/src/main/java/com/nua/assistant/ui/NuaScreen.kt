@@ -166,6 +166,12 @@ fun NuaScreen(viewModel: NuaViewModel) {
                             viewModel.whatShouldIDoNow()
                             destination = NuaDestination.ASK
                         },
+                        onDoNextAction = {
+                            viewModel.doNextBestAction()
+                            destination = NuaDestination.ASK
+                        },
+                        onRemindNextActionLater = viewModel::remindNextBestActionLater,
+                        onDismissNextAction = viewModel::dismissNextBestAction,
                     )
                 }
 

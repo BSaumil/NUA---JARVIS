@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.nua.assistant.context.WhatNowResult
 import com.nua.assistant.state.NuaState
 import com.nua.assistant.state.PendingKind
 import com.nua.assistant.state.PendingTask
@@ -61,10 +62,13 @@ fun CommandCentreScreen(
     state: NuaState,
     orbState: OrbState,
     insight: String?,
-    nextAction: String?,
+    nextAction: WhatNowResult?,
     onOrbTap: () -> Unit,
     onOpenChat: () -> Unit,
     onAskWhatNow: () -> Unit,
+    onDoNextAction: () -> Unit,
+    onRemindNextActionLater: () -> Unit,
+    onDismissNextAction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -80,7 +84,16 @@ fun CommandCentreScreen(
         }
 
         if (nextAction != null || state.currentObjective != null) {
-            item { ActionCard(nextAction = nextAction, objective = state.currentObjective, onAskWhatNow = onAskWhatNow) }
+            item {
+                ActionCard(
+                    nextAction = nextAction,
+                    objective = state.currentObjective,
+                    onAskWhatNow = onAskWhatNow,
+                    onDoNextAction = onDoNextAction,
+                    onRemindNextActionLater = onRemindNextActionLater,
+                    onDismissNextAction = onDismissNextAction,
+                )
+            }
         }
 
         if (state.pendingTasks.isNotEmpty()) {
@@ -189,18 +202,60 @@ private fun IntelligenceCard(insight: String) {
 }
 
 @Composable
-private fun ActionCard(nextAction: String?, objective: String?, onAskWhatNow: () -> Unit) {
+private fun ActionCard(
+    nextAction: WhatNowResult?,
+    objective: String?,
+    onAskWhatNow: () -> Unit,
+    onDoNextAction: () -> Unit,
+    onRemindNextActionLater: () -> Unit,
+    onDismissNextAction: () -> Unit,
+) {
     GlassCard {
         Text("NEXT BEST ACTION", style = MaterialTheme.typography.labelMedium, color = NuaTheme.colors.textSecondary)
         Spacer(Modifier.height(10.dp))
-        if (nextAction != null) {
-            Text(nextAction, style = MaterialTheme.typography.bodyLarge, color = NuaTheme.colors.textPrimary)
-        } else {
-            Text(
-                "Ask NUA what's worth doing next.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = NuaTheme.colors.textSecondary,
-            )
+        when (nextAction) {
+            is WhatNowResult.Recommendation -> {
+                Text(nextAction.action, style = MaterialTheme.typography.bodyLarge, color = NuaTheme.colors.textPrimary)
+                Spacer(Modifier.height(6.dp))
+                Text(nextAction.reason, style = MaterialTheme.typography.bodyMedium, color = NuaTheme.colors.textSecondary)
+                Spacer(Modifier.height(6.dp))
+                val estimate = nextAction.estimatedMinutes?.let { " · ~${it}m" } ?: ""
+                Text(
+                    "Confidence ${(nextAction.confidence * 100).toInt()}%$estimate",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NuaTheme.colors.textSecondary,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onDoNextAction) { Text("Do it") }
+                    TextButton(onClick = onRemindNextActionLater) { Text("Remind later") }
+                    TextButton(onClick = onDismissNextAction) { Text("Not relevant") }
+                }
+            }
+
+            WhatNowResult.NothingNeedsAttention -> {
+                Text(
+                    "Nothing unusual — you're clear.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = NuaTheme.colors.textPrimary,
+                )
+            }
+
+            is WhatNowResult.Unavailable -> {
+                Text(
+                    "Couldn't work that out right now.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NuaTheme.colors.textSecondary,
+                )
+            }
+
+            null -> {
+                Text(
+                    "Ask NUA what's worth doing next.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NuaTheme.colors.textSecondary,
+                )
+            }
         }
         if (objective != null) {
             Spacer(Modifier.height(10.dp))
@@ -210,8 +265,10 @@ private fun ActionCard(nextAction: String?, objective: String?, onAskWhatNow: ()
                 color = NuaTheme.colors.brandIdentity,
             )
         }
-        Spacer(Modifier.height(4.dp))
-        TextButton(onClick = onAskWhatNow) { Text("What should I do now?") }
+        if (nextAction !is WhatNowResult.Recommendation) {
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onAskWhatNow) { Text("What should I do now?") }
+        }
     }
 }
 

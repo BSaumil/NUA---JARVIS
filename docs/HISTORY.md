@@ -920,6 +920,56 @@ CI confirmed — 15/15 steps, including the release-build/R8 step and both new t
 ### Status
 VERIFIED at its exact CI-green SHA (`04d35a1`).
 
+## September 3 — P1.5 What Now?: structured recommendation, not a raw string
+
+### Investigation
+`WhatNowAdvisor.recommend()` returned Claude's reply as one opaque string — no reason,
+confidence, or estimate the UI could show separately, and no way to tell "nothing needs
+attention" apart from "the Claude call failed" (both just showed as some string). The
+scale-up directive's P1.5 gate names exactly this: one recommendation, a concise reason,
+confidence, an estimate, and `Do it/Prepare/Remind later/Not relevant` controls — plus an
+explicit anti-case ("Nothing unusual — you are clear").
+
+### Implementation
+- `context/WhatNowResult.kt` — a sealed class: `Recommendation(action, reason, confidence,
+  estimatedMinutes)`, `NothingNeedsAttention` (the honest anti-case), `Unavailable(message)`
+  (the Claude-failed/unparseable case) — three states that used to collapse into one string.
+- `context/WhatNowParsing.kt` — `parseWhatNowResponse(rawText): WhatNowResult`, a pure
+  function (no network/Android) mapping Claude's JSON reply to the sealed type, reusing
+  `extractJsonPayload` (the same markdown-fence-stripping helper `TaskPlanner` uses) —
+  same idiom, not a new one. `chatSummary()` renders any state as prose for the ASK
+  transcript, which stays free-text even though the Command Centre card doesn't.
+- `WhatNowAdvisor.recommend()` now returns `WhatNowResult`; the system prompt asks for
+  JSON (`hasRecommendation`, `action`, `reason`, `confidence`, optional `estimatedMinutes`)
+  instead of prose, explicitly instructed not to invent a plausible action when nothing
+  points to one.
+- `NuaViewModel`: `doNextBestAction()` ("Do it") calls the existing `sendMessage()` —
+  the recommended action goes through `NuaIntentRouter`/`SkillSandbox` exactly like typed
+  input would, never a separate execution path (no new way around the action firewall).
+  `remindNextBestActionLater()` reuses `TaskPlanner.confirmPlan` (the same reminder path
+  confirmed task plans already use) rather than inventing a second reminder mechanism.
+  `dismissNextBestAction()` just clears the card — not logged to the Trust Ledger, since
+  this is advice, not a proposed action the user approved or declined.
+- `CommandCentreScreen`'s `ActionCard` renders all three states distinctly: a
+  recommendation shows action/reason/confidence/estimate plus the three controls; the
+  anti-case shows "Nothing unusual — you're clear"; `Unavailable` shows a distinct
+  couldn't-work-it-out message instead of silently looking like "nothing to do."
+
+### Verification
+`WhatNowParsingTest` (7 cases: full recommendation parses correctly, `hasRecommendation:
+false` becomes the anti-case rather than a fabricated action, a blank action with
+`hasRecommendation: true` still counts as nothing-to-recommend, malformed JSON becomes
+`Unavailable` — never silently "nothing needed" — confidence clamps into 0–1, a
+markdown-fenced reply still parses, `chatSummary()` renders each state distinctly).
+Forward-reference and injection-boundary audits both clean.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated with the confirmed SHA once
+CI verifies green, per this project's own rule against claiming a test ran before checking.
+
+### Status
+PENDING CI verification at time of writing.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

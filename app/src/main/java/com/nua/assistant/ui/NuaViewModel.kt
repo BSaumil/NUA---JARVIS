@@ -13,6 +13,8 @@ import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.PersonalityEngine
 import com.nua.assistant.ai.SecondBrainResult
 import com.nua.assistant.ai.SecondBrainSearch
+import com.nua.assistant.ai.PlannedStep
+import com.nua.assistant.ai.SuggestedReminder
 import com.nua.assistant.ai.TaskPlan
 import com.nua.assistant.ai.TaskPlanner
 import com.nua.assistant.ai.UsageSummary
@@ -25,6 +27,8 @@ import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.briefing.BriefingScheduleStore
 import com.nua.assistant.briefing.BriefingScheduler
 import com.nua.assistant.context.WhatNowAdvisor
+import com.nua.assistant.context.WhatNowResult
+import com.nua.assistant.context.chatSummary
 import com.nua.assistant.decisions.DecisionRepository
 import com.nua.assistant.diagnostics.DiagnosticCategory
 import com.nua.assistant.diagnostics.DiagnosticCheck
@@ -123,6 +127,9 @@ data class NuaUiState(
     val needsApiKey: Boolean = false,
 )
 
+/** How far out "Remind later" on the next-best-action card schedules its reminder. */
+private const val REMIND_LATER_OFFSET_MILLIS = 60 * 60_000L
+
 @HiltViewModel
 class NuaViewModel @Inject constructor(
     private val memoryDao: MemoryDao,
@@ -190,8 +197,8 @@ class NuaViewModel @Inject constructor(
     val latestInsight: StateFlow<String?> = _latestInsight.asStateFlow()
 
     /** Populated only after the user asks — never pre-generated, since it costs a Claude call. */
-    private val _nextBestAction = MutableStateFlow<String?>(null)
-    val nextBestAction: StateFlow<String?> = _nextBestAction.asStateFlow()
+    private val _nextBestAction = MutableStateFlow<WhatNowResult?>(null)
+    val nextBestAction: StateFlow<WhatNowResult?> = _nextBestAction.asStateFlow()
 
     /**
      * What NUA can actually do, read from the registered skill bindings — so the Act
@@ -916,8 +923,52 @@ class NuaViewModel @Inject constructor(
             }
             val recommendation = whatNowAdvisor.recommend(_pinnedLanguage.value)
             _nextBestAction.value = recommendation
-            respond(recommendation, extractFacts = false)
+            respond(recommendation.chatSummary(), extractFacts = false)
         }
+    }
+
+    /** "Do it" on the Command Centre's next-action card — routes the recommended action
+     *  through the normal message pipeline, so it goes through the same firewall/sandbox/
+     *  confirmation path any typed request would, never a separate execution route. */
+    fun doNextBestAction() {
+        val recommendation = _nextBestAction.value as? WhatNowResult.Recommendation ?: return
+        _nextBestAction.value = null
+        sendMessage(recommendation.action)
+    }
+
+    /** "Remind later" — creates a plain reminder an hour out via the same reminder path
+     *  TaskPlanner's confirmed plans use, rather than a new one-off mechanism. */
+    fun remindNextBestActionLater() {
+        val recommendation = _nextBestAction.value as? WhatNowResult.Recommendation ?: return
+        _nextBestAction.value = null
+        viewModelScope.launch {
+            val plan = TaskPlan(
+                summary = recommendation.action,
+                steps = listOf(
+                    PlannedStep(
+                        title = recommendation.action,
+                        detail = recommendation.reason,
+                        suggestedReminder = SuggestedReminder(
+                            title = recommendation.action,
+                            whenMillis = System.currentTimeMillis() + REMIND_LATER_OFFSET_MILLIS,
+                        ),
+                    ),
+                ),
+            )
+            val results = taskPlanner.confirmPlan(plan)
+            val confirmation = if (results.all { it.isSuccess }) {
+                "Okay, I'll remind you about that in an hour."
+            } else {
+                "Couldn't set that reminder."
+            }
+            respond(confirmation, extractFacts = false)
+        }
+    }
+
+    /** "Not relevant" — just dismisses the card. Not logged to the Trust Ledger: this is
+     *  advice, not a proposed action the user approved or declined. */
+    fun dismissNextBestAction() {
+        _nextBestAction.value = null
     }
 
     fun addGoal(text: String) {
