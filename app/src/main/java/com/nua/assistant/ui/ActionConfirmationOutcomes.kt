@@ -14,6 +14,12 @@ import com.nua.assistant.trust.ActionOutcomeState
  * and recorded in the Trust Engine's audit trail as an unqualified success.
  */
 
+/** Shown instead of actually resending when TrustRepository.wasRecentlyExecuted finds this
+ *  exact SMS/reply was already sent within the idempotency window — see trust/IdempotencyKey.kt. */
+const val DUPLICATE_SMS_SUPPRESSED_MESSAGE = "Already sent that a moment ago — not sending it twice."
+const val DUPLICATE_REPLY_SUPPRESSED_MESSAGE = "Already sent that reply a moment ago — not sending it twice."
+const val DUPLICATE_PLAN_SUPPRESSED_MESSAGE = "Already confirmed that plan a moment ago — not adding its reminders twice."
+
 fun smsConfirmationMessage(outcome: ActionOutcomeState, hasPermission: Boolean, contactName: String): String =
     when {
         outcome == ActionOutcomeState.ACCEPTED ->

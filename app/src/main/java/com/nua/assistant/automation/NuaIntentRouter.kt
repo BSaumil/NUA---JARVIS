@@ -9,12 +9,25 @@ import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.autonomyTierFor
+import com.nua.assistant.trust.idempotencyKeyFor
 import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /** Below this confidence, a Claude-classified intent isn't acted on — falls through to chat instead. */
 private const val CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.6
+
+/**
+ * Direct-dispatch action types (resolved as [NuaRouteResult.ActionTaken] with no user
+ * confirmation step) whose skill causes a real external side effect that must not repeat
+ * — as opposed to GET_WEATHER, READ_NOTIFICATIONS, OPEN_APP, etc., which are harmless
+ * (often desirable) to repeat. SMS_SEND/REPLY_TO_NOTIFICATION/PLAN_TASK never reach
+ * [dispatch] at all — they resolve as proposals and get their own
+ * TrustRepository.wasRecentlyExecuted check in NuaViewModel's confirm* functions.
+ */
+private val NON_REPEATABLE_DIRECT_ACTIONS = setOf(NuaActionType.CALENDAR_INVITE)
+
+private const val DUPLICATE_DIRECT_ACTION_SUPPRESSED_MESSAGE = "Already did that a moment ago — not doing it twice."
 
 sealed class NuaRouteResult {
     /** [succeeded] feeds the Trust Engine's audit trail and score — see trust/TrustRepository.kt. */
@@ -63,6 +76,17 @@ class NuaIntentRouter @Inject constructor(
         // with no binding simply isn't dispatchable, so there's no arbitrary execution
         // path. Everything that is dispatchable goes through the sandbox, never directly.
         val skill = skills[intent.action] ?: return NuaRouteResult.FallThroughToChat
+
+        val idempotencyKey = if (intent.action in NON_REPEATABLE_DIRECT_ACTIONS) {
+            val paramsKey = intent.parameters.toSortedMap().entries.joinToString(",") { "${it.key}=${it.value}" }
+            idempotencyKeyFor(intent.action.name, paramsKey)
+        } else {
+            null
+        }
+        if (idempotencyKey != null && trustRepository.wasRecentlyExecuted(idempotencyKey)) {
+            return NuaRouteResult.ActionTaken(DUPLICATE_DIRECT_ACTION_SUPPRESSED_MESSAGE, succeeded = true)
+        }
+
         val result = skillSandbox.execute(skill, intent, originalUtterance, pinnedLanguage)
         // Only ActionTaken resolves immediately — proposals (Plan/Reply) are logged by the
         // ViewModel once the user actually confirms or declines them.
@@ -76,6 +100,7 @@ class NuaIntentRouter @Inject constructor(
                 tier = autonomyTierFor(intent.action),
                 summary = result.message,
                 outcome = if (result.succeeded) ActionOutcomeState.COMPLETED else ActionOutcomeState.FAILED,
+                idempotencyKey = idempotencyKey,
             )
         }
         return result
