@@ -37,7 +37,8 @@ class MorningBriefingWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        val briefingText = morningBriefing.generate()
+        val briefing = morningBriefing.generate()
+        val briefingText = briefing.renderText()
         memoryDao.insertMessage(MessageEntity(role = MessageRole.ASSISTANT, content = briefingText))
         postNotification(briefingText)
 

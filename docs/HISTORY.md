@@ -964,8 +964,62 @@ markdown-fenced reply still parses, `chatSummary()` renders each state distinctl
 Forward-reference and injection-boundary audits both clean.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated with the confirmed SHA once
-CI verifies green, per this project's own rule against claiming a test ran before checking.
+`7517b42` — pushed to `claude/new-session-efg0ha` and green on the first push (job-level,
+15/15 steps, including release-build/R8). Squash-merged to `Main` as `0d19cc2` (PR #30),
+CI re-verified green there too.
+
+### Status
+VERIFIED at its exact CI-green SHA (`7517b42`).
+
+## September 5 — P1.10 (directive) Daily Intelligence: structured briefing sections
+
+The user asked for five specific enhancements picked from
+`docs/P1_INTELLIGENCE_CORE_EXECUTION_PLAN.md`'s survey; this is the first — the one
+recommended as smallest/most self-contained, reusing the sealed-result pattern the What
+Now? seam just established.
+
+### Investigation
+`MorningBriefing.generate()` returned one 2-4 sentence prose paragraph — no way for the
+notification or chat rendering to show "what needs attention" separately from "what
+changed" or "the one recommendation," and no distinct state for "nothing unusual" versus
+a Claude failure (both used to look like arbitrary prose). The directive's Daily
+Intelligence gate names exactly this: Today/Attention/Context changes/Risks/
+Opportunities/one recommendation, explicit "nothing unusual," offline-safe generation.
+Traced both call sites (`MorningBriefingWorker` — the scheduled push notification +
+chat-history insert, `MorningBriefingSkill` — the on-demand "give me my briefing" chat
+path) before changing the return type, since both needed updating consistently.
+
+### Implementation
+- `briefing/DailyBriefing.kt` — sealed `Summary(today, attention, contextChanges, risks,
+  opportunities, recommendation)`/`NothingUnusual`, replacing the collapsed string. No
+  `Unavailable` state (unlike `WhatNowResult`): a Claude failure here has a genuinely
+  useful deterministic fallback available (see below), so there was nothing honest for an
+  `Unavailable` branch to ever actually be produced from — an unreachable state is worse
+  than no state.
+- `briefing/DailyBriefingParsing.kt` — `parseDailyBriefingResponse(rawText):
+  DailyBriefing?`, a pure function reusing `extractJsonPayload`, returning null (not a
+  fabricated empty summary) on anything unparseable or too thin to trust. `renderText()`
+  — the shared notification/chat plain-text rendering, sections shown only when non-empty.
+- `MorningBriefing.generate()`: on `ClaudeResult.Failure` **or** an unparseable reply, now
+  falls back to a `DailyBriefing.Summary` built entirely from the already-fetched
+  `ContextSnapshot` (weather + event count) — the same data the old prose fallback used,
+  now honestly represented as a `Summary` with empty attention/risks/etc. rather than
+  either crashing or fabricating sections Claude never actually assessed. This is the
+  "offline-safe generation" the directive's gate names, not a new capability bolted on.
+- `MorningBriefingWorker`/`MorningBriefingSkill` both call `.renderText()` at their
+  existing single point of use — no behavior change to notification delivery, quiet
+  hours, or scheduling, which this seam doesn't touch.
+
+### Verification
+`DailyBriefingParsingTest` (8 cases: full briefing parses every section, `nothingUnusual:
+true` wins regardless of other fields, empty sections stay empty rather than backfilled,
+a blank `today` with `nothingUnusual: false` is rejected as too thin to trust, malformed
+JSON returns null, a blank recommendation is treated as none, `renderText` omits empty
+sections, `NothingUnusual` renders as one line). Forward-reference and injection-boundary
+audits both clean.
+
+### Commit
+`<pending>` — will be updated with the confirmed SHA once CI verifies green.
 
 ### Status
 PENDING CI verification at time of writing.
