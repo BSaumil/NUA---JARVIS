@@ -1025,6 +1025,49 @@ CI confirmed — 15/15 steps, including the release-build/R8 step.
 ### Status
 VERIFIED at its exact CI-green SHA (`4ffb8e7`).
 
+## September 8 — Goal Engine: taxonomy (aspiration/goal/project/commitment/task/routine)
+
+Second of the five enhancements the user asked for from
+`docs/P1_INTELLIGENCE_CORE_EXECUTION_PLAN.md`'s survey.
+
+### Investigation
+`GoalEntity` was `{id, text, active, createdAt}` — flat text, confirmed by reading
+`goals/GoalRepository.kt` and `goals/GoalReviewWorker.kt` end to end rather than assuming.
+`GoalReviewWorker`'s weekly review loop treats every active goal identically regardless of
+what kind of thing it actually is; the directive's Goal Engine gate specifically names the
+aspiration/goal/project/commitment/task/routine distinction as missing.
+
+### Implementation
+- `goals/GoalType.kt` — the six-value enum, user-chosen at goal-creation time. `addGoal`
+  is only ever invoked from the Settings "Add a goal" dialog (confirmed via grep — no
+  other call site exists), so a type is never inferred from conversation, keeping the
+  directive's "never infer a binding commitment merely from conversation" invariant intact
+  by construction rather than by a runtime check.
+- `GoalEntity.type: GoalType = GoalType.GOAL` (additive, DB v13→14, existing rows default
+  to GOAL — the most generic value, not a guess at what they actually were).
+- `GoalRepository.addGoal`/`NuaViewModel.addGoal` both gained an optional `type` parameter
+  defaulting to `GOAL`, so nothing else calling `addGoal` needed to change.
+- Settings: `AddGoalDialog` gained a `FilterChip` type picker — the same pattern
+  `MemoryTypeFilterRow` already established for `MemoryType`, not a new UI idiom.
+  `GoalsCard` shows each goal's type alongside its text.
+
+### Explicitly not attempted this pass
+Milestones and dependencies, both named in the directive's Goal Engine gate alongside the
+taxonomy. Both are materially larger — a new sub-entity, progress tracking, dedicated UI —
+than the concretely-scoped taxonomy distinction. Left as a named future seam rather than
+rushed into this one, per "no speculative architecture."
+
+### Verification
+No dedicated test: `GoalType` is a bare enum with no logic to test, same precedent as
+`memory/MemoryType.kt` (also untested — confirmed no test file exists for it either).
+Forward-reference and injection-boundary audits both clean.
+
+### Commit
+`9fb837c` — pushed to `claude/new-session-efg0ha`.
+
+### Status
+Pushed; CI verification for this exact SHA to be confirmed next.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
