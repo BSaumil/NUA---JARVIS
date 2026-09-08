@@ -65,6 +65,7 @@ import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
+import com.nua.assistant.goals.GoalType
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.diagnostics.DiagnosticCheck
@@ -114,7 +115,7 @@ fun SettingsScreen(
     onEnableAutoApprove: (NuaActionType) -> Unit,
     goals: List<GoalEntity>,
     goalObservations: List<GoalObservationEntity>,
-    onAddGoal: (String) -> Unit,
+    onAddGoal: (text: String, type: GoalType) -> Unit,
     onRemoveGoal: (Long) -> Unit,
     dreams: List<DreamEntity>,
     decisions: List<DecisionEntity>,
@@ -672,7 +673,7 @@ private fun AuditTrailCard(actionOutcomes: List<ActionOutcomeEntity>) {
 private fun GoalsCard(
     goals: List<GoalEntity>,
     observations: List<GoalObservationEntity>,
-    onAdd: (String) -> Unit,
+    onAdd: (text: String, type: GoalType) -> Unit,
     onRemove: (Long) -> Unit,
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
@@ -695,6 +696,11 @@ private fun GoalsCard(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(goal.text, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            goal.type.name.lowercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         if (latest != null) {
                             Text(latest.text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
@@ -710,8 +716,8 @@ private fun GoalsCard(
 
     if (showAddDialog) {
         AddGoalDialog(
-            onConfirm = { text ->
-                onAdd(text)
+            onConfirm = { text, type ->
+                onAdd(text, type)
                 showAddDialog = false
             },
             onDismiss = { showAddDialog = false },
@@ -719,21 +725,34 @@ private fun GoalsCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AddGoalDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+private fun AddGoalDialog(onConfirm: (text: String, type: GoalType) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf(GoalType.GOAL) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New goal") },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("e.g. \"Get my mornings under control\"") },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("e.g. \"Get my mornings under control\"") },
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GoalType.entries.forEach { candidate ->
+                        FilterChip(
+                            selected = type == candidate,
+                            onClick = { type = candidate },
+                            label = { Text(candidate.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
-            TextButton(onClick = { if (text.isNotBlank()) onConfirm(text) }, enabled = text.isNotBlank()) { Text("Add") }
+            TextButton(onClick = { if (text.isNotBlank()) onConfirm(text, type) }, enabled = text.isNotBlank()) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

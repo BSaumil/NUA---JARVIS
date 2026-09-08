@@ -49,6 +49,7 @@ import com.nua.assistant.documents.documentTypeForMime
 import com.nua.assistant.dreams.DreamRepository
 import com.nua.assistant.geofencing.GeofenceManager
 import com.nua.assistant.goals.GoalRepository
+import com.nua.assistant.goals.GoalType
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DocumentEntity
 import com.nua.assistant.memory.DreamEntity
@@ -971,9 +972,9 @@ class NuaViewModel @Inject constructor(
         _nextBestAction.value = null
     }
 
-    fun addGoal(text: String) {
+    fun addGoal(text: String, type: GoalType = GoalType.GOAL) {
         if (text.isBlank()) return
-        viewModelScope.launch { goalRepository.addGoal(text.trim()) }
+        viewModelScope.launch { goalRepository.addGoal(text.trim(), type) }
     }
 
     fun removeGoal(id: Long) {
