@@ -36,6 +36,12 @@ fun MemoryScreen(
     onIngestDocument: (uri: Uri, mimeType: String?, fileName: String) -> Unit,
     onAskDocuments: (documentIds: List<Long>, question: String) -> Unit,
     onRemoveDocument: (Long) -> Unit,
+    factCount: Int,
+    goalCount: Int,
+    decisionCount: Int,
+    dreamCount: Int,
+    exportText: String,
+    onResetConfirmed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -55,6 +61,16 @@ fun MemoryScreen(
                 onIngest = onIngestDocument,
                 onAsk = onAskDocuments,
                 onRemove = onRemoveDocument,
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            MemorySection.PRIVACY -> PrivacyCentreContent(
+                factCount = factCount,
+                goalCount = goalCount,
+                decisionCount = decisionCount,
+                dreamCount = dreamCount,
+                exportText = exportText,
+                onResetConfirmed = onResetConfirmed,
                 modifier = Modifier.fillMaxSize(),
             )
         }

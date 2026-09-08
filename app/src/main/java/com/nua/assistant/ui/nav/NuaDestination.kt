@@ -26,6 +26,7 @@ enum class MemorySection(val label: String) {
     SEARCH("Search"),
     TIMELINE("Timeline"),
     DOCUMENTS("Documents"),
+    PRIVACY("Privacy"),
 }
 
 /**

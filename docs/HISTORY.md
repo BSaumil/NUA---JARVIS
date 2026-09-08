@@ -1176,6 +1176,61 @@ already use named parameters, so both compile unchanged with no update needed. F
 reference and injection-boundary audits both clean.
 
 ### Commit
+`fd6a7e1` — pushed to `claude/new-session-efg0ha`.
+
+### Status
+Pushed; CI verification for this exact SHA to be confirmed next.
+
+## September 8 (continued) — Memory Vault / Privacy Centre: a consolidated screen
+
+Fifth and final of the five enhancements the user asked for.
+
+### Investigation
+Read `SettingsScreen.kt` end to end before assuming a gap: per-fact provenance/confidence/
+correction/sensitivity already exist (`FactRow`/`FactDetailDialog`, P1.10), encryption-at-
+rest status already exists (`SecurityCard`, reading `security/EncryptionAudit.kt`), and
+recent/autonomous actions already exist (`TrustCard`/`AuditTrailCard`). What genuinely
+didn't exist anywhere: an explicit statement of what's local versus sent to Claude, a
+permissions overview, a real data export, and a real "delete everything" action — the
+directive's Memory Vault/Privacy Centre gate names all four. Also checked `NuaDestination`
+— the five-destination bottom nav is a deliberate, closed design (`#38`'s own doc comment:
+"a map of five ideas, not a menu"); `MemoryScreen` already solves exactly this problem for
+Search/Timeline/Documents via a `MemorySection` chip row nested under one destination
+rather than three more bottom-nav icons — the right place to add a fourth section, not a
+sixth destination.
+
+### Implementation
+- `ui/nav/NuaDestination.kt`: `MemorySection.PRIVACY` added to the existing enum —
+  `SectionChips` is already data-driven off `MemorySection.entries`, so no chip-rendering
+  code needed to change at all.
+- `ui/PrivacyCentreScreen.kt` (`PrivacyCentreContent`): five cards — what NUA knows
+  (counts, pointing back to the existing per-fact detail view rather than duplicating it),
+  local-vs-Claude (a factual statement of what this app's own code does — only relevant
+  facts are included in a Claude request, nothing else is sent anywhere — not a claim
+  about Anthropic's own retention policy, which isn't this app's to promise), permissions
+  (the app's actual dangerous runtime permissions, checked live via
+  `ContextCompat.checkSelfPermission`, not a static list), export, and delete-everything
+  (behind a confirmation dialog naming exactly what gets erased).
+- `privacy/DataExport.kt`: `buildDataExport()`, a pure function producing a plain-text
+  dump of facts/goals/decisions/dreams — not a proprietary format. Export fires a plain
+  `Intent.ACTION_SEND`, letting the user choose where it goes rather than this app
+  picking a destination for them.
+- `privacy/PrivacyRepository.kt`: `resetAllData()` clears every category
+  `security/EncryptionAudit.kt` itself names as stored — `NuaDatabase.clearAllTables()`,
+  `SecureKeyRepository.clearApiKey()`, `OwnerVoiceProfileStore.clear()` — so "delete
+  everything" is actually complete against this app's own audit of what it stores, not a
+  partial gesture that leaves the voice profile or API key behind.
+
+### Verification
+`DataExportTest` (3 cases: an empty export still names every section as empty rather than
+omitting them, a populated export includes every category's real content, an inactive
+goal is labeled as such). No test for `PrivacyRepository.resetAllData()` — it's a thin,
+untestable-without-Robolectric sequence of three real side effects (DB clear, two
+encrypted-store clears), same precedent as this codebase's other impure orchestration
+classes (`TaskPlanner`, `MorningBriefing`) that also have no direct unit test. Forward-
+reference and injection-boundary audits both clean.
+
+### Commit
 `<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
 
 ### Status
