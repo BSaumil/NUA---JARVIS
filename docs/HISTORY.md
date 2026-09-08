@@ -1019,10 +1019,11 @@ sections, `NothingUnusual` renders as one line). Forward-reference and injection
 audits both clean.
 
 ### Commit
-`<pending>` — will be updated with the confirmed SHA once CI verifies green.
+`4ffb8e7` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI confirmed — 15/15 steps, including the release-build/R8 step.
 
 ### Status
-PENDING CI verification at time of writing.
+VERIFIED at its exact CI-green SHA (`4ffb8e7`).
 
 ## What this history is for
 
