@@ -1123,10 +1123,13 @@ an all-hallucinated id set yields nothing, duplicate ids in one list collapse to
 source). Forward-reference and injection-boundary audits both clean.
 
 ### Commit
-`8b1cdf4` — pushed to `claude/new-session-efg0ha`.
+`8b1cdf4` — pushed to `claude/new-session-efg0ha`. CI-verified green (job-level, 15/15
+steps including release-build/R8) as part of the later `8dbd736` run, which contains this
+commit's code unchanged.
 
 ### Status
-Pushed; CI verification for this exact SHA to be confirmed next.
+VERIFIED — confirmed CI-green at `8dbd736` (see the Memory Vault/Privacy Centre entry
+below for why final verification landed on that later SHA instead of this one directly).
 
 ## September 8 (continued) — Decision Engine: facts/unknowns/constraints/options staging
 
@@ -1176,10 +1179,12 @@ already use named parameters, so both compile unchanged with no update needed. F
 reference and injection-boundary audits both clean.
 
 ### Commit
-`fd6a7e1` — pushed to `claude/new-session-efg0ha`.
+`fd6a7e1` — pushed to `claude/new-session-efg0ha`. CI-verified green (job-level, 15/15
+steps including release-build/R8) as part of the later `8dbd736` run, which contains this
+commit's code unchanged.
 
 ### Status
-Pushed; CI verification for this exact SHA to be confirmed next.
+VERIFIED — confirmed CI-green at `8dbd736`.
 
 ## September 8 (continued) — Memory Vault / Privacy Centre: a consolidated screen
 
@@ -1242,10 +1247,14 @@ exactly the "a pin that fails on genuine, intentional change gets updated, not w
 principle this project has applied to itself before.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`cc46d50` (code) — pushed to `claude/new-session-efg0ha`; first CI run
+(`34179816341`) failed on a genuine regression (see the "CI caught a real regression"
+note above) — `NuaDestinationTest` correctly caught `MemorySection` growing from three
+entries to four, fixed at `8dbd736`, which is job-level CI-verified green (15/15 steps,
+release-build/R8 included, Room schema validated at DB v15).
 
 ### Status
-PENDING CI verification at time of writing.
+VERIFIED at its exact CI-green SHA (`8dbd736`).
 
 ## What this history is for
 
