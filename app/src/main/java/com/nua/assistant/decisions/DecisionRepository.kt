@@ -9,8 +9,24 @@ import javax.inject.Singleton
 class DecisionRepository @Inject constructor(
     private val decisionDao: DecisionDao,
 ) {
-    suspend fun record(decision: String, reasoning: String?) {
-        decisionDao.insert(DecisionEntity(decision = decision, reasoning = reasoning))
+    suspend fun record(
+        decision: String,
+        reasoning: String?,
+        facts: String? = null,
+        unknowns: String? = null,
+        constraints: String? = null,
+        options: String? = null,
+    ) {
+        decisionDao.insert(
+            DecisionEntity(
+                decision = decision,
+                reasoning = reasoning,
+                facts = facts,
+                unknowns = unknowns,
+                constraints = constraints,
+                options = options,
+            ),
+        )
     }
 
     suspend fun recordOutcome(id: Long, outcome: String) =

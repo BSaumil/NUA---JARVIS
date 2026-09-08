@@ -263,6 +263,14 @@ data class DecisionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val decision: String,
     val reasoning: String? = null,
+    /** What was actually known/true when deciding — distinct from a hunch. Optional free text. */
+    val facts: String? = null,
+    /** What genuinely wasn't known at the time, named honestly rather than glossed over. */
+    val unknowns: String? = null,
+    /** What bounded the choice — time, money, other people's constraints, etc. */
+    val constraints: String? = null,
+    /** The alternatives actually considered, not just the one picked. */
+    val options: String? = null,
     val outcome: String? = null,
     val decidedAt: Long = System.currentTimeMillis(),
     val outcomeRecordedAt: Long? = null,
@@ -519,7 +527,7 @@ interface MemoryDao {
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {

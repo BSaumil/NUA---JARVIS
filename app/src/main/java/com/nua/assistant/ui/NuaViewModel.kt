@@ -354,8 +354,15 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch { documentRepository.delete(id) }
     }
 
-    fun addDecision(decision: String, reasoning: String?) {
-        viewModelScope.launch { decisionRepository.record(decision, reasoning) }
+    fun addDecision(
+        decision: String,
+        reasoning: String?,
+        facts: String? = null,
+        unknowns: String? = null,
+        constraints: String? = null,
+        options: String? = null,
+    ) {
+        viewModelScope.launch { decisionRepository.record(decision, reasoning, facts, unknowns, constraints, options) }
     }
 
     fun recordDecisionOutcome(id: Long, outcome: String) {

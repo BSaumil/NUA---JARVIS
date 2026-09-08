@@ -1123,6 +1123,59 @@ an all-hallucinated id set yields nothing, duplicate ids in one list collapse to
 source). Forward-reference and injection-boundary audits both clean.
 
 ### Commit
+`8b1cdf4` — pushed to `claude/new-session-efg0ha`.
+
+### Status
+Pushed; CI verification for this exact SHA to be confirmed next.
+
+## September 8 (continued) — Decision Engine: facts/unknowns/constraints/options staging
+
+Fourth of the five enhancements.
+
+### Investigation
+`DecisionEntity` was `decision + reasoning + outcome` — confirmed by reading
+`decisions/DecisionRepository.kt` and the entity/DAO in `memory/MemoryStore.kt`. The
+directive's Decision Engine gate names a fuller structure: situation → facts → unknowns →
+constraints → options → recommendation → decision → actual outcome → lesson. Implementing
+the full nine-stage pipeline (including a recommendation-generation step) is a materially
+larger undertaking than the other four enhancements — scoped this pass to the concrete,
+directly actionable part: letting the user capture facts/unknowns/constraints/options at
+logging time, the fields the gate names that were entirely absent from the data model.
+"Situation" and "decision" already exist (`decision` field, `reasoning` covers the
+situation informally); "recommendation" would require an AI-generated suggestion this
+project's own "decisions are written to, not inferred" philosophy (matching the existing
+Decision Journal's explicit no-auto-capture design, and Goals' just-added
+never-inferred-type precedent) argues against manufacturing.
+
+### Implementation
+- `DecisionEntity` gains four nullable free-text fields: `facts`, `unknowns`,
+  `constraints`, `options` (additive, DB v14→15). Plain `String?`, not a serialized list —
+  no `List<String>` Room column exists anywhere in this codebase yet, and introducing a
+  `TypeConverter` for one feature would be exactly the kind of new infrastructure the
+  "no speculative architecture" rule cautions against when a free-text field (matching
+  `reasoning`'s own existing, already-proven shape) does the job just as well.
+- `DecisionRepository.record()`/`NuaViewModel.addDecision()` both gained four optional
+  parameters, all defaulting to null, so every existing caller kept compiling unchanged.
+- Settings: `AddDecisionDialog` gained a collapsed-by-default "Add more detail" section
+  revealing the four new fields — progressive disclosure, not a heavier form forced on
+  every decision. `DecisionsCard`'s row shows each populated field via a small shared
+  `DecisionDetailLine` composable (renders nothing when null).
+
+### Explicitly not attempted this pass
+An AI-generated recommendation step, and a "lesson learned" field distinct from the
+existing `outcome`. Both are real gaps against the full nine-stage structure the directive
+names, but each raises its own design questions (what does a recommendation mean without
+executing anything; is "lesson" meaningfully different from outcome, or does forcing the
+distinction just add form-filling burden) that deserve their own investigation rather than
+being rushed into this pass alongside four other enhancements in flight.
+
+### Verification
+No dedicated test: the four new fields are plain data with no logic — the existing
+`DecisionEntity(...)` construction sites in `TimelineBuilderTest`/`SecondBrainSearchTest`
+already use named parameters, so both compile unchanged with no update needed. Forward-
+reference and injection-boundary audits both clean.
+
+### Commit
 `<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
 
 ### Status
