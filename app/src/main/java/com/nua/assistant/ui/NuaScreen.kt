@@ -198,6 +198,12 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onIngestDocument = viewModel::ingestDocument,
                     onAskDocuments = viewModel::askAboutDocuments,
                     onRemoveDocument = viewModel::removeDocument,
+                    factCount = facts.size,
+                    goalCount = goals.size,
+                    decisionCount = decisions.size,
+                    dreamCount = dreams.size,
+                    exportText = viewModel.dataExportText(),
+                    onResetConfirmed = viewModel::resetDeviceData,
                 )
 
                 NuaDestination.ACT -> ActScreen(

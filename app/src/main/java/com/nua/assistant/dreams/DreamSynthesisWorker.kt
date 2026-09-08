@@ -25,25 +25,32 @@ private const val MINIMUM_SIGNAL_COUNT = 4
 
 private val DREAM_SYSTEM_PROMPT = """
     You review everything NUA currently knows about this user — durable facts, recent
-    goal observations, a record of what's gone right or wrong, and their current
-    situation — looking for exactly one insight that would NOT be obvious from any
-    single piece of that information alone. It must connect at least two different
-    things NUA knows. It must not restate, summarize, or repackage information that's
-    already been said elsewhere in what you were given — that is a failure, not a
-    weaker version of success. Reject anything generic ("stay organized," "consider
-    your goals") — it should be specific to this exact data, or it should not exist.
+    goals, a record of what's gone right or wrong, and their current situation — looking
+    for exactly one insight that would NOT be obvious from any single piece of that
+    information alone. Every item below is tagged with an id, like [fact#12] or
+    [goal#3] or [ledger#7] — your insight must connect at least two specific, different
+    tagged items, and you must name which ones. A vague sense of "the whole picture"
+    doesn't count; you need two actual items you can point to. It must not restate,
+    summarize, or repackage information that's already been said elsewhere in what you
+    were given — that is a failure, not a weaker version of success. Reject anything
+    generic ("stay organized," "consider your goals") — it should be specific to this
+    exact data, or it should not exist.
 
     Reply with JSON only, no prose:
-    {"category": "OPPORTUNITY|PATTERN|REMINDER|CONCERN|OPTIMIZATION|RELATIONSHIP|FINANCE|PRODUCTIVITY|LEARNING|BUSINESS", "insight": "<one or two sentences>"}
+    {"category": "OPPORTUNITY|PATTERN|REMINDER|CONCERN|OPTIMIZATION|RELATIONSHIP|FINANCE|PRODUCTIVITY|LEARNING|BUSINESS", "insight": "<one or two sentences>", "connectedFactIds": [<fact# numbers you actually connected>], "connectedGoalIds": [<goal# numbers you actually connected>], "connectedLedgerIds": [<ledger# numbers you actually connected>]}
 
-    If nothing meets that bar, reply {"category": null, "insight": ""}. Saying nothing
-    is the correct answer far more often than not — don't force one to exist.
+    If you can't name at least two specific tagged items your insight genuinely connects,
+    reply {"category": null, "insight": ""} instead. Saying nothing is the correct answer
+    far more often than not — don't force one to exist.
 """.trimIndent()
 
 @Serializable
 private data class DreamDto(
     val category: String? = null,
     val insight: String = "",
+    val connectedFactIds: List<Long> = emptyList(),
+    val connectedGoalIds: List<Long> = emptyList(),
+    val connectedLedgerIds: List<Long> = emptyList(),
 )
 
 /**
@@ -80,12 +87,24 @@ class DreamSynthesisWorker @AssistedInject constructor(
         val prompt = buildString {
             appendLine(snapshot.describe())
             appendLine()
-            appendLine("Known facts: " + facts.joinToString("; ") { it.value })
+            appendLine("Known facts: " + facts.joinToString("; ") { "[fact#${it.id}] ${it.value}" })
             appendLine()
-            appendLine("Active goals: " + if (goals.isEmpty()) "none" else goals.joinToString("; ") { it.text })
-            appendLine("Recent goal observations: " + if (goalObservations.isEmpty()) "none" else goalObservations.joinToString("; ") { it.text })
+            appendLine("Active goals: " + if (goals.isEmpty()) "none" else goals.joinToString("; ") { "[goal#${it.id}] ${it.text}" })
+            appendLine(
+                "Recent goal observations: " + if (goalObservations.isEmpty()) {
+                    "none"
+                } else {
+                    goalObservations.joinToString("; ") { "(about goal#${it.goalId}) ${it.text}" }
+                },
+            )
             appendLine()
-            appendLine("Recent things NUA has gotten wrong: " + if (ledger.isEmpty()) "none logged" else ledger.joinToString("; ") { it.description })
+            appendLine(
+                "Recent things NUA has gotten wrong: " + if (ledger.isEmpty()) {
+                    "none logged"
+                } else {
+                    ledger.joinToString("; ") { "[ledger#${it.id}] ${it.description}" }
+                },
+            )
         }
 
         val result = claudeApiClient.complete(
@@ -103,7 +122,20 @@ class DreamSynthesisWorker @AssistedInject constructor(
 
         val category = dto.category?.let { runCatching { DreamCategory.valueOf(it) }.getOrNull() }
         if (category != null && dto.insight.length > 15) {
-            dreamRepository.record(category, dto.insight)
+            val sources = validatedDreamSources(
+                connectedFactIds = dto.connectedFactIds,
+                connectedGoalIds = dto.connectedGoalIds,
+                connectedLedgerIds = dto.connectedLedgerIds,
+                availableFactIds = facts.map { it.id }.toSet(),
+                availableGoalIds = goals.map { it.id }.toSet(),
+                availableLedgerIds = ledger.map { it.id }.toSet(),
+            )
+            // Code-enforced, not just prompt-instructed: an insight that can't name two
+            // real, distinct things it connected is discarded here, the same "saying
+            // nothing is correct more often than not" outcome as any other reject path.
+            if (hasSufficientProvenance(sources)) {
+                dreamRepository.record(category, dto.insight, sources)
+            }
         }
 
         return Result.success()

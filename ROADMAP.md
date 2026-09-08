@@ -412,12 +412,12 @@ demo content.
   confidence rather than being deleted — the same "keep the audit trail" reasoning the
   Trust Ledger already uses for past mistakes (tested:
   `confidenceAfterResolutionCheck`/`isActiveRelationship`).
-- **Deliberately not yet built**: read-side resolution back into real entity objects, and
-  any writer. The RFC recommends Dreams as the first writer — it already computes which
-  facts/goals/ledger entries it cross-referenced to produce an insight, but currently only
-  as prose, and wiring it honestly requires extending `DreamSynthesisWorker`'s Claude
-  response schema to name what it connected structurally, not inferring it after the fact.
-  That's its own seam, not bundled in here.
+- **Dreams as the World Model's first writer** — every recorded Dream now writes one
+  `world_relationships` row per fact/goal/ledger entry it code-verifiably connected
+  (`DreamRepository.record`, `dreams/DreamSource.kt`), replacing what was previously only
+  a prompt instruction Claude could silently ignore. Read-side resolution into real entity
+  objects is still deliberately unbuilt — nothing reads `world_relationships` back yet,
+  only writes to it, since no reader's actual shape needs are proven.
 - **Memory OS: privacy classification and correction** (`#75`) — closed the last two gaps
   against the Memory OS requirements checklist (everything else — source, confidence,
   timestamps, relevance ranking, per-fact/bulk delete — already existed from Phase 6/8).
@@ -425,6 +425,17 @@ demo content.
   classifier. `FactDetailDialog` gained an inline "Correct this" edit path
   (`MemoryDao.correctFact`, keyed by `id`) alongside the existing "Forget this" — the
   first time a fact can be fixed rather than only deleted-and-relearned.
+- **Five directive-named enhancements, one pass**: **What Now?** returns a structured
+  `WhatNowResult` (reason/confidence/estimate, an honest "nothing needs attention" state,
+  `Do it`/`Remind later`/`Not relevant` controls — `Do it` still routes through the normal
+  `NuaIntentRouter` firewall, never a shortcut). **Daily Intelligence** briefings are now
+  sectioned (Today/Attention/Context changes/Risks/Opportunities/one recommendation)
+  instead of one paragraph, with an offline-safe context-only fallback. **Goals** carry a
+  user-chosen type (aspiration/goal/project/commitment/task/routine). **Decisions** can
+  capture facts/unknowns/constraints/options via a collapsed-by-default "Add more detail"
+  section. **Memory Vault / Privacy Centre** is a new `MemorySection` (what NUA knows,
+  local-vs-Claude, live permissions, data export, and a real delete-everything action
+  covering every store `security/EncryptionAudit.kt` names).
 
 ## Phase 14 — Voice-First & Personality Depth
 

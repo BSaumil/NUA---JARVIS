@@ -964,11 +964,297 @@ markdown-fenced reply still parses, `chatSummary()` renders each state distinctl
 Forward-reference and injection-boundary audits both clean.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated with the confirmed SHA once
-CI verifies green, per this project's own rule against claiming a test ran before checking.
+`7517b42` — pushed to `claude/new-session-efg0ha` and green on the first push (job-level,
+15/15 steps, including release-build/R8). Squash-merged to `Main` as `0d19cc2` (PR #30),
+CI re-verified green there too.
 
 ### Status
-PENDING CI verification at time of writing.
+VERIFIED at its exact CI-green SHA (`7517b42`).
+
+## September 5 — P1.10 (directive) Daily Intelligence: structured briefing sections
+
+The user asked for five specific enhancements picked from
+`docs/P1_INTELLIGENCE_CORE_EXECUTION_PLAN.md`'s survey; this is the first — the one
+recommended as smallest/most self-contained, reusing the sealed-result pattern the What
+Now? seam just established.
+
+### Investigation
+`MorningBriefing.generate()` returned one 2-4 sentence prose paragraph — no way for the
+notification or chat rendering to show "what needs attention" separately from "what
+changed" or "the one recommendation," and no distinct state for "nothing unusual" versus
+a Claude failure (both used to look like arbitrary prose). The directive's Daily
+Intelligence gate names exactly this: Today/Attention/Context changes/Risks/
+Opportunities/one recommendation, explicit "nothing unusual," offline-safe generation.
+Traced both call sites (`MorningBriefingWorker` — the scheduled push notification +
+chat-history insert, `MorningBriefingSkill` — the on-demand "give me my briefing" chat
+path) before changing the return type, since both needed updating consistently.
+
+### Implementation
+- `briefing/DailyBriefing.kt` — sealed `Summary(today, attention, contextChanges, risks,
+  opportunities, recommendation)`/`NothingUnusual`, replacing the collapsed string. No
+  `Unavailable` state (unlike `WhatNowResult`): a Claude failure here has a genuinely
+  useful deterministic fallback available (see below), so there was nothing honest for an
+  `Unavailable` branch to ever actually be produced from — an unreachable state is worse
+  than no state.
+- `briefing/DailyBriefingParsing.kt` — `parseDailyBriefingResponse(rawText):
+  DailyBriefing?`, a pure function reusing `extractJsonPayload`, returning null (not a
+  fabricated empty summary) on anything unparseable or too thin to trust. `renderText()`
+  — the shared notification/chat plain-text rendering, sections shown only when non-empty.
+- `MorningBriefing.generate()`: on `ClaudeResult.Failure` **or** an unparseable reply, now
+  falls back to a `DailyBriefing.Summary` built entirely from the already-fetched
+  `ContextSnapshot` (weather + event count) — the same data the old prose fallback used,
+  now honestly represented as a `Summary` with empty attention/risks/etc. rather than
+  either crashing or fabricating sections Claude never actually assessed. This is the
+  "offline-safe generation" the directive's gate names, not a new capability bolted on.
+- `MorningBriefingWorker`/`MorningBriefingSkill` both call `.renderText()` at their
+  existing single point of use — no behavior change to notification delivery, quiet
+  hours, or scheduling, which this seam doesn't touch.
+
+### Verification
+`DailyBriefingParsingTest` (8 cases: full briefing parses every section, `nothingUnusual:
+true` wins regardless of other fields, empty sections stay empty rather than backfilled,
+a blank `today` with `nothingUnusual: false` is rejected as too thin to trust, malformed
+JSON returns null, a blank recommendation is treated as none, `renderText` omits empty
+sections, `NothingUnusual` renders as one line). Forward-reference and injection-boundary
+audits both clean.
+
+### Commit
+`4ffb8e7` — pushed to `claude/new-session-efg0ha` and green on the first push. Job-level
+CI confirmed — 15/15 steps, including the release-build/R8 step.
+
+### Status
+VERIFIED at its exact CI-green SHA (`4ffb8e7`).
+
+## September 8 — Goal Engine: taxonomy (aspiration/goal/project/commitment/task/routine)
+
+Second of the five enhancements the user asked for from
+`docs/P1_INTELLIGENCE_CORE_EXECUTION_PLAN.md`'s survey.
+
+### Investigation
+`GoalEntity` was `{id, text, active, createdAt}` — flat text, confirmed by reading
+`goals/GoalRepository.kt` and `goals/GoalReviewWorker.kt` end to end rather than assuming.
+`GoalReviewWorker`'s weekly review loop treats every active goal identically regardless of
+what kind of thing it actually is; the directive's Goal Engine gate specifically names the
+aspiration/goal/project/commitment/task/routine distinction as missing.
+
+### Implementation
+- `goals/GoalType.kt` — the six-value enum, user-chosen at goal-creation time. `addGoal`
+  is only ever invoked from the Settings "Add a goal" dialog (confirmed via grep — no
+  other call site exists), so a type is never inferred from conversation, keeping the
+  directive's "never infer a binding commitment merely from conversation" invariant intact
+  by construction rather than by a runtime check.
+- `GoalEntity.type: GoalType = GoalType.GOAL` (additive, DB v13→14, existing rows default
+  to GOAL — the most generic value, not a guess at what they actually were).
+- `GoalRepository.addGoal`/`NuaViewModel.addGoal` both gained an optional `type` parameter
+  defaulting to `GOAL`, so nothing else calling `addGoal` needed to change.
+- Settings: `AddGoalDialog` gained a `FilterChip` type picker — the same pattern
+  `MemoryTypeFilterRow` already established for `MemoryType`, not a new UI idiom.
+  `GoalsCard` shows each goal's type alongside its text.
+
+### Explicitly not attempted this pass
+Milestones and dependencies, both named in the directive's Goal Engine gate alongside the
+taxonomy. Both are materially larger — a new sub-entity, progress tracking, dedicated UI —
+than the concretely-scoped taxonomy distinction. Left as a named future seam rather than
+rushed into this one, per "no speculative architecture."
+
+### Verification
+No dedicated test: `GoalType` is a bare enum with no logic to test, same precedent as
+`memory/MemoryType.kt` (also untested — confirmed no test file exists for it either).
+Forward-reference and injection-boundary audits both clean.
+
+### Commit
+`9fb837c` (code) — pushed to `claude/new-session-efg0ha`. CI-verified green (job-level,
+15/15 steps including release-build/R8) at `7a22f14`, the docs-only follow-up commit on
+top of it — same code, no changes between the two beyond this file.
+
+### Status
+VERIFIED at its exact CI-green SHA (`7a22f14`).
+
+## September 8 (continued) — Dreams 2.0: code-enforced provenance, first World Model writer
+
+Third of the five enhancements. The largest of the five: it makes Dreams the World
+Model's first writer, exactly as `docs/WORLD_MODEL_RFC.md` §15 recommended back in P1.9
+but explicitly left unbuilt as its own seam.
+
+### Investigation
+Read `DreamSynthesisWorker.kt` end to end: it already asks Claude to "connect at least
+two different things" via prompt instruction, but nothing in the code ever checked that
+instruction was actually followed — Claude could return a single-source or zero-source
+"insight" and it would be recorded identically to a genuinely cross-referenced one. No
+`DreamEntity` field recorded which specific facts/goals/ledger entries were used, and
+`WorldModelRepository` (P1.9) had `record()`/`relationshipsFor()` fully working but zero
+callers — confirmed via grep. The gap wasn't the World Model layer; it was that nothing
+had ever called it.
+
+### Implementation
+- `dreams/DreamSource.kt`: `DreamSource(type, id)` + `DreamSourceType` (`FACT`/`GOAL`/
+  `TRUST_LEDGER`, matching the RFC's existing `(type, id)` string vocabulary rather than
+  inventing a new one). `hasSufficientProvenance(sources)` — pure, the actual code-level
+  ">=2 distinct things" check, replacing the prompt-only version. `validatedDreamSources`
+  — pure, filters Claude's claimed connected-item IDs down to ones that were genuinely
+  offered to it, so a hallucinated or stale ID can never become a stored relationship.
+- `DreamSynthesisWorker`: every fact/goal/ledger item in the prompt is now tagged with its
+  real database id (`[fact#12]`, `[goal#3]`, `[ledger#7]`); the system prompt asks Claude
+  to name which specific tagged ids it connected, not just describe a connection in prose.
+  The parsed ids are validated against what was actually offered, then gated through
+  `hasSufficientProvenance` before a Dream is ever recorded — an insight that can't name
+  two real, distinct connected items is discarded, the same "saying nothing is correct
+  more often than not" outcome every other reject path already uses.
+- `DreamRepository.record()` now takes the validated `sources` and, after inserting the
+  `DreamEntity`, writes one `world_relationships` row per source via
+  `WorldModelRepository.record()`: `DREAM -[synthesized_from]-> {FACT|GOAL|TRUST_LEDGER}`,
+  `source = "dream_synthesis"`, full confidence. Not wrapped in a cross-DAO transaction —
+  matches this codebase's existing precedent (`TaskPlanner.confirmPlan` is similarly
+  sequential, non-transactional); a partial write here is a minor, recoverable
+  inconsistency, not a correctness hazard worth the added complexity.
+- `docs/WORLD_MODEL_RFC.md`'s status note updated — Dreams is no longer "the recommended
+  first writer" in the future tense; it's what shipped.
+
+### Explicitly not attempted this pass
+Read-side resolution of `world_relationships` back into real entity objects, or any UI
+surfacing what a Dream connected. `WorldModelRepository`'s own doc comment already argues
+against building resolution machinery before a real reader proves what shape it needs —
+still true here; this seam is a writer, not a reader.
+
+### Verification
+`DreamSourceTest` (6 cases: two distinct sources are sufficient, zero/one are not, the
+same source repeated doesn't count twice, `validatedDreamSources` drops ids never offered,
+an all-hallucinated id set yields nothing, duplicate ids in one list collapse to one
+source). Forward-reference and injection-boundary audits both clean.
+
+### Commit
+`8b1cdf4` — pushed to `claude/new-session-efg0ha`. CI-verified green (job-level, 15/15
+steps including release-build/R8) as part of the later `8dbd736` run, which contains this
+commit's code unchanged.
+
+### Status
+VERIFIED — confirmed CI-green at `8dbd736` (see the Memory Vault/Privacy Centre entry
+below for why final verification landed on that later SHA instead of this one directly).
+
+## September 8 (continued) — Decision Engine: facts/unknowns/constraints/options staging
+
+Fourth of the five enhancements.
+
+### Investigation
+`DecisionEntity` was `decision + reasoning + outcome` — confirmed by reading
+`decisions/DecisionRepository.kt` and the entity/DAO in `memory/MemoryStore.kt`. The
+directive's Decision Engine gate names a fuller structure: situation → facts → unknowns →
+constraints → options → recommendation → decision → actual outcome → lesson. Implementing
+the full nine-stage pipeline (including a recommendation-generation step) is a materially
+larger undertaking than the other four enhancements — scoped this pass to the concrete,
+directly actionable part: letting the user capture facts/unknowns/constraints/options at
+logging time, the fields the gate names that were entirely absent from the data model.
+"Situation" and "decision" already exist (`decision` field, `reasoning` covers the
+situation informally); "recommendation" would require an AI-generated suggestion this
+project's own "decisions are written to, not inferred" philosophy (matching the existing
+Decision Journal's explicit no-auto-capture design, and Goals' just-added
+never-inferred-type precedent) argues against manufacturing.
+
+### Implementation
+- `DecisionEntity` gains four nullable free-text fields: `facts`, `unknowns`,
+  `constraints`, `options` (additive, DB v14→15). Plain `String?`, not a serialized list —
+  no `List<String>` Room column exists anywhere in this codebase yet, and introducing a
+  `TypeConverter` for one feature would be exactly the kind of new infrastructure the
+  "no speculative architecture" rule cautions against when a free-text field (matching
+  `reasoning`'s own existing, already-proven shape) does the job just as well.
+- `DecisionRepository.record()`/`NuaViewModel.addDecision()` both gained four optional
+  parameters, all defaulting to null, so every existing caller kept compiling unchanged.
+- Settings: `AddDecisionDialog` gained a collapsed-by-default "Add more detail" section
+  revealing the four new fields — progressive disclosure, not a heavier form forced on
+  every decision. `DecisionsCard`'s row shows each populated field via a small shared
+  `DecisionDetailLine` composable (renders nothing when null).
+
+### Explicitly not attempted this pass
+An AI-generated recommendation step, and a "lesson learned" field distinct from the
+existing `outcome`. Both are real gaps against the full nine-stage structure the directive
+names, but each raises its own design questions (what does a recommendation mean without
+executing anything; is "lesson" meaningfully different from outcome, or does forcing the
+distinction just add form-filling burden) that deserve their own investigation rather than
+being rushed into this pass alongside four other enhancements in flight.
+
+### Verification
+No dedicated test: the four new fields are plain data with no logic — the existing
+`DecisionEntity(...)` construction sites in `TimelineBuilderTest`/`SecondBrainSearchTest`
+already use named parameters, so both compile unchanged with no update needed. Forward-
+reference and injection-boundary audits both clean.
+
+### Commit
+`fd6a7e1` — pushed to `claude/new-session-efg0ha`. CI-verified green (job-level, 15/15
+steps including release-build/R8) as part of the later `8dbd736` run, which contains this
+commit's code unchanged.
+
+### Status
+VERIFIED — confirmed CI-green at `8dbd736`.
+
+## September 8 (continued) — Memory Vault / Privacy Centre: a consolidated screen
+
+Fifth and final of the five enhancements the user asked for.
+
+### Investigation
+Read `SettingsScreen.kt` end to end before assuming a gap: per-fact provenance/confidence/
+correction/sensitivity already exist (`FactRow`/`FactDetailDialog`, P1.10), encryption-at-
+rest status already exists (`SecurityCard`, reading `security/EncryptionAudit.kt`), and
+recent/autonomous actions already exist (`TrustCard`/`AuditTrailCard`). What genuinely
+didn't exist anywhere: an explicit statement of what's local versus sent to Claude, a
+permissions overview, a real data export, and a real "delete everything" action — the
+directive's Memory Vault/Privacy Centre gate names all four. Also checked `NuaDestination`
+— the five-destination bottom nav is a deliberate, closed design (`#38`'s own doc comment:
+"a map of five ideas, not a menu"); `MemoryScreen` already solves exactly this problem for
+Search/Timeline/Documents via a `MemorySection` chip row nested under one destination
+rather than three more bottom-nav icons — the right place to add a fourth section, not a
+sixth destination.
+
+### Implementation
+- `ui/nav/NuaDestination.kt`: `MemorySection.PRIVACY` added to the existing enum —
+  `SectionChips` is already data-driven off `MemorySection.entries`, so no chip-rendering
+  code needed to change at all.
+- `ui/PrivacyCentreScreen.kt` (`PrivacyCentreContent`): five cards — what NUA knows
+  (counts, pointing back to the existing per-fact detail view rather than duplicating it),
+  local-vs-Claude (a factual statement of what this app's own code does — only relevant
+  facts are included in a Claude request, nothing else is sent anywhere — not a claim
+  about Anthropic's own retention policy, which isn't this app's to promise), permissions
+  (the app's actual dangerous runtime permissions, checked live via
+  `ContextCompat.checkSelfPermission`, not a static list), export, and delete-everything
+  (behind a confirmation dialog naming exactly what gets erased).
+- `privacy/DataExport.kt`: `buildDataExport()`, a pure function producing a plain-text
+  dump of facts/goals/decisions/dreams — not a proprietary format. Export fires a plain
+  `Intent.ACTION_SEND`, letting the user choose where it goes rather than this app
+  picking a destination for them.
+- `privacy/PrivacyRepository.kt`: `resetAllData()` clears every category
+  `security/EncryptionAudit.kt` itself names as stored — `NuaDatabase.clearAllTables()`,
+  `SecureKeyRepository.clearApiKey()`, `OwnerVoiceProfileStore.clear()` — so "delete
+  everything" is actually complete against this app's own audit of what it stores, not a
+  partial gesture that leaves the voice profile or API key behind.
+
+### Verification
+`DataExportTest` (3 cases: an empty export still names every section as empty rather than
+omitting them, a populated export includes every category's real content, an inactive
+goal is labeled as such). No test for `PrivacyRepository.resetAllData()` — it's a thin,
+untestable-without-Robolectric sequence of three real side effects (DB clear, two
+encrypted-store clears), same precedent as this codebase's other impure orchestration
+classes (`TaskPlanner`, `MorningBriefing`) that also have no direct unit test. Forward-
+reference and injection-boundary audits both clean.
+
+**CI caught a real regression here, not a false negative**: `NuaDestinationTest`'s
+`memory sections cover the three views onto what NUA knows` was a deliberate regression
+pin (mirroring the "five destinations, not an accident" test right above it) that failed
+the first push, correctly, because adding `PRIVACY` genuinely changed
+`MemorySection.entries` from three values to four. Since the fourth section was this
+seam's own deliberate, documented choice (nested under `MEMORY` rather than promoted to a
+sixth bottom-nav destination, matching that same test file's own top-level reasoning),
+the right fix was updating the test's expectation to four, not reverting the feature —
+exactly the "a pin that fails on genuine, intentional change gets updated, not weakened"
+principle this project has applied to itself before.
+
+### Commit
+`cc46d50` (code) — pushed to `claude/new-session-efg0ha`; first CI run
+(`34179816341`) failed on a genuine regression (see the "CI caught a real regression"
+note above) — `NuaDestinationTest` correctly caught `MemorySection` growing from three
+entries to four, fixed at `8dbd736`, which is job-level CI-verified green (15/15 steps,
+release-build/R8 included, Room schema validated at DB v15).
+
+### Status
+VERIFIED at its exact CI-green SHA (`8dbd736`).
 
 ## What this history is for
 

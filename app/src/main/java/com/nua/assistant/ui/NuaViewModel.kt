@@ -49,6 +49,7 @@ import com.nua.assistant.documents.documentTypeForMime
 import com.nua.assistant.dreams.DreamRepository
 import com.nua.assistant.geofencing.GeofenceManager
 import com.nua.assistant.goals.GoalRepository
+import com.nua.assistant.goals.GoalType
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DocumentEntity
 import com.nua.assistant.memory.DreamEntity
@@ -68,6 +69,8 @@ import com.nua.assistant.network.ConnectivityMonitor
 import com.nua.assistant.notifications.NotificationReplySender
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.notifications.NotificationSummary
+import com.nua.assistant.privacy.PrivacyRepository
+import com.nua.assistant.privacy.buildDataExport
 import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
@@ -165,6 +168,7 @@ class NuaViewModel @Inject constructor(
     private val whatNowAdvisor: WhatNowAdvisor,
     private val dreamRepository: DreamRepository,
     private val decisionRepository: DecisionRepository,
+    private val privacyRepository: PrivacyRepository,
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
     private val nuaStateRepository: NuaStateRepository,
     private val skillCatalog: SkillCatalog,
@@ -353,8 +357,15 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch { documentRepository.delete(id) }
     }
 
-    fun addDecision(decision: String, reasoning: String?) {
-        viewModelScope.launch { decisionRepository.record(decision, reasoning) }
+    fun addDecision(
+        decision: String,
+        reasoning: String?,
+        facts: String? = null,
+        unknowns: String? = null,
+        constraints: String? = null,
+        options: String? = null,
+    ) {
+        viewModelScope.launch { decisionRepository.record(decision, reasoning, facts, unknowns, constraints, options) }
     }
 
     fun recordDecisionOutcome(id: Long, outcome: String) {
@@ -363,6 +374,17 @@ class NuaViewModel @Inject constructor(
 
     fun removeDecision(id: Long) {
         viewModelScope.launch { decisionRepository.delete(id) }
+    }
+
+    /** A fresh export text built from whatever's currently loaded — cheap, pure, no need
+     *  to cache since it's only read when the user actually taps Export. */
+    fun dataExportText(): String =
+        buildDataExport(facts.value, goals.value, decisions.value, dreams.value)
+
+    /** Irreversible — PrivacyCentreContent's own confirmation dialog is the only gate;
+     *  this makes no second check, matching PrivacyRepository.resetAllData's contract. */
+    fun resetDeviceData() {
+        viewModelScope.launch { privacyRepository.resetAllData() }
     }
 
     // Continuous conversation mode: once woken by voice, keep listening for a few
@@ -971,9 +993,9 @@ class NuaViewModel @Inject constructor(
         _nextBestAction.value = null
     }
 
-    fun addGoal(text: String) {
+    fun addGoal(text: String, type: GoalType = GoalType.GOAL) {
         if (text.isBlank()) return
-        viewModelScope.launch { goalRepository.addGoal(text.trim()) }
+        viewModelScope.launch { goalRepository.addGoal(text.trim(), type) }
     }
 
     fun removeGoal(id: Long) {

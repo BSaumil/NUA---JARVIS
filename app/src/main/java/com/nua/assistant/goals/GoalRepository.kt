@@ -16,8 +16,8 @@ import javax.inject.Singleton
 class GoalRepository @Inject constructor(
     private val goalDao: GoalDao,
 ) {
-    suspend fun addGoal(text: String) {
-        goalDao.insertGoal(GoalEntity(text = text))
+    suspend fun addGoal(text: String, type: GoalType = GoalType.GOAL) {
+        goalDao.insertGoal(GoalEntity(text = text, type = type))
     }
 
     suspend fun deactivateGoal(goalId: Long) {

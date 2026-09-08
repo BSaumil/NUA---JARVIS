@@ -65,6 +65,7 @@ import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
+import com.nua.assistant.goals.GoalType
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.diagnostics.DiagnosticCheck
@@ -114,11 +115,11 @@ fun SettingsScreen(
     onEnableAutoApprove: (NuaActionType) -> Unit,
     goals: List<GoalEntity>,
     goalObservations: List<GoalObservationEntity>,
-    onAddGoal: (String) -> Unit,
+    onAddGoal: (text: String, type: GoalType) -> Unit,
     onRemoveGoal: (Long) -> Unit,
     dreams: List<DreamEntity>,
     decisions: List<DecisionEntity>,
-    onAddDecision: (decision: String, reasoning: String?) -> Unit,
+    onAddDecision: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordDecisionOutcome: (id: Long, outcome: String) -> Unit,
     onRemoveDecision: (Long) -> Unit,
     visionMonitors: List<VisionMonitorEntity>,
@@ -672,7 +673,7 @@ private fun AuditTrailCard(actionOutcomes: List<ActionOutcomeEntity>) {
 private fun GoalsCard(
     goals: List<GoalEntity>,
     observations: List<GoalObservationEntity>,
-    onAdd: (String) -> Unit,
+    onAdd: (text: String, type: GoalType) -> Unit,
     onRemove: (Long) -> Unit,
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
@@ -695,6 +696,11 @@ private fun GoalsCard(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(goal.text, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            goal.type.name.lowercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         if (latest != null) {
                             Text(latest.text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
@@ -710,8 +716,8 @@ private fun GoalsCard(
 
     if (showAddDialog) {
         AddGoalDialog(
-            onConfirm = { text ->
-                onAdd(text)
+            onConfirm = { text, type ->
+                onAdd(text, type)
                 showAddDialog = false
             },
             onDismiss = { showAddDialog = false },
@@ -719,21 +725,34 @@ private fun GoalsCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AddGoalDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+private fun AddGoalDialog(onConfirm: (text: String, type: GoalType) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf(GoalType.GOAL) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New goal") },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("e.g. \"Get my mornings under control\"") },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("e.g. \"Get my mornings under control\"") },
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GoalType.entries.forEach { candidate ->
+                        FilterChip(
+                            selected = type == candidate,
+                            onClick = { type = candidate },
+                            label = { Text(candidate.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
-            TextButton(onClick = { if (text.isNotBlank()) onConfirm(text) }, enabled = text.isNotBlank()) { Text("Add") }
+            TextButton(onClick = { if (text.isNotBlank()) onConfirm(text, type) }, enabled = text.isNotBlank()) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -772,7 +791,7 @@ private fun DreamsCard(dreams: List<DreamEntity>) {
 @Composable
 private fun DecisionsCard(
     decisions: List<DecisionEntity>,
-    onAdd: (decision: String, reasoning: String?) -> Unit,
+    onAdd: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordOutcome: (id: Long, outcome: String) -> Unit,
     onRemove: (Long) -> Unit,
 ) {
@@ -804,6 +823,10 @@ private fun DecisionsCard(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            DecisionDetailLine("Facts", decision.facts)
+                            DecisionDetailLine("Unknowns", decision.unknowns)
+                            DecisionDetailLine("Constraints", decision.constraints)
+                            DecisionDetailLine("Options considered", decision.options)
                             if (decision.outcome != null) {
                                 Text(
                                     "Outcome: ${decision.outcome}",
@@ -826,8 +849,8 @@ private fun DecisionsCard(
 
     if (showAddDialog) {
         AddDecisionDialog(
-            onConfirm = { decision, reasoning ->
-                onAdd(decision, reasoning)
+            onConfirm = { decision, reasoning, facts, unknowns, constraints, options ->
+                onAdd(decision, reasoning, facts, unknowns, constraints, options)
                 showAddDialog = false
             },
             onDismiss = { showAddDialog = false },
@@ -846,9 +869,27 @@ private fun DecisionsCard(
 }
 
 @Composable
-private fun AddDecisionDialog(onConfirm: (decision: String, reasoning: String?) -> Unit, onDismiss: () -> Unit) {
+private fun DecisionDetailLine(label: String, value: String?) {
+    if (value == null) return
+    Text(
+        "$label: $value",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun AddDecisionDialog(
+    onConfirm: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var decision by remember { mutableStateOf("") }
     var reasoning by remember { mutableStateOf("") }
+    var showMoreDetail by remember { mutableStateOf(false) }
+    var facts by remember { mutableStateOf("") }
+    var unknowns by remember { mutableStateOf("") }
+    var constraints by remember { mutableStateOf("") }
+    var options by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Log a decision") },
@@ -864,11 +905,46 @@ private fun AddDecisionDialog(onConfirm: (decision: String, reasoning: String?) 
                     onValueChange = { reasoning = it },
                     placeholder = { Text("Why (optional)") },
                 )
+                if (!showMoreDetail) {
+                    TextButton(onClick = { showMoreDetail = true }) { Text("Add more detail") }
+                } else {
+                    OutlinedTextField(
+                        value = facts,
+                        onValueChange = { facts = it },
+                        placeholder = { Text("Facts — what you actually knew (optional)") },
+                    )
+                    OutlinedTextField(
+                        value = unknowns,
+                        onValueChange = { unknowns = it },
+                        placeholder = { Text("Unknowns — what you didn't know (optional)") },
+                    )
+                    OutlinedTextField(
+                        value = constraints,
+                        onValueChange = { constraints = it },
+                        placeholder = { Text("Constraints — time, money, etc. (optional)") },
+                    )
+                    OutlinedTextField(
+                        value = options,
+                        onValueChange = { options = it },
+                        placeholder = { Text("Other options you considered (optional)") },
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { if (decision.isNotBlank()) onConfirm(decision, reasoning.ifBlank { null }) },
+                onClick = {
+                    if (decision.isNotBlank()) {
+                        onConfirm(
+                            decision,
+                            reasoning.ifBlank { null },
+                            facts.ifBlank { null },
+                            unknowns.ifBlank { null },
+                            constraints.ifBlank { null },
+                            options.ifBlank { null },
+                        )
+                    }
+                },
                 enabled = decision.isNotBlank(),
             ) { Text("Save") }
         },
