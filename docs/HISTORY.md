@@ -1063,10 +1063,70 @@ No dedicated test: `GoalType` is a bare enum with no logic to test, same precede
 Forward-reference and injection-boundary audits both clean.
 
 ### Commit
-`9fb837c` — pushed to `claude/new-session-efg0ha`.
+`9fb837c` (code) — pushed to `claude/new-session-efg0ha`. CI-verified green (job-level,
+15/15 steps including release-build/R8) at `7a22f14`, the docs-only follow-up commit on
+top of it — same code, no changes between the two beyond this file.
 
 ### Status
-Pushed; CI verification for this exact SHA to be confirmed next.
+VERIFIED at its exact CI-green SHA (`7a22f14`).
+
+## September 8 (continued) — Dreams 2.0: code-enforced provenance, first World Model writer
+
+Third of the five enhancements. The largest of the five: it makes Dreams the World
+Model's first writer, exactly as `docs/WORLD_MODEL_RFC.md` §15 recommended back in P1.9
+but explicitly left unbuilt as its own seam.
+
+### Investigation
+Read `DreamSynthesisWorker.kt` end to end: it already asks Claude to "connect at least
+two different things" via prompt instruction, but nothing in the code ever checked that
+instruction was actually followed — Claude could return a single-source or zero-source
+"insight" and it would be recorded identically to a genuinely cross-referenced one. No
+`DreamEntity` field recorded which specific facts/goals/ledger entries were used, and
+`WorldModelRepository` (P1.9) had `record()`/`relationshipsFor()` fully working but zero
+callers — confirmed via grep. The gap wasn't the World Model layer; it was that nothing
+had ever called it.
+
+### Implementation
+- `dreams/DreamSource.kt`: `DreamSource(type, id)` + `DreamSourceType` (`FACT`/`GOAL`/
+  `TRUST_LEDGER`, matching the RFC's existing `(type, id)` string vocabulary rather than
+  inventing a new one). `hasSufficientProvenance(sources)` — pure, the actual code-level
+  ">=2 distinct things" check, replacing the prompt-only version. `validatedDreamSources`
+  — pure, filters Claude's claimed connected-item IDs down to ones that were genuinely
+  offered to it, so a hallucinated or stale ID can never become a stored relationship.
+- `DreamSynthesisWorker`: every fact/goal/ledger item in the prompt is now tagged with its
+  real database id (`[fact#12]`, `[goal#3]`, `[ledger#7]`); the system prompt asks Claude
+  to name which specific tagged ids it connected, not just describe a connection in prose.
+  The parsed ids are validated against what was actually offered, then gated through
+  `hasSufficientProvenance` before a Dream is ever recorded — an insight that can't name
+  two real, distinct connected items is discarded, the same "saying nothing is correct
+  more often than not" outcome every other reject path already uses.
+- `DreamRepository.record()` now takes the validated `sources` and, after inserting the
+  `DreamEntity`, writes one `world_relationships` row per source via
+  `WorldModelRepository.record()`: `DREAM -[synthesized_from]-> {FACT|GOAL|TRUST_LEDGER}`,
+  `source = "dream_synthesis"`, full confidence. Not wrapped in a cross-DAO transaction —
+  matches this codebase's existing precedent (`TaskPlanner.confirmPlan` is similarly
+  sequential, non-transactional); a partial write here is a minor, recoverable
+  inconsistency, not a correctness hazard worth the added complexity.
+- `docs/WORLD_MODEL_RFC.md`'s status note updated — Dreams is no longer "the recommended
+  first writer" in the future tense; it's what shipped.
+
+### Explicitly not attempted this pass
+Read-side resolution of `world_relationships` back into real entity objects, or any UI
+surfacing what a Dream connected. `WorldModelRepository`'s own doc comment already argues
+against building resolution machinery before a real reader proves what shape it needs —
+still true here; this seam is a writer, not a reader.
+
+### Verification
+`DreamSourceTest` (6 cases: two distinct sources are sufficient, zero/one are not, the
+same source repeated doesn't count twice, `validatedDreamSources` drops ids never offered,
+an all-hallucinated id set yields nothing, duplicate ids in one list collapse to one
+source). Forward-reference and injection-boundary audits both clean.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing.
 
 ## What this history is for
 

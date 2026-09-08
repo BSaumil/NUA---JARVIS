@@ -8,8 +8,13 @@ hybrid vector / cloud graph) this RFC's §2 recommendation maps onto.
 automatically add a graph database. First create a World Model RFC" — before any code for
 the World Model is written. The RFC was the first seam; the additive relationship table
 and `WorldModelRepository` were a separate, subsequent seam, per "one architectural seam
-at a time." Deliberately still unbuilt: read-side resolution into real entity objects
-beyond single-hop lookup, and any writer (Dreams is the RFC's recommended first writer).
+at a time." Dreams — the RFC's recommended first writer — now writes `DREAM
+-[synthesized_from]-> source` rows for each fact/goal/ledger entry it code-verifiably
+connected (`DreamRepository.record`, `dreams/DreamSource.kt`'s `hasSufficientProvenance`/
+`validatedDreamSources`), replacing what was previously only a prompt instruction Claude
+could silently ignore. Deliberately still unbuilt: read-side resolution into real entity
+objects beyond single-hop lookup — nothing reads `world_relationships` back yet, only
+writes to it, since no reader's actual shape needs are proven yet.
 
 ## 1. Problem statement
 
