@@ -50,9 +50,12 @@ class NuaDestinationTest {
     }
 
     @Test
-    fun `memory sections cover the three views onto what NUA knows`() {
+    fun `memory sections cover the four views onto what NUA knows`() {
+        // PRIVACY joined the other three deliberately (Memory Vault/Privacy Centre) —
+        // nested under MEMORY rather than promoted to a sixth bottom-nav destination,
+        // same reasoning the "five destinations" test above pins for the top level.
         assertEquals(
-            listOf(MemorySection.SEARCH, MemorySection.TIMELINE, MemorySection.DOCUMENTS),
+            listOf(MemorySection.SEARCH, MemorySection.TIMELINE, MemorySection.DOCUMENTS, MemorySection.PRIVACY),
             MemorySection.entries.toList(),
         )
     }

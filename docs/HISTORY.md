@@ -1230,6 +1230,17 @@ encrypted-store clears), same precedent as this codebase's other impure orchestr
 classes (`TaskPlanner`, `MorningBriefing`) that also have no direct unit test. Forward-
 reference and injection-boundary audits both clean.
 
+**CI caught a real regression here, not a false negative**: `NuaDestinationTest`'s
+`memory sections cover the three views onto what NUA knows` was a deliberate regression
+pin (mirroring the "five destinations, not an accident" test right above it) that failed
+the first push, correctly, because adding `PRIVACY` genuinely changed
+`MemorySection.entries` from three values to four. Since the fourth section was this
+seam's own deliberate, documented choice (nested under `MEMORY` rather than promoted to a
+sixth bottom-nav destination, matching that same test file's own top-level reasoning),
+the right fix was updating the test's expectation to four, not reverting the feature —
+exactly the "a pin that fails on genuine, intentional change gets updated, not weakened"
+principle this project has applied to itself before.
+
 ### Commit
 `<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
 
