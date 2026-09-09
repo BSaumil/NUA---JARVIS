@@ -289,6 +289,9 @@ interface DecisionDao {
 
     @Query("SELECT * FROM decisions ORDER BY decidedAt DESC")
     fun observeAll(): Flow<List<DecisionEntity>>
+
+    @Query("SELECT * FROM decisions ORDER BY decidedAt DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<DecisionEntity>
 }
 
 /**

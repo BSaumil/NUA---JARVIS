@@ -74,15 +74,14 @@ class DreamSynthesisWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        val snapshot = contextEngine.currentSnapshot()
         val facts = memoryDao.getAllFacts()
-        val goals = goalRepository.activeGoals()
+        val goals = snapshot.activeGoals
         val goalObservations = goals.mapNotNull { goalRepository.latestObservation(it.id) }
         val ledger = trustRepository.recentLedger(limit = 10)
 
         val signalCount = facts.size + goalObservations.size + ledger.size
         if (signalCount < MINIMUM_SIGNAL_COUNT) return Result.success()
-
-        val snapshot = contextEngine.currentSnapshot()
 
         val prompt = buildString {
             appendLine(snapshot.describe())

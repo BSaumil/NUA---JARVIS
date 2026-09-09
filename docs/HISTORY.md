@@ -1256,6 +1256,71 @@ release-build/R8 included, Room schema validated at DB v15).
 ### Status
 VERIFIED at its exact CI-green SHA (`8dbd736`).
 
+## September 9 — Context Engine: broader signal coverage
+
+The user's second round: "Context Engine signal coverage, Earned Autonomy, World Model,
+and whatever's left in original survey." Starting with Context Engine since What Now?/
+Daily Intelligence/Dreams/Goal Review already read from it — broadening it benefits all
+four for free.
+
+### Investigation
+`ContextSnapshot` covered weather/calendar/connectivity/notifications only.
+`WhatNowAdvisor`, `GoalReviewWorker`, and `DreamSynthesisWorker` each separately called
+`goalRepository.activeGoals()` themselves rather than reading it off the snapshot, despite
+`ContextEngine`'s own doc comment promising exactly this consolidation. Decisions were
+never surfaced to any of these prompts at all. "Routines" (directive-named) has no
+existing signal in this codebase — and building real behavioural pattern-detection over
+historical activity would be a new, unproven capability, not a gap-fill; reusing the
+`GoalType.ROUTINE` tag just added this session is the honest version of this signal: user-
+declared, not behaviourally inferred. Location is directive-named too, and
+`ACCESS_COARSE_LOCATION` is already requested at app start (`MainActivity`) — checked
+`GeofenceManager` to confirm what's already available versus what geofencing's continuous
+monitoring specifically needs (`ACCESS_FINE_LOCATION`/`ACCESS_BACKGROUND_LOCATION`, not
+required for a one-shot lookup).
+
+### Implementation
+- `ContextSnapshot` gains `activeGoals`, `recentDecisions` (last 5), and a computed
+  `routines` property (`activeGoals.filter { it.type == GoalType.ROUTINE }` — no new
+  query). `describe()` extended with all three plus `currentPlace`.
+- `context/CurrentPlaceResolver.kt` — resolves which saved geofence (if any) the user is
+  currently near, via a one-shot `FusedLocationProviderClient.lastLocation` read wrapped
+  in `suspendCancellableCoroutine` (the exact pattern `ai/CancellableHttpCall.kt` already
+  established for a Play-Services-style callback API, not a new idiom). Only the matched
+  place's *name* ever reaches `ContextSnapshot`/a Claude prompt — raw coordinates never
+  leave this class, matching "local-first... minimise transmitted context." Skips the
+  location read entirely when there are no saved geofences to match against, since the
+  result could only ever be null.
+- `context/GeofenceProximity.kt` — `haversineDistanceMeters`/`nearestContainingGeofence`,
+  pure Kotlin (not `android.location.Location.distanceBetween`, which isn't callable from
+  this project's Robolectric-free JVM unit tests) so the actual matching logic is directly
+  testable.
+- `DecisionDao.recent(limit)` + `DecisionRepository.recent(limit = 5)` — the only missing
+  piece; `DecisionEntity`/the rest of the Decision Journal already existed.
+- `WhatNowAdvisor` no longer fetches goals separately — `snapshot.describe()` already
+  includes them, so the redundant fetch and manual append were removed (a real
+  simplification, not just a refactor for its own sake). `GoalReviewWorker`/
+  `DreamSynthesisWorker` similarly now read `snapshot.activeGoals` instead of a second
+  `goalRepository.activeGoals()` call — one fewer redundant query each, same data.
+  `MorningBriefing` needed no changes at all: it already calls `snapshot.describe()`
+  verbatim, so Daily Intelligence gained goal/decision/place awareness for free.
+
+### Verification
+`GeofenceProximityTest` (6 cases: identical points are zero distance apart, a known
+~13km distance comes out roughly right, a point inside a radius matches, a point outside
+every radius matches nothing, an empty geofence list never matches, the first containing
+match wins when radii overlap) and `ContextSnapshotTest` (2 cases: `routines` is exactly
+the ROUTINE-typed goals and nothing else, an empty goal list yields an empty routine
+list rather than an error). Confirmed via grep that no file other than `ContextEngine.kt`
+itself constructs `ContextSnapshot(...)`, so widening its constructor was a safe, additive
+change with exactly one production call site to update. Forward-reference and
+injection-boundary audits both clean.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
