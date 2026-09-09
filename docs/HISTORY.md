@@ -1321,6 +1321,55 @@ injection-boundary audits both clean.
 ### Status
 PENDING CI verification at time of writing.
 
+## September 9 (continued) — World Model: read-side resolution, first real reader
+
+Second of the four items from the user's second round.
+
+### Investigation
+`WorldModelRepository`'s own doc comment (P1.9) said resolution was deliberately deferred
+until a real reader existed to prove the shape it needed — building it blind would have
+been exactly the speculative work the RFC argues against. That reader now exists: Dreams
+writes real `DREAM -[synthesized_from]-> {FACT|GOAL|TRUST_LEDGER}` rows (this session's
+earlier Dreams 2.0 seam). No DAO had an id-based lookup for any of those three entity
+types — `MemoryDao`/`GoalDao`/`TrustLedgerDao` all only supported key-based or bulk
+queries — confirmed by reading each interface rather than assuming.
+
+### Implementation
+- `WorldModelRepository.otherSideOf(relationship, type, id)` — pure, direction-agnostic:
+  a relationship row has a `from`/`to` side, but a caller asking "what's this connected
+  to" shouldn't have to know which side it queried from.
+- `WorldModelRepository.relationshipsWithSummaries(type, id)` — `relationshipsFor` with
+  each connected entity resolved to a short summary (a fact's value, a goal's text, a
+  ledger entry's description). `ResolvedRelationship.summary` is null for an orphan the
+  stored confidence hasn't caught up to yet, or an entity type this resolver doesn't
+  know how to read — never a fabricated placeholder. Deliberately covers only
+  FACT/GOAL/TRUST_LEDGER — the types a real writer produces today, not every type the
+  RFC's examples name (DECISION/DOCUMENT have no writer yet).
+- `MemoryDao.getFactById`, `GoalDao.getGoalById`, `TrustLedgerDao.getById` — the three
+  missing id-based lookups, additive.
+- `NuaViewModel.dreamConnections: StateFlow<Map<Long, List<String>>>` — derived from the
+  existing `dreams` flow via `.map`, resolved once per dream-list change, not per
+  recomposition.
+- `DreamsCard` (Settings) shows "Connected to: ..." under each dream when it has
+  resolved connections — the one real UI consumer, not a general graph browser (per the
+  directive's own "read-side resolution... nothing reads this data yet" framing: build
+  exactly the reader that's needed, not speculative infrastructure around it).
+
+### Verification
+Extended the existing `WorldModelRepositoryTest` (from P1.9) with 3 new cases for
+`otherSideOf`: queried from the from-side resolves to the to-side, queried from the
+to-side resolves to the from-side, and a same-type-different-id relationship doesn't
+short-circuit on type alone (both `fromType`/`fromId` must match, not just `fromType`).
+Forward-reference and injection-boundary audits both clean. Confirmed via grep no other
+file constructs `DreamsCard(...)` or `WorldModelRepository(...)` directly, so widening
+both was additive with exactly one production call site each to update.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

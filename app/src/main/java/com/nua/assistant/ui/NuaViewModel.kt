@@ -47,6 +47,7 @@ import com.nua.assistant.documents.DocxTextExtractor
 import com.nua.assistant.documents.PdfTextExtractor
 import com.nua.assistant.documents.documentTypeForMime
 import com.nua.assistant.dreams.DreamRepository
+import com.nua.assistant.world.WorldModelRepository
 import com.nua.assistant.geofencing.GeofenceManager
 import com.nua.assistant.goals.GoalRepository
 import com.nua.assistant.goals.GoalType
@@ -169,6 +170,7 @@ class NuaViewModel @Inject constructor(
     private val dreamRepository: DreamRepository,
     private val decisionRepository: DecisionRepository,
     private val privacyRepository: PrivacyRepository,
+    private val worldModelRepository: WorldModelRepository,
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
     private val nuaStateRepository: NuaStateRepository,
     private val skillCatalog: SkillCatalog,
@@ -254,6 +256,19 @@ class NuaViewModel @Inject constructor(
 
     val dreams: StateFlow<List<DreamEntity>> = dreamRepository.observeRecent()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** dreamId -> what it connected (resolved summaries, e.g. a fact's value or a goal's
+     *  text) — World Model read-side resolution, the first real reader of the
+     *  world_relationships rows DreamRepository writes. Orphaned/unresolvable connections
+     *  are silently dropped here (see WorldModelRepository.ResolvedRelationship.summary's
+     *  own doc comment for why null isn't shown as a placeholder). */
+    val dreamConnections: StateFlow<Map<Long, List<String>>> = dreams
+        .map { list ->
+            list.associate { dream ->
+                dream.id to worldModelRepository.relationshipsWithSummaries("DREAM", dream.id).mapNotNull { it.summary }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val decisions: StateFlow<List<DecisionEntity>> = decisionRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

@@ -118,6 +118,7 @@ fun SettingsScreen(
     onAddGoal: (text: String, type: GoalType) -> Unit,
     onRemoveGoal: (Long) -> Unit,
     dreams: List<DreamEntity>,
+    dreamConnections: Map<Long, List<String>>,
     decisions: List<DecisionEntity>,
     onAddDecision: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordDecisionOutcome: (id: Long, outcome: String) -> Unit,
@@ -165,7 +166,7 @@ fun SettingsScreen(
             item { TrustCard(trustScore, trustLedger, autonomySuggestions, onEnableAutoApprove) }
             item { AuditTrailCard(actionOutcomes) }
             item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
-            item { DreamsCard(dreams) }
+            item { DreamsCard(dreams, dreamConnections) }
             item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
             item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
             item { DiagnosticsCard(diagnostics, testingApiConnection, onRefreshDiagnostics, onTestApiConnection) }
@@ -759,7 +760,7 @@ private fun AddGoalDialog(onConfirm: (text: String, type: GoalType) -> Unit, onD
 }
 
 @Composable
-private fun DreamsCard(dreams: List<DreamEntity>) {
+private fun DreamsCard(dreams: List<DreamEntity>, dreamConnections: Map<Long, List<String>>) {
     Card {
         Column(modifier = Modifier.padding(12.dp)) {
             Text("NUA Dreams", style = MaterialTheme.typography.titleSmall)
@@ -781,6 +782,14 @@ private fun DreamsCard(dreams: List<DreamEntity>) {
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
+                        val connections = dreamConnections[dream.id].orEmpty()
+                        if (connections.isNotEmpty()) {
+                            Text(
+                                "Connected to: " + connections.joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

@@ -91,6 +91,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val goals by viewModel.goals.collectAsState()
     val goalObservations by viewModel.goalObservations.collectAsState()
     val dreams by viewModel.dreams.collectAsState()
+    val dreamConnections by viewModel.dreamConnections.collectAsState()
     val decisions by viewModel.decisions.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
     val secondBrainQuery by viewModel.secondBrainQuery.collectAsState()
@@ -240,6 +241,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onAddGoal = viewModel::addGoal,
                     onRemoveGoal = viewModel::removeGoal,
                     dreams = dreams,
+                    dreamConnections = dreamConnections,
                     decisions = decisions,
                     onAddDecision = viewModel::addDecision,
                     onRecordDecisionOutcome = viewModel::recordDecisionOutcome,

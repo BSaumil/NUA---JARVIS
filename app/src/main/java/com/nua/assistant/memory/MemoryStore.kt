@@ -129,6 +129,9 @@ interface TrustLedgerDao {
 
     @Query("SELECT * FROM trust_ledger WHERE timestamp >= :sinceMillis ORDER BY timestamp ASC")
     suspend fun since(sinceMillis: Long): List<TrustLedgerEntity>
+
+    @Query("SELECT * FROM trust_ledger WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): TrustLedgerEntity?
 }
 
 /** One logged result of a NuaSkill dispatch or a plan/reply confirmation — the audit trail. */
@@ -227,6 +230,9 @@ interface GoalDao {
 
     @Query("SELECT * FROM goals WHERE active = 1 ORDER BY createdAt DESC")
     suspend fun getActiveGoals(): List<GoalEntity>
+
+    @Query("SELECT * FROM goals WHERE id = :id LIMIT 1")
+    suspend fun getGoalById(id: Long): GoalEntity?
 
     @Query("SELECT * FROM goals ORDER BY createdAt DESC")
     fun observeAllGoals(): Flow<List<GoalEntity>>
@@ -464,6 +470,9 @@ interface MemoryDao {
 
     @Query("SELECT * FROM user_facts WHERE key = :key LIMIT 1")
     suspend fun getFactByKey(key: String): UserFactEntity?
+
+    @Query("SELECT * FROM user_facts WHERE id = :id LIMIT 1")
+    suspend fun getFactById(id: Long): UserFactEntity?
 
     @Query("DELETE FROM user_facts WHERE id = :id")
     suspend fun deleteFactById(id: Long)
