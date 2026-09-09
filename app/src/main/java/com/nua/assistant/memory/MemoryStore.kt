@@ -149,6 +149,10 @@ data class ActionOutcomeEntity(
     /** Set only for actions that go through TrustRepository.wasRecentlyExecuted's dedup check
      *  (see trust/IdempotencyKey.kt) — null for outcomes that predate this field or don't need it. */
     val idempotencyKey: String? = null,
+    /** Who this action was directed at — a phone number for SMS_SEND today. Null for
+     *  action types with no single recipient (GET_WEATHER, OPEN_APP, ...). See
+     *  trust/ThreadProvenance.kt for what this enables. */
+    val recipient: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
 )
 
@@ -168,6 +172,9 @@ interface ActionOutcomeDao {
 
     @Query("SELECT * FROM action_outcomes WHERE idempotencyKey = :key AND timestamp >= :sinceMillis ORDER BY timestamp DESC LIMIT 1")
     suspend fun mostRecentByIdempotencyKey(key: String, sinceMillis: Long): ActionOutcomeEntity?
+
+    @Query("SELECT * FROM action_outcomes WHERE recipient = :recipient AND actionType = :actionType AND timestamp >= :sinceMillis ORDER BY timestamp DESC")
+    suspend fun recentByRecipient(recipient: String, actionType: String, sinceMillis: Long): List<ActionOutcomeEntity>
 }
 
 /**
@@ -542,7 +549,7 @@ interface MemoryDao {
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {

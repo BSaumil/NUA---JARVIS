@@ -21,6 +21,18 @@ class ActionConfirmationOutcomesTest {
     }
 
     @Test
+    fun `sms ACCEPTED with no prior sends today has no thread-provenance note`() {
+        val message = smsConfirmationMessage(ActionOutcomeState.ACCEPTED, hasPermission = true, contactName = "Sam", priorSendsToday = 0)
+        assertTrue("must not falsely claim a repeat send", !message.contains("This is message"))
+    }
+
+    @Test
+    fun `sms ACCEPTED with prior sends today appends the thread-provenance note`() {
+        val message = smsConfirmationMessage(ActionOutcomeState.ACCEPTED, hasPermission = true, contactName = "Sam", priorSendsToday = 2)
+        assertTrue(message.contains("This is message #3 to them today."))
+    }
+
+    @Test
     fun `sms FAILED without permission names the real reason`() {
         val message = smsConfirmationMessage(ActionOutcomeState.FAILED, hasPermission = false, contactName = "Sam")
         assertTrue(message.contains("permission"))

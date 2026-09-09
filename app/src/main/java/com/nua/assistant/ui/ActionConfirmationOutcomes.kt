@@ -1,6 +1,7 @@
 package com.nua.assistant.ui
 
 import com.nua.assistant.trust.ActionOutcomeState
+import com.nua.assistant.trust.threadProvenanceNote
 
 /**
  * What confirmPendingSms/Reply/Plan report to the user and to the Trust Engine, pulled
@@ -20,10 +21,17 @@ const val DUPLICATE_SMS_SUPPRESSED_MESSAGE = "Already sent that a moment ago —
 const val DUPLICATE_REPLY_SUPPRESSED_MESSAGE = "Already sent that reply a moment ago — not sending it twice."
 const val DUPLICATE_PLAN_SUPPRESSED_MESSAGE = "Already confirmed that plan a moment ago — not adding its reminders twice."
 
-fun smsConfirmationMessage(outcome: ActionOutcomeState, hasPermission: Boolean, contactName: String): String =
+fun smsConfirmationMessage(
+    outcome: ActionOutcomeState,
+    hasPermission: Boolean,
+    contactName: String,
+    priorSendsToday: Int = 0,
+): String =
     when {
-        outcome == ActionOutcomeState.ACCEPTED ->
-            "Sent — texted $contactName. (NUA can only confirm it was handed off, not that it was delivered.)"
+        outcome == ActionOutcomeState.ACCEPTED -> {
+            val base = "Sent — texted $contactName. (NUA can only confirm it was handed off, not that it was delivered.)"
+            threadProvenanceNote(priorSendsToday)?.let { "$base $it" } ?: base
+        }
         !hasPermission -> "Couldn't send that — NUA doesn't have permission to send texts yet."
         else -> "That text didn't go through."
     }

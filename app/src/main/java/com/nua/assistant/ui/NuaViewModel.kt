@@ -79,6 +79,7 @@ import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.idempotencyKeyFor
+import com.nua.assistant.trust.sameDayWindowStart
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.memory.TrustLedgerEntity
@@ -863,14 +864,20 @@ class NuaViewModel @Inject constructor(
             respond(DUPLICATE_SMS_SUPPRESSED_MESSAGE, extractFacts = false)
             return
         }
+        val priorSendsToday = trustRepository.recentSendsTo(
+            recipient = pending.phoneNumber,
+            actionType = NuaActionType.SMS_SEND.name,
+            sinceMillis = sameDayWindowStart(System.currentTimeMillis()),
+        ).size
         val outcome = smsSender.send(pending.phoneNumber, pending.message)
-        val confirmation = smsConfirmationMessage(outcome, smsSender.hasPermission(), pending.contactName)
+        val confirmation = smsConfirmationMessage(outcome, smsSender.hasPermission(), pending.contactName, priorSendsToday)
         trustRepository.recordOutcome(
             actionType = NuaActionType.SMS_SEND.name,
             tier = AutonomyTier.T3,
             summary = confirmation,
             outcome = outcome,
             idempotencyKey = idempotencyKey,
+            recipient = pending.phoneNumber,
         )
         respond(confirmation, extractFacts = false)
     }

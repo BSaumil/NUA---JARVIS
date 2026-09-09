@@ -32,11 +32,16 @@ class PdfTextExtractor @Inject constructor(
             context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                 PdfRenderer(pfd).use { renderer ->
                     val pageCount = minOf(renderer.pageCount, MAX_PAGES)
-                    val pageImages = (0 until pageCount).mapNotNull { index -> renderPage(renderer, index) }
-                    val transcripts = pageImages.mapNotNull { base64 ->
-                        documentAnalyzer.transcribePage(base64, "image/png").takeIf { it.isNotBlank() }
+                    val pageImages = (0 until pageCount).map { index -> index to renderPage(renderer, index) }
+                    val transcripts = pageImages.mapNotNull { (index, base64) ->
+                        if (base64 == null) return@mapNotNull null
+                        val text = documentAnalyzer.transcribePage(base64, "image/png")
+                        if (text.isBlank()) null else index to text
                     }
-                    transcripts.joinToString("\n\n").takeIf { it.isNotBlank() }
+                    // Page markers survive into the stored extractedText so DocumentAnalyzer.answer
+                    // can cite which page an answer came from — see its ANSWER_SYSTEM_PROMPT.
+                    transcripts.joinToString("\n\n") { (index, text) -> "--- Page ${index + 1} ---\n$text" }
+                        .takeIf { it.isNotBlank() }
                 }
             }
         } catch (t: Exception) {

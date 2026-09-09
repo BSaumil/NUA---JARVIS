@@ -46,7 +46,9 @@ private val SUMMARY_SYSTEM_PROMPT = """
 
 private val ANSWER_SYSTEM_PROMPT = """
     Answer the question using only the document text provided below. If the answer isn't
-    in there, say so plainly rather than guessing.
+    in there, say so plainly rather than guessing. If a document's text contains
+    "--- Page N ---" markers, cite the page number(s) your answer draws from, e.g.
+    "(page 3)". Documents without page markers don't have that structure — don't invent one.
 
     $FIREWALL_SYSTEM_DIRECTIVE
 """.trimIndent()
@@ -77,7 +79,7 @@ class DocumentAnalyzer @Inject constructor(
 
     suspend fun summarize(text: String): DocumentSummary {
         val result = claudeApiClient.complete(
-            userPrompt = wrapUntrusted(text.take(MAX_CONTEXT_CHARS), UntrustedSource.DOCUMENT),
+            userPrompt = wrapUntrusted(redactSensitivePatterns(text.take(MAX_CONTEXT_CHARS)), UntrustedSource.DOCUMENT),
             system = SUMMARY_SYSTEM_PROMPT,
             maxTokens = 500,
         )
@@ -94,7 +96,8 @@ class DocumentAnalyzer @Inject constructor(
 
     suspend fun answer(documents: List<Pair<String, String>>, question: String): String {
         val context = documents.joinToString("\n\n") { (name, text) ->
-            wrapUntrusted("=== $name ===\n${text.take(MAX_CONTEXT_CHARS)}", UntrustedSource.DOCUMENT)
+            val redacted = redactSensitivePatterns(text.take(MAX_CONTEXT_CHARS))
+            wrapUntrusted("=== $name ===\n$redacted", UntrustedSource.DOCUMENT)
         }
         // The question comes first and is never wrapped, so it's unambiguous which part
         // of the prompt is the user's actual instruction versus document data to read.

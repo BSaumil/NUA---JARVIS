@@ -44,6 +44,7 @@ class TrustRepository @Inject constructor(
         outcome: ActionOutcomeState,
         wasRejection: Boolean = false,
         idempotencyKey: String? = null,
+        recipient: String? = null,
     ) {
         actionOutcomeDao.insert(
             ActionOutcomeEntity(
@@ -53,6 +54,7 @@ class TrustRepository @Inject constructor(
                 outcomeState = outcome,
                 wasRejection = wasRejection,
                 idempotencyKey = idempotencyKey,
+                recipient = recipient,
             ),
         )
         if (outcome.countsAsFailure()) {
@@ -93,6 +95,16 @@ class TrustRepository @Inject constructor(
     suspend fun recentLedger(limit: Int = 20): List<TrustLedgerEntity> = trustLedgerDao.recent(limit)
 
     suspend fun recentOutcomes(limit: Int = 20): List<ActionOutcomeEntity> = actionOutcomeDao.recent(limit)
+
+    /**
+     * Committed sends to [recipient] for [actionType] since [sinceMillis] — thread
+     * provenance's actual query: "what have I already sent this person." Filters to
+     * [ActionOutcomeState.countsAsCommitted] outcomes only, same distinction
+     * [wasRecentlyExecuted] draws — a failed attempt was never actually sent.
+     */
+    suspend fun recentSendsTo(recipient: String, actionType: String, sinceMillis: Long): List<ActionOutcomeEntity> =
+        actionOutcomeDao.recentByRecipient(recipient, actionType, sinceMillis)
+            .filter { it.outcomeState.countsAsCommitted() }
 
     /** Call after the user approves a proposed reply/plan — feeds the adaptive-autonomy threshold. */
     suspend fun recordApproval(actionType: NuaActionType): AutonomyPreferenceEntity {

@@ -1365,10 +1365,10 @@ file constructs `DreamsCard(...)` or `WorldModelRepository(...)` directly, so wi
 both was additive with exactly one production call site each to update.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`56b8ff2`
 
 ### Status
-PENDING CI verification at time of writing.
+CONFIRMED CI-green (run 34298625541, 15/15 steps including release-APK/R8).
 
 ## September 9 (continued) — Earned Autonomy: scoped grants with expiry
 
@@ -1419,6 +1419,119 @@ negative). `TrustUiControllerTest` updated (4 call sites) to cover the new fourt
 Forward-reference and injection-boundary audits both clean. Confirmed via grep no other
 file constructs `TrustCard(...)` directly, so widening its signature was additive with
 exactly one production call site to update.
+
+### Commit
+`f2fb75f`
+
+### Status
+CONFIRMED CI-green (run 34299235992, 15/15 steps including release-APK/R8).
+
+## September 9 (continued) — Document Intelligence: citation + redaction
+
+Fourth item — "whatever's left in original survey" from the user's second round.
+
+### Investigation
+`DocumentAnalyzer.answer()`/`.summarize()` already send full document text (truncated to
+`MAX_CONTEXT_CHARS`) to Claude, wrapped via the existing `wrapUntrusted` prompt-injection
+defense — but nothing redacts anything first, and nothing tracks which document/page an
+answer came from. Grepped the whole codebase for `redact`/`PII`/`sensitive`/`mask`: zero
+redaction logic exists anywhere — `MemoryPrivacyLevel` is a manual, user-set tag, not
+content redaction, and its own doc comment explicitly argues against auto-classifying
+sensitivity ("a wrong automatic guess is worse than no guess at all"). Page-level
+provenance is actively destroyed today: `PdfTextExtractor.extract()` OCRs each page via
+Claude vision, then joins every page's transcript into one opaque string with no page
+markers, before `DocumentRepository.save()` ever sees it — so even in principle no citation
+was recoverable from what's already stored.
+
+### Implementation
+- `documents/DocumentRedaction.kt` — pure `redactSensitivePatterns(text)`: an SSN pattern
+  (`\d{3}-\d{2}-\d{4}`), plus a 13-19-digit run checked against the standard Luhn checksum
+  (`passesLuhnCheck`) before redacting as a card number — Luhn-gating means a long
+  order/tracking/reference number that happens to be the right length isn't falsely
+  redacted just for having enough digits. Applied at the `DocumentAnalyzer` Claude-call
+  boundary (`summarize`/`answer`), not at persistence — this app's local storage is already
+  the trust boundary for everything else in it (PrivacyCentreScreen's own "local-vs-Claude"
+  framing), so redacting at rest would only make NUA's own local reading harder without
+  protecting anything. Free-text PII (a name or address in prose) isn't attempted —
+  pattern-matching structured numbers is the honestly-achievable slice.
+- `PdfTextExtractor.extract()` — page transcripts are now joined with `--- Page N ---`
+  markers instead of being flattened, so page provenance survives into the stored
+  `extractedText`. `.docx` extraction is untouched — SAX-parsed `.docx` text has no page
+  concept to preserve.
+- `DocumentAnalyzer.ANSWER_SYSTEM_PROMPT` — instructed to cite `--- Page N ---` markers
+  when they're present in a document's text, and explicitly not to invent one when they
+  aren't (a `.docx` or a document ingested before this change).
+
+### Explicitly not attempted
+Free-text/NLP-based redaction of names, addresses, or other prose PII — the same
+"a wrong automatic guess is worse than no guess" reasoning `MemoryPrivacyLevel` already
+applies. Per-chunk/per-region citation finer than a page (e.g. bounding boxes) — PdfRenderer
+gives whole-page rasters, not a text layer with coordinates, so anything finer would be
+fabricated, not read. Redaction for `.docx`/plain-text documents beyond the same two
+patterns already covers them equally (the function is format-agnostic, so this isn't a gap
+so much as a non-issue).
+
+### Verification
+`DocumentRedactionTest` (7 cases): an SSN is redacted, a valid Luhn card number is redacted
+(space- and dash-separated), a 16-digit run that fails Luhn is left alone (the false-positive
+guard), ordinary text is unchanged, multiple patterns in one document are all redacted, and
+`passesLuhnCheck` rejects an empty string. Forward-reference and injection-boundary audits
+both clean.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing.
+
+## September 9 (continued) — Communication Centre: thread provenance
+
+Fifth and final item of the user's second round.
+
+### Investigation
+Neither the SMS-send path (`NuaViewModel.executeConfirmedSms` → `SmsSender.send`) nor the
+calendar-invite path (`CalendarInviteSkill` → `CalendarReader.createInvitation`) records who
+an action was directed at anywhere queryable — `ActionOutcomeEntity`, the existing audit-
+trail table, has no recipient field. Idempotency (exact-duplicate suppression within a
+5-minute window, `trust/IdempotencyKey.kt`) already exists and fully covers replayed-
+confirmation/retry duplicates for both paths — confirmed by reading `TrustRepository.
+wasRecentlyExecuted` and its two call sites — so this is a distinct concern (a same-day
+"how many times have I messaged this person" question, not exact-duplicate detection) and
+doesn't duplicate that work. SMS is the channel that's genuinely a "thread" — an ongoing
+conversation with one person; a calendar invite is a single event with no reply/back-and-
+forth concept, so scoping this to SMS is an honest distinction, not a shortcut.
+
+### Implementation
+- `ActionOutcomeEntity.recipient: String?` (additive, DB v16→17) + `ActionOutcomeDao.
+  recentByRecipient(recipient, actionType, sinceMillis)`.
+- `TrustRepository.recordOutcome()` gains an optional `recipient` parameter; new
+  `recentSendsTo(recipient, actionType, sinceMillis)` filters to `countsAsCommitted()`
+  outcomes only — the same "was this actually sent, not just attempted" distinction
+  `wasRecentlyExecuted` already draws.
+- `trust/ThreadProvenance.kt` — pure `sameDayWindowStart(now)` (24h, distinct from the
+  5-minute idempotency window) and `threadProvenanceNote(priorSendCount)`.
+- `NuaViewModel.executeConfirmedSms` queries `recentSendsTo` before sending and passes the
+  count into `smsConfirmationMessage`, which now appends "This is message #N to them today"
+  when there's a prior send — a real, visible reader of the new field at the moment it
+  matters, not an unused column (the same mistake `allAutonomyPreferences()` turned out to
+  be before this session's Earned Autonomy seam gave it one).
+
+### Explicitly not attempted
+Calendar-invite recipient tracking and a general per-recipient "thread" browsing UI. A
+calendar invite has no ongoing back-and-forth to provide provenance about, so extending the
+same field there without a concrete reader would repeat the exact invisible-field mistake
+this seam's own SMS side was built to avoid. A dedicated thread-history screen is a
+materially larger feature (its own UI, its own navigation entry) with no driving use case
+yet beyond the in-flow note this seam adds.
+
+### Verification
+`ThreadProvenanceTest` (5 cases: zero and negative prior-send counts produce no note, one
+and three prior sends produce the correctly-numbered note, `sameDayWindowStart` is exactly
+24 hours before `now`). `ActionConfirmationOutcomesTest` extended with 2 cases for
+`smsConfirmationMessage`'s new parameter (no note at zero, correct note at a nonzero count).
+Forward-reference and injection-boundary audits both clean. Confirmed via grep no other file
+constructs `ActionOutcomeEntity(...)` besides `TrustRepository`/`TrustScoreEngineTest`
+(the latter uses named parameters, so the additive field didn't require a test update).
 
 ### Commit
 `<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
