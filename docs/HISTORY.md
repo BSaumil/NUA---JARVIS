@@ -1316,10 +1316,10 @@ change with exactly one production call site to update. Forward-reference and
 injection-boundary audits both clean.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`84eb68b`
 
 ### Status
-PENDING CI verification at time of writing.
+CONFIRMED CI-green (run 34298282047, 15/15 steps including release-APK/R8).
 
 ## September 9 (continued) — World Model: read-side resolution, first real reader
 
@@ -1363,6 +1363,62 @@ short-circuit on type alone (both `fromType`/`fromId` must match, not just `from
 Forward-reference and injection-boundary audits both clean. Confirmed via grep no other
 file constructs `DreamsCard(...)` or `WorldModelRepository(...)` directly, so widening
 both was additive with exactly one production call site each to update.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing.
+
+## September 9 (continued) — Earned Autonomy: scoped grants with expiry
+
+Third of the four items from the user's second round.
+
+### Investigation
+`TrustRepository.setAutoApprove()`/`isAutoApproved()` already existed (auto-approve a given
+`NuaActionType` once its approved-count crosses a threshold) but the grant was indefinite —
+no expiry, no review date, and no revoke-on-failure. Worse: `allAutonomyPreferences()`
+already existed on `TrustRepository` but grep across the whole codebase found zero callers
+— any currently-active auto-approve grant was completely invisible in the UI. That's a real
+transparency gap the directive's "earned autonomy... always revocable, never silent" gate
+names directly, not a speculative addition.
+
+### Implementation
+- `trust/AutonomyGrant.kt` — pure: `isGrantActive(autoApproveEnabled, expiresAt, now)` and
+  `daysUntilExpiry(expiresAt, now)`. `AUTONOMY_GRANT_DURATION_MILLIS` = 30 days. Fails
+  closed on ambiguity: `autoApproveEnabled=true, expiresAt=null` (a hypothetical
+  pre-migration row) reads as NOT active, never as perpetually valid.
+- `AutonomyPreferenceEntity.expiresAt: Long?` (additive, DB v15→16). Null whenever
+  `autoApproveEnabled` is false; always set when `setAutoApprove(enabled = true)` runs.
+- `TrustRepository.setAutoApprove()` now stamps a fresh 30-day `expiresAt` on enable and
+  clears it on disable. `isAutoApproved()`/the new `activeAutonomyGrants()` both route
+  through `isGrantActive` rather than reading `autoApproveEnabled` alone.
+- `TrustRepository.recordOutcome()` — on any failure, `revokeAutoApproveIfGranted(actionType)`
+  immediately clears that action type's standing grant. A failure fail-closes autonomy
+  rather than waiting for the user to notice and revoke it by hand.
+- `TrustUiController` — gains `activeAutonomyGrants: StateFlow<...>` (same manual-
+  refresh-on-Settings-open pattern as its other state, not a live Flow subscription) and
+  `disableAutoApprove(actionType)`, the explicit revoke path.
+- Settings: `TrustCard` gains a "NUA may currently do without asking" section listing each
+  active grant with its days-until-expiry and a Revoke button — closes the transparency gap
+  found in Investigation.
+
+### Explicitly not attempted
+Context/location/value/recipient-scoped grants (e.g. "auto-approve SMS only to contacts,
+only under $X"). The directive names scoped autonomy as a direction, but there's no
+concrete driving use case yet to shape what scope means for this codebase's action types —
+building it now would be exactly the speculative architecture this project's discipline
+argues against. Time-boxed expiry plus fail-closed revoke-on-failure is the concretely
+justified slice.
+
+### Verification
+`AutonomyGrantTest` (6 cases: future expiry is active, past expiry is not, exactly-at-expiry
+is not, a disabled grant is never active regardless of expiry, an enabled grant with no
+recorded expiry fails closed rather than open, `daysUntilExpiry` rounds down and never goes
+negative). `TrustUiControllerTest` updated (4 call sites) to cover the new fourth source.
+Forward-reference and injection-boundary audits both clean. Confirmed via grep no other
+file constructs `TrustCard(...)` directly, so widening its signature was additive with
+exactly one production call site to update.
 
 ### Commit
 `<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.

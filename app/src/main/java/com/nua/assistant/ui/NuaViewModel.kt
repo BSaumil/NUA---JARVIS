@@ -234,6 +234,7 @@ class NuaViewModel @Inject constructor(
     val trustScore: StateFlow<Int?> = trustUiController.trustScore
     val trustLedger: StateFlow<List<TrustLedgerEntity>> = trustUiController.trustLedger
     val autonomySuggestions: StateFlow<List<AutonomyPreferenceEntity>> = trustUiController.autonomySuggestions
+    val activeAutonomyGrants: StateFlow<List<AutonomyPreferenceEntity>> = trustUiController.activeAutonomyGrants
 
     private val _actionOutcomes = MutableStateFlow<List<ActionOutcomeEntity>>(emptyList())
     val actionOutcomes: StateFlow<List<ActionOutcomeEntity>> = _actionOutcomes.asStateFlow()
@@ -1095,6 +1096,10 @@ class NuaViewModel @Inject constructor(
 
     fun enableAutoApprove(actionType: NuaActionType) {
         viewModelScope.launch { trustUiController.enableAutoApprove(actionType) }
+    }
+
+    fun disableAutoApprove(actionType: NuaActionType) {
+        viewModelScope.launch { trustUiController.disableAutoApprove(actionType) }
     }
 
     fun resetVoiceEnrollment() {

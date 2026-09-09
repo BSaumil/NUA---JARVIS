@@ -182,6 +182,9 @@ data class AutonomyPreferenceEntity(
     val actionType: String,
     val approvedCount: Int = 0,
     val autoApproveEnabled: Boolean = false,
+    /** When this grant needs re-confirming — see trust/AutonomyGrant.kt's isGrantActive.
+     *  Null whenever autoApproveEnabled is false; always set when it's true. */
+    val expiresAt: Long? = null,
 )
 
 @Dao
@@ -539,7 +542,7 @@ interface MemoryDao {
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
