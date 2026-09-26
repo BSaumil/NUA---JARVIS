@@ -44,6 +44,7 @@ class TrustRepository @Inject constructor(
         outcome: ActionOutcomeState,
         wasRejection: Boolean = false,
         idempotencyKey: String? = null,
+        recipient: String? = null,
     ) {
         actionOutcomeDao.insert(
             ActionOutcomeEntity(
@@ -53,11 +54,23 @@ class TrustRepository @Inject constructor(
                 outcomeState = outcome,
                 wasRejection = wasRejection,
                 idempotencyKey = idempotencyKey,
+                recipient = recipient,
             ),
         )
         if (outcome.countsAsFailure()) {
             val type = if (wasRejection) TrustEventType.REJECTED_PLAN else TrustEventType.FAILED_ACTION
             trustLedgerDao.insert(TrustLedgerEntity(type = type, description = summary))
+            // "No unresolved failure trend" — a failure fail-closes any standing auto-
+            // approve grant for this action type immediately, rather than waiting for the
+            // user to notice and revoke it by hand.
+            revokeAutoApproveIfGranted(actionType)
+        }
+    }
+
+    private suspend fun revokeAutoApproveIfGranted(actionType: String) {
+        val preference = autonomyPreferenceDao.get(actionType) ?: return
+        if (preference.autoApproveEnabled) {
+            autonomyPreferenceDao.upsert(preference.copy(autoApproveEnabled = false, expiresAt = null))
         }
     }
 
@@ -83,6 +96,16 @@ class TrustRepository @Inject constructor(
 
     suspend fun recentOutcomes(limit: Int = 20): List<ActionOutcomeEntity> = actionOutcomeDao.recent(limit)
 
+    /**
+     * Committed sends to [recipient] for [actionType] since [sinceMillis] — thread
+     * provenance's actual query: "what have I already sent this person." Filters to
+     * [ActionOutcomeState.countsAsCommitted] outcomes only, same distinction
+     * [wasRecentlyExecuted] draws — a failed attempt was never actually sent.
+     */
+    suspend fun recentSendsTo(recipient: String, actionType: String, sinceMillis: Long): List<ActionOutcomeEntity> =
+        actionOutcomeDao.recentByRecipient(recipient, actionType, sinceMillis)
+            .filter { it.outcomeState.countsAsCommitted() }
+
     /** Call after the user approves a proposed reply/plan — feeds the adaptive-autonomy threshold. */
     suspend fun recordApproval(actionType: NuaActionType): AutonomyPreferenceEntity {
         val existing = autonomyPreferenceDao.get(actionType.name)
@@ -92,13 +115,21 @@ class TrustRepository @Inject constructor(
         return updated
     }
 
-    suspend fun isAutoApproved(actionType: NuaActionType): Boolean =
-        autonomyPreferenceDao.get(actionType.name)?.autoApproveEnabled == true
+    suspend fun isAutoApproved(actionType: NuaActionType): Boolean {
+        val preference = autonomyPreferenceDao.get(actionType.name) ?: return false
+        return isGrantActive(preference.autoApproveEnabled, preference.expiresAt, System.currentTimeMillis())
+    }
 
+    /**
+     * Enabling issues a fresh [AUTONOMY_GRANT_DURATION_MILLIS] grant — every auto-approve
+     * grant has a review date, never indefinite standing autonomy. Disabling (an explicit
+     * revoke) clears it immediately.
+     */
     suspend fun setAutoApprove(actionType: NuaActionType, enabled: Boolean) {
         val existing = autonomyPreferenceDao.get(actionType.name)
             ?: AutonomyPreferenceEntity(actionType = actionType.name)
-        autonomyPreferenceDao.upsert(existing.copy(autoApproveEnabled = enabled))
+        val expiresAt = if (enabled) System.currentTimeMillis() + AUTONOMY_GRANT_DURATION_MILLIS else null
+        autonomyPreferenceDao.upsert(existing.copy(autoApproveEnabled = enabled, expiresAt = expiresAt))
     }
 
     /** Action types that have been approved enough times to suggest auto-approving, but aren't yet. */
@@ -106,6 +137,12 @@ class TrustRepository @Inject constructor(
         autonomyPreferenceDao.getAll().filter { isAutonomySuggested(it, AUTONOMY_SUGGESTION_THRESHOLD) }
 
     suspend fun allAutonomyPreferences(): List<AutonomyPreferenceEntity> = autonomyPreferenceDao.getAll()
+
+    /** Currently-active grants only — the transparent "what may NUA do without asking"
+     *  feed the directive names, not every preference row (a lapsed or never-enabled one
+     *  isn't autonomy NUA currently has). */
+    suspend fun activeAutonomyGrants(): List<AutonomyPreferenceEntity> =
+        autonomyPreferenceDao.getAll().filter { isGrantActive(it.autoApproveEnabled, it.expiresAt, System.currentTimeMillis()) }
 
     /**
      * At the highest familiarity tier, NUA occasionally reports on itself unprompted — the

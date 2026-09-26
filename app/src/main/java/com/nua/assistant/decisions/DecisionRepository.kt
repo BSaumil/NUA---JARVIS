@@ -35,4 +35,6 @@ class DecisionRepository @Inject constructor(
     suspend fun delete(id: Long) = decisionDao.delete(id)
 
     fun observeAll() = decisionDao.observeAll()
+
+    suspend fun recent(limit: Int = 5): List<DecisionEntity> = decisionDao.recent(limit)
 }

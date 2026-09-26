@@ -39,15 +39,16 @@ class GoalReviewWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        val activeGoals = goalRepository.activeGoals()
+        val snapshot = contextEngine.currentSnapshot()
+        val activeGoals = snapshot.activeGoals
         if (activeGoals.isEmpty()) return Result.success()
 
-        val snapshot = contextEngine.currentSnapshot().describe()
+        val situation = snapshot.describe()
         var anyCallFailed = false
         var anyObservationRecorded = false
 
         activeGoals.forEach { goal ->
-            val prompt = "Goal: ${goal.text}\n\nCurrent situation:\n$snapshot"
+            val prompt = "Goal: ${goal.text}\n\nCurrent situation:\n$situation"
             val result = claudeApiClient.complete(
                 userPrompt = prompt,
                 system = GOAL_REVIEW_SYSTEM_PROMPT,

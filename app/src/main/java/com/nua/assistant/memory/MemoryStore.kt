@@ -129,6 +129,9 @@ interface TrustLedgerDao {
 
     @Query("SELECT * FROM trust_ledger WHERE timestamp >= :sinceMillis ORDER BY timestamp ASC")
     suspend fun since(sinceMillis: Long): List<TrustLedgerEntity>
+
+    @Query("SELECT * FROM trust_ledger WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): TrustLedgerEntity?
 }
 
 /** One logged result of a NuaSkill dispatch or a plan/reply confirmation — the audit trail. */
@@ -146,6 +149,10 @@ data class ActionOutcomeEntity(
     /** Set only for actions that go through TrustRepository.wasRecentlyExecuted's dedup check
      *  (see trust/IdempotencyKey.kt) — null for outcomes that predate this field or don't need it. */
     val idempotencyKey: String? = null,
+    /** Who this action was directed at — a phone number for SMS_SEND today. Null for
+     *  action types with no single recipient (GET_WEATHER, OPEN_APP, ...). See
+     *  trust/ThreadProvenance.kt for what this enables. */
+    val recipient: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
 )
 
@@ -165,6 +172,9 @@ interface ActionOutcomeDao {
 
     @Query("SELECT * FROM action_outcomes WHERE idempotencyKey = :key AND timestamp >= :sinceMillis ORDER BY timestamp DESC LIMIT 1")
     suspend fun mostRecentByIdempotencyKey(key: String, sinceMillis: Long): ActionOutcomeEntity?
+
+    @Query("SELECT * FROM action_outcomes WHERE recipient = :recipient AND actionType = :actionType AND timestamp >= :sinceMillis ORDER BY timestamp DESC")
+    suspend fun recentByRecipient(recipient: String, actionType: String, sinceMillis: Long): List<ActionOutcomeEntity>
 }
 
 /**
@@ -179,6 +189,9 @@ data class AutonomyPreferenceEntity(
     val actionType: String,
     val approvedCount: Int = 0,
     val autoApproveEnabled: Boolean = false,
+    /** When this grant needs re-confirming — see trust/AutonomyGrant.kt's isGrantActive.
+     *  Null whenever autoApproveEnabled is false; always set when it's true. */
+    val expiresAt: Long? = null,
 )
 
 @Dao
@@ -227,6 +240,9 @@ interface GoalDao {
 
     @Query("SELECT * FROM goals WHERE active = 1 ORDER BY createdAt DESC")
     suspend fun getActiveGoals(): List<GoalEntity>
+
+    @Query("SELECT * FROM goals WHERE id = :id LIMIT 1")
+    suspend fun getGoalById(id: Long): GoalEntity?
 
     @Query("SELECT * FROM goals ORDER BY createdAt DESC")
     fun observeAllGoals(): Flow<List<GoalEntity>>
@@ -289,6 +305,9 @@ interface DecisionDao {
 
     @Query("SELECT * FROM decisions ORDER BY decidedAt DESC")
     fun observeAll(): Flow<List<DecisionEntity>>
+
+    @Query("SELECT * FROM decisions ORDER BY decidedAt DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<DecisionEntity>
 }
 
 /**
@@ -462,6 +481,9 @@ interface MemoryDao {
     @Query("SELECT * FROM user_facts WHERE key = :key LIMIT 1")
     suspend fun getFactByKey(key: String): UserFactEntity?
 
+    @Query("SELECT * FROM user_facts WHERE id = :id LIMIT 1")
+    suspend fun getFactById(id: Long): UserFactEntity?
+
     @Query("DELETE FROM user_facts WHERE id = :id")
     suspend fun deleteFactById(id: Long)
 
@@ -527,7 +549,7 @@ interface MemoryDao {
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
     ],
-    version = 15,
+    version = 17,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {

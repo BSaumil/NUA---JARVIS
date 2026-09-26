@@ -10,15 +10,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** [TrustUiController.refresh]'s result — score, ledger, and autonomy suggestions read together. */
+/** [TrustUiController.refresh]'s result — score, ledger, autonomy suggestions, and active
+ *  grants read together. */
 internal data class TrustSettingsState(
     val trustScore: Int,
     val trustLedger: List<TrustLedgerEntity>,
     val autonomySuggestions: List<AutonomyPreferenceEntity>,
+    val activeAutonomyGrants: List<AutonomyPreferenceEntity>,
 )
 
 /**
- * Pure: assembles the Settings Trust card's state from its three independent sources.
+ * Pure: assembles the Settings Trust card's state from its four independent sources.
  * [TrustUiController.refresh] is a one-line wrapper passing [TrustRepository]'s own
  * suspend functions in — same shape as `executeSandboxed` (automation/SkillSandbox.kt)
  * and `outcomeForWorkerRun` (ai/WorkerRetryPolicy.kt) elsewhere in this codebase.
@@ -32,7 +34,8 @@ internal suspend fun refreshedTrustState(
     scoreSnapshot: suspend () -> Int,
     recentLedger: suspend () -> List<TrustLedgerEntity>,
     autonomySuggestions: suspend () -> List<AutonomyPreferenceEntity>,
-): TrustSettingsState = TrustSettingsState(scoreSnapshot(), recentLedger(), autonomySuggestions())
+    activeAutonomyGrants: suspend () -> List<AutonomyPreferenceEntity>,
+): TrustSettingsState = TrustSettingsState(scoreSnapshot(), recentLedger(), autonomySuggestions(), activeAutonomyGrants())
 
 /**
  * Pure: enables auto-approve, then reads back the suggestion list — in that order.
@@ -49,8 +52,9 @@ internal suspend fun autonomySuggestionsAfterEnabling(
 }
 
 /**
- * Owns the Settings Trust card's observable state — trust score, the curated ledger, and
- * autonomy suggestions — and the two operations that mutate it. Extracted out of
+ * Owns the Settings Trust card's observable state — trust score, the curated ledger,
+ * autonomy suggestions, and active auto-approve grants — and the operations that mutate
+ * it. Extracted out of
  * `NuaViewModel` (1008 lines, 35 dependencies at the time of this extraction) as the
  * first of several planned seams, per an architecture review that found NuaViewModel's
  * size the proven origin of two serious bugs this session: a Kotlin declaration-order
@@ -80,16 +84,32 @@ class TrustUiController @Inject constructor(
     private val _autonomySuggestions = MutableStateFlow<List<AutonomyPreferenceEntity>>(emptyList())
     val autonomySuggestions: StateFlow<List<AutonomyPreferenceEntity>> = _autonomySuggestions.asStateFlow()
 
+    /** Currently-active auto-approve grants — the transparent "what may NUA do without
+     *  asking, and until when" feed. */
+    private val _activeAutonomyGrants = MutableStateFlow<List<AutonomyPreferenceEntity>>(emptyList())
+    val activeAutonomyGrants: StateFlow<List<AutonomyPreferenceEntity>> = _activeAutonomyGrants.asStateFlow()
+
     /** Called when Settings opens — same reasoning as NuaViewModel's other refresh* functions: cheap local reads, not worth a live subscription. */
     suspend fun refresh() {
         val state = refreshedTrustState(
             scoreSnapshot = { trustRepository.scoreSnapshot() },
             recentLedger = { trustRepository.recentLedger() },
             autonomySuggestions = { trustRepository.autonomySuggestions() },
+            activeAutonomyGrants = { trustRepository.activeAutonomyGrants() },
         )
         _trustScore.value = state.trustScore
         _trustLedger.value = state.trustLedger
         _autonomySuggestions.value = state.autonomySuggestions
+        _activeAutonomyGrants.value = state.activeAutonomyGrants
+    }
+
+    /** Immediate revoke — the flip side of [enableAutoApprove], and Earned Autonomy's
+     *  own "how to revoke it" requirement. Re-reads both lists afterward: a revoked grant
+     *  can reappear as a suggestion again once it's re-approved enough times. */
+    suspend fun disableAutoApprove(actionType: NuaActionType) {
+        trustRepository.setAutoApprove(actionType, enabled = false)
+        _activeAutonomyGrants.value = trustRepository.activeAutonomyGrants()
+        _autonomySuggestions.value = trustRepository.autonomySuggestions()
     }
 
     suspend fun enableAutoApprove(actionType: NuaActionType) {
@@ -97,5 +117,8 @@ class TrustUiController @Inject constructor(
             enableAutoApprove = { trustRepository.setAutoApprove(actionType, enabled = true) },
             autonomySuggestions = { trustRepository.autonomySuggestions() },
         )
+        // The write already landed inside autonomySuggestionsAfterEnabling above, so this
+        // read correctly picks up the grant just issued.
+        _activeAutonomyGrants.value = trustRepository.activeAutonomyGrants()
     }
 }

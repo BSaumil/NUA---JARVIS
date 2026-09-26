@@ -47,6 +47,7 @@ import com.nua.assistant.documents.DocxTextExtractor
 import com.nua.assistant.documents.PdfTextExtractor
 import com.nua.assistant.documents.documentTypeForMime
 import com.nua.assistant.dreams.DreamRepository
+import com.nua.assistant.world.WorldModelRepository
 import com.nua.assistant.geofencing.GeofenceManager
 import com.nua.assistant.goals.GoalRepository
 import com.nua.assistant.goals.GoalType
@@ -78,6 +79,7 @@ import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.idempotencyKeyFor
+import com.nua.assistant.trust.sameDayWindowStart
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.memory.TrustLedgerEntity
@@ -169,6 +171,7 @@ class NuaViewModel @Inject constructor(
     private val dreamRepository: DreamRepository,
     private val decisionRepository: DecisionRepository,
     private val privacyRepository: PrivacyRepository,
+    private val worldModelRepository: WorldModelRepository,
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
     private val nuaStateRepository: NuaStateRepository,
     private val skillCatalog: SkillCatalog,
@@ -232,6 +235,7 @@ class NuaViewModel @Inject constructor(
     val trustScore: StateFlow<Int?> = trustUiController.trustScore
     val trustLedger: StateFlow<List<TrustLedgerEntity>> = trustUiController.trustLedger
     val autonomySuggestions: StateFlow<List<AutonomyPreferenceEntity>> = trustUiController.autonomySuggestions
+    val activeAutonomyGrants: StateFlow<List<AutonomyPreferenceEntity>> = trustUiController.activeAutonomyGrants
 
     private val _actionOutcomes = MutableStateFlow<List<ActionOutcomeEntity>>(emptyList())
     val actionOutcomes: StateFlow<List<ActionOutcomeEntity>> = _actionOutcomes.asStateFlow()
@@ -254,6 +258,19 @@ class NuaViewModel @Inject constructor(
 
     val dreams: StateFlow<List<DreamEntity>> = dreamRepository.observeRecent()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** dreamId -> what it connected (resolved summaries, e.g. a fact's value or a goal's
+     *  text) — World Model read-side resolution, the first real reader of the
+     *  world_relationships rows DreamRepository writes. Orphaned/unresolvable connections
+     *  are silently dropped here (see WorldModelRepository.ResolvedRelationship.summary's
+     *  own doc comment for why null isn't shown as a placeholder). */
+    val dreamConnections: StateFlow<Map<Long, List<String>>> = dreams
+        .map { list ->
+            list.associate { dream ->
+                dream.id to worldModelRepository.relationshipsWithSummaries("DREAM", dream.id).mapNotNull { it.summary }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val decisions: StateFlow<List<DecisionEntity>> = decisionRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -847,14 +864,20 @@ class NuaViewModel @Inject constructor(
             respond(DUPLICATE_SMS_SUPPRESSED_MESSAGE, extractFacts = false)
             return
         }
+        val priorSendsToday = trustRepository.recentSendsTo(
+            recipient = pending.phoneNumber,
+            actionType = NuaActionType.SMS_SEND.name,
+            sinceMillis = sameDayWindowStart(System.currentTimeMillis()),
+        ).size
         val outcome = smsSender.send(pending.phoneNumber, pending.message)
-        val confirmation = smsConfirmationMessage(outcome, smsSender.hasPermission(), pending.contactName)
+        val confirmation = smsConfirmationMessage(outcome, smsSender.hasPermission(), pending.contactName, priorSendsToday)
         trustRepository.recordOutcome(
             actionType = NuaActionType.SMS_SEND.name,
             tier = AutonomyTier.T3,
             summary = confirmation,
             outcome = outcome,
             idempotencyKey = idempotencyKey,
+            recipient = pending.phoneNumber,
         )
         respond(confirmation, extractFacts = false)
     }
@@ -1080,6 +1103,10 @@ class NuaViewModel @Inject constructor(
 
     fun enableAutoApprove(actionType: NuaActionType) {
         viewModelScope.launch { trustUiController.enableAutoApprove(actionType) }
+    }
+
+    fun disableAutoApprove(actionType: NuaActionType) {
+        viewModelScope.launch { trustUiController.disableAutoApprove(actionType) }
     }
 
     fun resetVoiceEnrollment() {

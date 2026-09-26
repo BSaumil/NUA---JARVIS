@@ -74,6 +74,7 @@ import com.nua.assistant.security.BiometricGate
 import com.nua.assistant.security.encryptionAuditEntries
 import com.nua.assistant.trust.badgeLabel
 import com.nua.assistant.trust.countsAsFailure
+import com.nua.assistant.trust.daysUntilExpiry
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
@@ -113,11 +114,14 @@ fun SettingsScreen(
     actionOutcomes: List<ActionOutcomeEntity>,
     autonomySuggestions: List<AutonomyPreferenceEntity>,
     onEnableAutoApprove: (NuaActionType) -> Unit,
+    activeAutonomyGrants: List<AutonomyPreferenceEntity>,
+    onDisableAutoApprove: (NuaActionType) -> Unit,
     goals: List<GoalEntity>,
     goalObservations: List<GoalObservationEntity>,
     onAddGoal: (text: String, type: GoalType) -> Unit,
     onRemoveGoal: (Long) -> Unit,
     dreams: List<DreamEntity>,
+    dreamConnections: Map<Long, List<String>>,
     decisions: List<DecisionEntity>,
     onAddDecision: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordDecisionOutcome: (id: Long, outcome: String) -> Unit,
@@ -162,10 +166,19 @@ fun SettingsScreen(
             item { VoiceIdCard(voiceEnrolled, enrollmentProgress, onRecordEnrollmentClip, onResetVoiceEnrollment) }
             item { GeofenceCard(geofences, onAddGeofence, onRemoveGeofence) }
             item { UsageCard(usageThisMonth) }
-            item { TrustCard(trustScore, trustLedger, autonomySuggestions, onEnableAutoApprove) }
+            item {
+                TrustCard(
+                    trustScore,
+                    trustLedger,
+                    autonomySuggestions,
+                    onEnableAutoApprove,
+                    activeAutonomyGrants,
+                    onDisableAutoApprove,
+                )
+            }
             item { AuditTrailCard(actionOutcomes) }
             item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
-            item { DreamsCard(dreams) }
+            item { DreamsCard(dreams, dreamConnections) }
             item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
             item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
             item { DiagnosticsCard(diagnostics, testingApiConnection, onRefreshDiagnostics, onTestApiConnection) }
@@ -572,6 +585,8 @@ private fun TrustCard(
     trustLedger: List<TrustLedgerEntity>,
     autonomySuggestions: List<AutonomyPreferenceEntity>,
     onEnableAutoApprove: (NuaActionType) -> Unit,
+    activeAutonomyGrants: List<AutonomyPreferenceEntity>,
+    onDisableAutoApprove: (NuaActionType) -> Unit,
 ) {
     Card {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -602,6 +617,29 @@ private fun TrustCard(
                                 modifier = Modifier.weight(1f),
                             )
                             TextButton(onClick = { onEnableAutoApprove(actionType) }) { Text("Always allow") }
+                        }
+                    }
+                }
+            }
+
+            if (activeAutonomyGrants.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("NUA may currently do without asking", style = MaterialTheme.typography.labelMedium)
+                activeAutonomyGrants.forEach { grant ->
+                    val actionType = runCatching { NuaActionType.valueOf(grant.actionType) }.getOrNull()
+                    val expiresAt = grant.expiresAt
+                    if (actionType != null && expiresAt != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            val days = daysUntilExpiry(expiresAt, System.currentTimeMillis())
+                            Text(
+                                text = "${displayActionType(actionType)} — expires in $days day${if (days == 1L) "" else "s"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { onDisableAutoApprove(actionType) }) { Text("Revoke") }
                         }
                     }
                 }
@@ -759,7 +797,7 @@ private fun AddGoalDialog(onConfirm: (text: String, type: GoalType) -> Unit, onD
 }
 
 @Composable
-private fun DreamsCard(dreams: List<DreamEntity>) {
+private fun DreamsCard(dreams: List<DreamEntity>, dreamConnections: Map<Long, List<String>>) {
     Card {
         Column(modifier = Modifier.padding(12.dp)) {
             Text("NUA Dreams", style = MaterialTheme.typography.titleSmall)
@@ -781,6 +819,14 @@ private fun DreamsCard(dreams: List<DreamEntity>) {
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
+                        val connections = dreamConnections[dream.id].orEmpty()
+                        if (connections.isNotEmpty()) {
+                            Text(
+                                "Connected to: " + connections.joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

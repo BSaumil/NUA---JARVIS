@@ -1256,6 +1256,289 @@ release-build/R8 included, Room schema validated at DB v15).
 ### Status
 VERIFIED at its exact CI-green SHA (`8dbd736`).
 
+## September 9 — Context Engine: broader signal coverage
+
+The user's second round: "Context Engine signal coverage, Earned Autonomy, World Model,
+and whatever's left in original survey." Starting with Context Engine since What Now?/
+Daily Intelligence/Dreams/Goal Review already read from it — broadening it benefits all
+four for free.
+
+### Investigation
+`ContextSnapshot` covered weather/calendar/connectivity/notifications only.
+`WhatNowAdvisor`, `GoalReviewWorker`, and `DreamSynthesisWorker` each separately called
+`goalRepository.activeGoals()` themselves rather than reading it off the snapshot, despite
+`ContextEngine`'s own doc comment promising exactly this consolidation. Decisions were
+never surfaced to any of these prompts at all. "Routines" (directive-named) has no
+existing signal in this codebase — and building real behavioural pattern-detection over
+historical activity would be a new, unproven capability, not a gap-fill; reusing the
+`GoalType.ROUTINE` tag just added this session is the honest version of this signal: user-
+declared, not behaviourally inferred. Location is directive-named too, and
+`ACCESS_COARSE_LOCATION` is already requested at app start (`MainActivity`) — checked
+`GeofenceManager` to confirm what's already available versus what geofencing's continuous
+monitoring specifically needs (`ACCESS_FINE_LOCATION`/`ACCESS_BACKGROUND_LOCATION`, not
+required for a one-shot lookup).
+
+### Implementation
+- `ContextSnapshot` gains `activeGoals`, `recentDecisions` (last 5), and a computed
+  `routines` property (`activeGoals.filter { it.type == GoalType.ROUTINE }` — no new
+  query). `describe()` extended with all three plus `currentPlace`.
+- `context/CurrentPlaceResolver.kt` — resolves which saved geofence (if any) the user is
+  currently near, via a one-shot `FusedLocationProviderClient.lastLocation` read wrapped
+  in `suspendCancellableCoroutine` (the exact pattern `ai/CancellableHttpCall.kt` already
+  established for a Play-Services-style callback API, not a new idiom). Only the matched
+  place's *name* ever reaches `ContextSnapshot`/a Claude prompt — raw coordinates never
+  leave this class, matching "local-first... minimise transmitted context." Skips the
+  location read entirely when there are no saved geofences to match against, since the
+  result could only ever be null.
+- `context/GeofenceProximity.kt` — `haversineDistanceMeters`/`nearestContainingGeofence`,
+  pure Kotlin (not `android.location.Location.distanceBetween`, which isn't callable from
+  this project's Robolectric-free JVM unit tests) so the actual matching logic is directly
+  testable.
+- `DecisionDao.recent(limit)` + `DecisionRepository.recent(limit = 5)` — the only missing
+  piece; `DecisionEntity`/the rest of the Decision Journal already existed.
+- `WhatNowAdvisor` no longer fetches goals separately — `snapshot.describe()` already
+  includes them, so the redundant fetch and manual append were removed (a real
+  simplification, not just a refactor for its own sake). `GoalReviewWorker`/
+  `DreamSynthesisWorker` similarly now read `snapshot.activeGoals` instead of a second
+  `goalRepository.activeGoals()` call — one fewer redundant query each, same data.
+  `MorningBriefing` needed no changes at all: it already calls `snapshot.describe()`
+  verbatim, so Daily Intelligence gained goal/decision/place awareness for free.
+
+### Verification
+`GeofenceProximityTest` (6 cases: identical points are zero distance apart, a known
+~13km distance comes out roughly right, a point inside a radius matches, a point outside
+every radius matches nothing, an empty geofence list never matches, the first containing
+match wins when radii overlap) and `ContextSnapshotTest` (2 cases: `routines` is exactly
+the ROUTINE-typed goals and nothing else, an empty goal list yields an empty routine
+list rather than an error). Confirmed via grep that no file other than `ContextEngine.kt`
+itself constructs `ContextSnapshot(...)`, so widening its constructor was a safe, additive
+change with exactly one production call site to update. Forward-reference and
+injection-boundary audits both clean.
+
+### Commit
+`84eb68b`
+
+### Status
+CONFIRMED CI-green (run 34298282047, 15/15 steps including release-APK/R8).
+
+## September 9 (continued) — World Model: read-side resolution, first real reader
+
+Second of the four items from the user's second round.
+
+### Investigation
+`WorldModelRepository`'s own doc comment (P1.9) said resolution was deliberately deferred
+until a real reader existed to prove the shape it needed — building it blind would have
+been exactly the speculative work the RFC argues against. That reader now exists: Dreams
+writes real `DREAM -[synthesized_from]-> {FACT|GOAL|TRUST_LEDGER}` rows (this session's
+earlier Dreams 2.0 seam). No DAO had an id-based lookup for any of those three entity
+types — `MemoryDao`/`GoalDao`/`TrustLedgerDao` all only supported key-based or bulk
+queries — confirmed by reading each interface rather than assuming.
+
+### Implementation
+- `WorldModelRepository.otherSideOf(relationship, type, id)` — pure, direction-agnostic:
+  a relationship row has a `from`/`to` side, but a caller asking "what's this connected
+  to" shouldn't have to know which side it queried from.
+- `WorldModelRepository.relationshipsWithSummaries(type, id)` — `relationshipsFor` with
+  each connected entity resolved to a short summary (a fact's value, a goal's text, a
+  ledger entry's description). `ResolvedRelationship.summary` is null for an orphan the
+  stored confidence hasn't caught up to yet, or an entity type this resolver doesn't
+  know how to read — never a fabricated placeholder. Deliberately covers only
+  FACT/GOAL/TRUST_LEDGER — the types a real writer produces today, not every type the
+  RFC's examples name (DECISION/DOCUMENT have no writer yet).
+- `MemoryDao.getFactById`, `GoalDao.getGoalById`, `TrustLedgerDao.getById` — the three
+  missing id-based lookups, additive.
+- `NuaViewModel.dreamConnections: StateFlow<Map<Long, List<String>>>` — derived from the
+  existing `dreams` flow via `.map`, resolved once per dream-list change, not per
+  recomposition.
+- `DreamsCard` (Settings) shows "Connected to: ..." under each dream when it has
+  resolved connections — the one real UI consumer, not a general graph browser (per the
+  directive's own "read-side resolution... nothing reads this data yet" framing: build
+  exactly the reader that's needed, not speculative infrastructure around it).
+
+### Verification
+Extended the existing `WorldModelRepositoryTest` (from P1.9) with 3 new cases for
+`otherSideOf`: queried from the from-side resolves to the to-side, queried from the
+to-side resolves to the from-side, and a same-type-different-id relationship doesn't
+short-circuit on type alone (both `fromType`/`fromId` must match, not just `fromType`).
+Forward-reference and injection-boundary audits both clean. Confirmed via grep no other
+file constructs `DreamsCard(...)` or `WorldModelRepository(...)` directly, so widening
+both was additive with exactly one production call site each to update.
+
+### Commit
+`56b8ff2`
+
+### Status
+CONFIRMED CI-green (run 34298625541, 15/15 steps including release-APK/R8).
+
+## September 9 (continued) — Earned Autonomy: scoped grants with expiry
+
+Third of the four items from the user's second round.
+
+### Investigation
+`TrustRepository.setAutoApprove()`/`isAutoApproved()` already existed (auto-approve a given
+`NuaActionType` once its approved-count crosses a threshold) but the grant was indefinite —
+no expiry, no review date, and no revoke-on-failure. Worse: `allAutonomyPreferences()`
+already existed on `TrustRepository` but grep across the whole codebase found zero callers
+— any currently-active auto-approve grant was completely invisible in the UI. That's a real
+transparency gap the directive's "earned autonomy... always revocable, never silent" gate
+names directly, not a speculative addition.
+
+### Implementation
+- `trust/AutonomyGrant.kt` — pure: `isGrantActive(autoApproveEnabled, expiresAt, now)` and
+  `daysUntilExpiry(expiresAt, now)`. `AUTONOMY_GRANT_DURATION_MILLIS` = 30 days. Fails
+  closed on ambiguity: `autoApproveEnabled=true, expiresAt=null` (a hypothetical
+  pre-migration row) reads as NOT active, never as perpetually valid.
+- `AutonomyPreferenceEntity.expiresAt: Long?` (additive, DB v15→16). Null whenever
+  `autoApproveEnabled` is false; always set when `setAutoApprove(enabled = true)` runs.
+- `TrustRepository.setAutoApprove()` now stamps a fresh 30-day `expiresAt` on enable and
+  clears it on disable. `isAutoApproved()`/the new `activeAutonomyGrants()` both route
+  through `isGrantActive` rather than reading `autoApproveEnabled` alone.
+- `TrustRepository.recordOutcome()` — on any failure, `revokeAutoApproveIfGranted(actionType)`
+  immediately clears that action type's standing grant. A failure fail-closes autonomy
+  rather than waiting for the user to notice and revoke it by hand.
+- `TrustUiController` — gains `activeAutonomyGrants: StateFlow<...>` (same manual-
+  refresh-on-Settings-open pattern as its other state, not a live Flow subscription) and
+  `disableAutoApprove(actionType)`, the explicit revoke path.
+- Settings: `TrustCard` gains a "NUA may currently do without asking" section listing each
+  active grant with its days-until-expiry and a Revoke button — closes the transparency gap
+  found in Investigation.
+
+### Explicitly not attempted
+Context/location/value/recipient-scoped grants (e.g. "auto-approve SMS only to contacts,
+only under $X"). The directive names scoped autonomy as a direction, but there's no
+concrete driving use case yet to shape what scope means for this codebase's action types —
+building it now would be exactly the speculative architecture this project's discipline
+argues against. Time-boxed expiry plus fail-closed revoke-on-failure is the concretely
+justified slice.
+
+### Verification
+`AutonomyGrantTest` (6 cases: future expiry is active, past expiry is not, exactly-at-expiry
+is not, a disabled grant is never active regardless of expiry, an enabled grant with no
+recorded expiry fails closed rather than open, `daysUntilExpiry` rounds down and never goes
+negative). `TrustUiControllerTest` updated (4 call sites) to cover the new fourth source.
+Forward-reference and injection-boundary audits both clean. Confirmed via grep no other
+file constructs `TrustCard(...)` directly, so widening its signature was additive with
+exactly one production call site to update.
+
+### Commit
+`f2fb75f`
+
+### Status
+CONFIRMED CI-green (run 34299235992, 15/15 steps including release-APK/R8).
+
+## September 9 (continued) — Document Intelligence: citation + redaction
+
+Fourth item — "whatever's left in original survey" from the user's second round.
+
+### Investigation
+`DocumentAnalyzer.answer()`/`.summarize()` already send full document text (truncated to
+`MAX_CONTEXT_CHARS`) to Claude, wrapped via the existing `wrapUntrusted` prompt-injection
+defense — but nothing redacts anything first, and nothing tracks which document/page an
+answer came from. Grepped the whole codebase for `redact`/`PII`/`sensitive`/`mask`: zero
+redaction logic exists anywhere — `MemoryPrivacyLevel` is a manual, user-set tag, not
+content redaction, and its own doc comment explicitly argues against auto-classifying
+sensitivity ("a wrong automatic guess is worse than no guess at all"). Page-level
+provenance is actively destroyed today: `PdfTextExtractor.extract()` OCRs each page via
+Claude vision, then joins every page's transcript into one opaque string with no page
+markers, before `DocumentRepository.save()` ever sees it — so even in principle no citation
+was recoverable from what's already stored.
+
+### Implementation
+- `documents/DocumentRedaction.kt` — pure `redactSensitivePatterns(text)`: an SSN pattern
+  (`\d{3}-\d{2}-\d{4}`), plus a 13-19-digit run checked against the standard Luhn checksum
+  (`passesLuhnCheck`) before redacting as a card number — Luhn-gating means a long
+  order/tracking/reference number that happens to be the right length isn't falsely
+  redacted just for having enough digits. Applied at the `DocumentAnalyzer` Claude-call
+  boundary (`summarize`/`answer`), not at persistence — this app's local storage is already
+  the trust boundary for everything else in it (PrivacyCentreScreen's own "local-vs-Claude"
+  framing), so redacting at rest would only make NUA's own local reading harder without
+  protecting anything. Free-text PII (a name or address in prose) isn't attempted —
+  pattern-matching structured numbers is the honestly-achievable slice.
+- `PdfTextExtractor.extract()` — page transcripts are now joined with `--- Page N ---`
+  markers instead of being flattened, so page provenance survives into the stored
+  `extractedText`. `.docx` extraction is untouched — SAX-parsed `.docx` text has no page
+  concept to preserve.
+- `DocumentAnalyzer.ANSWER_SYSTEM_PROMPT` — instructed to cite `--- Page N ---` markers
+  when they're present in a document's text, and explicitly not to invent one when they
+  aren't (a `.docx` or a document ingested before this change).
+
+### Explicitly not attempted
+Free-text/NLP-based redaction of names, addresses, or other prose PII — the same
+"a wrong automatic guess is worse than no guess" reasoning `MemoryPrivacyLevel` already
+applies. Per-chunk/per-region citation finer than a page (e.g. bounding boxes) — PdfRenderer
+gives whole-page rasters, not a text layer with coordinates, so anything finer would be
+fabricated, not read. Redaction for `.docx`/plain-text documents beyond the same two
+patterns already covers them equally (the function is format-agnostic, so this isn't a gap
+so much as a non-issue).
+
+### Verification
+`DocumentRedactionTest` (7 cases): an SSN is redacted, a valid Luhn card number is redacted
+(space- and dash-separated), a 16-digit run that fails Luhn is left alone (the false-positive
+guard), ordinary text is unchanged, multiple patterns in one document are all redacted, and
+`passesLuhnCheck` rejects an empty string. Forward-reference and injection-boundary audits
+both clean.
+
+### Commit
+`9095867`
+
+### Status
+CONFIRMED CI-green (run 34299768149, 15/15 steps including release-APK/R8).
+
+## September 9 (continued) — Communication Centre: thread provenance
+
+Fifth and final item of the user's second round.
+
+### Investigation
+Neither the SMS-send path (`NuaViewModel.executeConfirmedSms` → `SmsSender.send`) nor the
+calendar-invite path (`CalendarInviteSkill` → `CalendarReader.createInvitation`) records who
+an action was directed at anywhere queryable — `ActionOutcomeEntity`, the existing audit-
+trail table, has no recipient field. Idempotency (exact-duplicate suppression within a
+5-minute window, `trust/IdempotencyKey.kt`) already exists and fully covers replayed-
+confirmation/retry duplicates for both paths — confirmed by reading `TrustRepository.
+wasRecentlyExecuted` and its two call sites — so this is a distinct concern (a same-day
+"how many times have I messaged this person" question, not exact-duplicate detection) and
+doesn't duplicate that work. SMS is the channel that's genuinely a "thread" — an ongoing
+conversation with one person; a calendar invite is a single event with no reply/back-and-
+forth concept, so scoping this to SMS is an honest distinction, not a shortcut.
+
+### Implementation
+- `ActionOutcomeEntity.recipient: String?` (additive, DB v16→17) + `ActionOutcomeDao.
+  recentByRecipient(recipient, actionType, sinceMillis)`.
+- `TrustRepository.recordOutcome()` gains an optional `recipient` parameter; new
+  `recentSendsTo(recipient, actionType, sinceMillis)` filters to `countsAsCommitted()`
+  outcomes only — the same "was this actually sent, not just attempted" distinction
+  `wasRecentlyExecuted` already draws.
+- `trust/ThreadProvenance.kt` — pure `sameDayWindowStart(now)` (24h, distinct from the
+  5-minute idempotency window) and `threadProvenanceNote(priorSendCount)`.
+- `NuaViewModel.executeConfirmedSms` queries `recentSendsTo` before sending and passes the
+  count into `smsConfirmationMessage`, which now appends "This is message #N to them today"
+  when there's a prior send — a real, visible reader of the new field at the moment it
+  matters, not an unused column (the same mistake `allAutonomyPreferences()` turned out to
+  be before this session's Earned Autonomy seam gave it one).
+
+### Explicitly not attempted
+Calendar-invite recipient tracking and a general per-recipient "thread" browsing UI. A
+calendar invite has no ongoing back-and-forth to provide provenance about, so extending the
+same field there without a concrete reader would repeat the exact invisible-field mistake
+this seam's own SMS side was built to avoid. A dedicated thread-history screen is a
+materially larger feature (its own UI, its own navigation entry) with no driving use case
+yet beyond the in-flow note this seam adds.
+
+### Verification
+`ThreadProvenanceTest` (5 cases: zero and negative prior-send counts produce no note, one
+and three prior sends produce the correctly-numbered note, `sameDayWindowStart` is exactly
+24 hours before `now`). `ActionConfirmationOutcomesTest` extended with 2 cases for
+`smsConfirmationMessage`'s new parameter (no note at zero, correct note at a nonzero count).
+Forward-reference and injection-boundary audits both clean. Confirmed via grep no other file
+constructs `ActionOutcomeEntity(...)` besides `TrustRepository`/`TrustScoreEngineTest`
+(the latter uses named parameters, so the additive field didn't require a test update).
+
+### Commit
+`9095867`
+
+### Status
+CONFIRMED CI-green (run 34299768149, 15/15 steps including release-APK/R8).
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

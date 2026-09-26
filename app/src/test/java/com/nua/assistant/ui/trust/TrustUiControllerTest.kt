@@ -40,24 +40,32 @@ class TrustUiControllerTest {
     // -----------------------------------------------------------------------------------
 
     @Test
-    fun `assembles score, ledger, and suggestions from their three sources`() = runTest {
+    fun `assembles score, ledger, suggestions, and active grants from their four sources`() = runTest {
         val ledger = listOf(ledgerEntry())
         val suggestions = listOf(preference(NuaActionType.SMS_SEND, approvedCount = 5, autoApproveEnabled = false))
+        val grants = listOf(preference(NuaActionType.PLAN_TASK, approvedCount = 6, autoApproveEnabled = true))
 
         val state = refreshedTrustState(
             scoreSnapshot = { 87 },
             recentLedger = { ledger },
             autonomySuggestions = { suggestions },
+            activeAutonomyGrants = { grants },
         )
 
         assertEquals(87, state.trustScore)
         assertEquals(ledger, state.trustLedger)
         assertEquals(suggestions, state.autonomySuggestions)
+        assertEquals(grants, state.activeAutonomyGrants)
     }
 
     @Test
     fun `an empty ledger and no suggestions produce an empty, not null, state`() = runTest {
-        val state = refreshedTrustState(scoreSnapshot = { 100 }, recentLedger = { emptyList() }, autonomySuggestions = { emptyList() })
+        val state = refreshedTrustState(
+            scoreSnapshot = { 100 },
+            recentLedger = { emptyList() },
+            autonomySuggestions = { emptyList() },
+            activeAutonomyGrants = { emptyList() },
+        )
         assertEquals(100, state.trustScore)
         assertTrue(state.trustLedger.isEmpty())
         assertTrue(state.autonomySuggestions.isEmpty())
@@ -65,8 +73,8 @@ class TrustUiControllerTest {
 
     @Test
     fun `repeated calls are independent — the second reflects only its own sources`() = runTest {
-        val first = refreshedTrustState({ 40 }, { listOf(ledgerEntry()) }, { emptyList() })
-        val second = refreshedTrustState({ 90 }, { emptyList() }, { listOf(preference(NuaActionType.PLAN_TASK, 5, false)) })
+        val first = refreshedTrustState({ 40 }, { listOf(ledgerEntry()) }, { emptyList() }, { emptyList() })
+        val second = refreshedTrustState({ 90 }, { emptyList() }, { listOf(preference(NuaActionType.PLAN_TASK, 5, false)) }, { emptyList() })
 
         assertEquals(40, first.trustScore)
         assertEquals(1, first.trustLedger.size)
@@ -83,7 +91,12 @@ class TrustUiControllerTest {
         // the pre-extraction refreshTrust) ever caught a repository exception — a
         // failure surfaces through the launched coroutine exactly as it always has.
         // Adding a try/catch here would be new behaviour, not preserved behaviour.
-        refreshedTrustState(scoreSnapshot = { throw IllegalStateException("boom") }, recentLedger = { emptyList() }, autonomySuggestions = { emptyList() })
+        refreshedTrustState(
+            scoreSnapshot = { throw IllegalStateException("boom") },
+            recentLedger = { emptyList() },
+            autonomySuggestions = { emptyList() },
+            activeAutonomyGrants = { emptyList() },
+        )
     }
 
     // -----------------------------------------------------------------------------------

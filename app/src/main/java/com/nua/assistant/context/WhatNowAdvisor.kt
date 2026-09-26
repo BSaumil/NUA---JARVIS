@@ -3,7 +3,6 @@ package com.nua.assistant.context
 import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
 import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
-import com.nua.assistant.goals.GoalRepository
 import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,25 +23,21 @@ private val WHAT_NOW_SYSTEM_PROMPT = """
 
 /**
  * Backs the "What should I do now?" entry point — the one-tap, zero-typing way into
- * everything ContextEngine and Goals already gather. No new intelligence, just a
- * dedicated prompt shape over data those two already produce. Returns a structured
- * [WhatNowResult] rather than free text so the UI can show reason/confidence/estimate
- * separately and distinguish "nothing needs attention" from "couldn't work it out."
+ * everything ContextEngine already gathers (goals, decisions, place included — see
+ * [ContextSnapshot]). No new intelligence, just a dedicated prompt shape over data
+ * ContextEngine already produces. Returns a structured [WhatNowResult] rather than free
+ * text so the UI can show reason/confidence/estimate separately and distinguish "nothing
+ * needs attention" from "couldn't work it out."
  */
 @Singleton
 class WhatNowAdvisor @Inject constructor(
     private val contextEngine: ContextEngine,
-    private val goalRepository: GoalRepository,
     private val claudeApiClient: ClaudeApiClient,
 ) {
     suspend fun recommend(pinnedLanguage: NuaLanguage? = null): WhatNowResult {
         val snapshot = contextEngine.currentSnapshot()
-        val goals = goalRepository.activeGoals()
 
-        val prompt = buildString {
-            appendLine(snapshot.describe())
-            appendLine("Active goals: " + if (goals.isEmpty()) "none set" else goals.joinToString("; ") { it.text })
-        }
+        val prompt = snapshot.describe()
 
         val system = buildString {
             appendLine(WHAT_NOW_SYSTEM_PROMPT)
