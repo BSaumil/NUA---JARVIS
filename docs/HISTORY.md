@@ -1479,10 +1479,10 @@ guard), ordinary text is unchanged, multiple patterns in one document are all re
 both clean.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`9095867`
 
 ### Status
-PENDING CI verification at time of writing.
+CONFIRMED CI-green (run 34299768149, 15/15 steps including release-APK/R8).
 
 ## September 9 (continued) — Communication Centre: thread provenance
 
@@ -1534,10 +1534,10 @@ constructs `ActionOutcomeEntity(...)` besides `TrustRepository`/`TrustScoreEngin
 (the latter uses named parameters, so the additive field didn't require a test update).
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`9095867`
 
 ### Status
-PENDING CI verification at time of writing.
+CONFIRMED CI-green (run 34299768149, 15/15 steps including release-APK/R8).
 
 ## What this history is for
 
