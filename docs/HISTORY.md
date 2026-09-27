@@ -1933,6 +1933,123 @@ directive-described DoD; each documents exactly what remains as its own named ne
 slice. Phase B (Sovereign Model Mesh, Temporal World Model 2.0, Counterfactual Decision
 Simulator) is next, not yet started.
 
+## September 27 (continued) — Sovereign Model Mesh (Feature 2), Phase B begins
+
+First Intelligence-moat item of the 5-Year Standalone Master Directive.
+
+### Investigation
+`ai/ClaudeApiClient.kt`'s own doc comment already states "every capability in NUA that
+needs Claude... goes through this one client" — confirmed by reading it and grepping
+every call site (12 files: `PersonalityEngine`/`IntentClassifier`/`FactExtractor`/
+`TaskPlanner` in `ai/`, `MorningBriefing`, `WhatNowAdvisor`, `SelfDiagnosticsRepository`,
+`DocumentAnalyzer`, `DreamSynthesisWorker`, `GoalReviewWorker`,
+`MemoryConsolidationWorker`, `VisionAnalyzer`, `NuaViewModel`). Two model tiers already
+exist (`CLAUDE_MODEL_CONVERSATION`=Sonnet, `CLAUDE_MODEL_UTILITY`=Haiku,
+`ai/ClaudeModels.kt`), but which one a call uses is hardcoded per call site, not decided
+by any routing policy — exactly the gap `ROADMAP.md`'s own Phase 16 already names
+("Cost-aware model routing... formalized into explicit routing rules instead of
+hardcoded per-call-site choices"). More importantly: `NuaIntentRouter.route()` already
+*informally* implements the directive's exact `LOCAL_RULES -> CLOUD` chain today —
+`KeywordIntentMatcher.match()` (free, on-device, zero network) is tried first, and only
+a miss reaches `IntentClassifier.classify()` (a paid Claude call). This is real,
+already-shipped local-tier behavior — Feature 2's job this round is to formalize it as a
+reusable routing model, not invent a fabricated on-device model where none exists.
+
+### Implementation
+- `ai/mesh/TaskContract.kt` — `InferenceTaskType` (11 members, named per the directive;
+  only `INTENT_CLASSIFICATION` has a real multi-tier path this round), `PrivacySensitivity`,
+  `TaskContract` (task, sensitivity, `requiresOffline`, `requiresFrontierCapability` —
+  the last formalizing the existing Sonnet-vs-Haiku choice every call site already makes
+  explicitly today).
+- `ai/mesh/ModelProviderTier.kt` — the five-tier enum plus the pure
+  `fallbackOrder(contract, availableTiers)`: deterministic, fully unit-testable, the
+  actual "model fallback is deterministic and tested" DoD item.
+- `ai/mesh/ModelAvailabilityDetector.kt` — interface + `RealModelAvailabilityDetector`.
+  `LOCAL_RULES` is only ever reported available for `INTENT_CLASSIFICATION` — the one
+  task with a real deterministic local resolver (`KeywordIntentMatcher`); claiming it for
+  any other task would be fabricating a capability. `LOCAL_MODEL`/`PRIVATE_OS_MODEL`
+  always report unavailable — no on-device model ships with this app, stated honestly
+  rather than faked. Cloud tiers require both connectivity and a configured API key, the
+  same two checks `ClaudeApiClient`/`NuaViewModel` already make independently.
+- `ai/mesh/ModelMesh.kt` — `complete(contract, ...)` (provider-neutral single-turn
+  completion, resolving to `CloudCompletionProvider` on whichever cloud tier the contract
+  allows; returns an honest `ClaudeResult.Failure` — never attempts a network call — when
+  no tier is available) and `classifyIntent(utterance, classifyViaCloud)` (tries
+  `KeywordIntentMatcher` first, falls through to the caller-supplied cloud classifier only
+  on a local miss). `CloudCompletionProvider` wraps `ClaudeApiClient.complete` behind an
+  interface purely for JVM-testability — the same reason `LineageRecorder`/`ActionAdapter`
+  are interfaces rather than concrete classes.
+- `ai/IntentClassifier.kt` — migrated: now depends on `ModelMesh` instead of
+  `ClaudeApiClient` directly. Same prompt, same token budget, same model
+  (`requiresFrontierCapability` defaults false, so the Mesh resolves to
+  `CLOUD_FAST`/`CLAUDE_MODEL_UTILITY`, identical to what this call site always used) —
+  the one concrete "existing Claude call migrated behind a provider-neutral interface"
+  this round. `IntentClassifier`'s own prompt-building/JSON-parsing logic is completely
+  unchanged, proving "provider replacement requires no domain-layer rewrite." One real
+  behavior change: the Mesh checks connectivity/API-key *before* attempting the network
+  call (matching `NuaViewModel.replyConversationally`'s existing offline-check
+  convention), instead of always attempting and catching the resulting exception —
+  `classify()`'s only caller (`NuaIntentRouter.route()`) already treats a null result
+  identically regardless of cause, so this is a genuine no-regression improvement, not
+  just a refactor.
+- `ai/mesh/ModelMeshModule.kt` — Hilt bindings for both new interfaces.
+
+### The bug this round's own hand-trace found and fixed before pushing
+Writing `classifyIntent`'s test surfaced a real defect in the first draft: because
+`fallbackOrder` can name *both* `CLOUD_FAST` and `CLOUD_FRONTIER` as available, and
+`classifyIntent`'s single opaque `classifyViaCloud` lambda doesn't distinguish between
+them (intent classification only ever needs the cheap tier), a null cloud result (e.g. an
+unparseable reply) would have silently triggered a second, identical network call under
+the nominal `CLOUD_FRONTIER` tier — a real duplicate-side-effect defect, exactly the
+class of bug the Guardian Lab round's own adversarial tests exist to catch. Fixed with a
+one-shot guard (`cloudAttempted`) before this was ever pushed, with a dedicated test
+(`classifyIntent invokes the cloud path at most once...`) asserting it directly.
+
+### Explicitly not attempted this round
+`NuaIntentRouter` itself is **not** migrated to call `ModelMesh.classifyIntent` — it
+keeps its own, separately-tested (if implicitly, via `KeywordIntentMatcherTest`)
+keyword-then-classify sequence unchanged. It's the single most load-bearing, most
+security-audited dispatch path in the app (the subject of both
+`injection_boundary_audit.py` and this round's own `uaf_boundary_audit.py`-adjacent
+scrutiny); retrofitting it deserves its own dedicated, carefully-tested pass, not a
+bundle inside an infrastructure-building round. `classifyIntent` is real, tested,
+demonstrated infrastructure — not yet wired to a live caller, the same
+writer-then-reader-proven-separately precedent `WorldModelRepository` (P1.9) and this
+session's own Universal Action Fabric slice both already established. Every other Claude
+call site (`FactExtractor`, `TaskPlanner`, `MorningBriefing`, `WhatNowAdvisor`,
+`SelfDiagnosticsRepository`, `DocumentAnalyzer`, `DreamSynthesisWorker`,
+`GoalReviewWorker`, `MemoryConsolidationWorker`, `VisionAnalyzer`,
+`PersonalityEngine`/`NuaViewModel`'s main chat) is **not** migrated — each is a real,
+separately-scoped next slice. No on-device or OS-provided local model exists or is
+built this round — `LOCAL_MODEL`/`PRIVATE_OS_MODEL` remain honestly unavailable for
+every task; building one is a materially larger undertaking explicitly out of scope for
+one infrastructure slice, and this project's own "no fake local/private" discipline
+forbids claiming otherwise. `TaskContract.privacySensitivity` is declared and carried
+through but not yet enforced by any routing decision — informs, doesn't yet gate,
+matching the field's own doc comment.
+
+### Verification
+`ModelProviderTierTest` (8 cases: full priority order with everything available,
+availability filtering, `requiresOffline` excluding cloud tiers even when nominally
+available, `requiresOffline` with no on-device tier producing an empty order rather than
+falling back to network, `requiresFrontierCapability` skipping `CLOUD_FAST`, a utility
+task ordering `CLOUD_FAST` before `CLOUD_FRONTIER`, no tiers available never crashing,
+determinism). `ModelMeshTest` (8 cases against real `ModelMesh` with fakes: correct model
+per contract, no network attempt when nothing's available — both the general and the
+`requiresOffline`-specific case, `classifyIntent` resolving locally without ever touching
+the cloud path, falling through correctly on a local miss, the duplicate-cloud-call fix
+verified directly, a fully-unavailable request returning null without crashing).
+Forward-reference, injection-boundary, and UAF-boundary audits all clean.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing. Feature 2 (Sovereign Model Mesh) has a real,
+tested, deterministic routing core and one genuinely migrated call site
+(`IntentClassifier`) — not yet the full-surface migration, a local/OS model, or
+`NuaIntentRouter` itself; each is a named next slice.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
