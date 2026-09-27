@@ -1539,6 +1539,134 @@ constructs `ActionOutcomeEntity(...)` besides `TrustRepository`/`TrustScoreEngin
 ### Status
 CONFIRMED CI-green (run 34299768149, 15/15 steps including release-APK/R8).
 
+## September 27 — 5-Year Standalone Master Directive: repo audit + Universal Action Fabric core
+
+A new master directive arrived, restating the mission as a ten-feature, multi-phase
+program (Universal Action Fabric, Sovereign Model Mesh, Temporal World Model 2.0,
+Counterfactual Decision Simulator, Contextual Autonomy Contracts + Shadow Mode, NUA
+Recipes, Privacy Capsules/Data Egress Gateway, Presence Mesh, Flight Recorder, Guardian
+Lab), explicitly framed as a multi-year program and explicitly forbidding claiming a
+feature shipped on scaffolding alone. Its own stated order is Foundation (audit, UAF,
+Privacy Capsules, Flight Recorder, Guardian Lab) before Intelligence/Autonomy/Presence
+moats. This entry covers the audit and the first real slice of the first Foundation item.
+
+### Repository truth audit
+Re-verified the directive's own §1 baseline claims against real code rather than trusting
+them: the closed `NuaActionType` enum (`ai/IntentClassifier.kt`), the exhaustive
+`autonomyTierFor` `when` with no `else` (`trust/AutonomyTier.kt`), and `SkillSandbox`'s
+single enforcement point (`missingRequiredParameters`/`filterToDeclaredParameters`/
+timeout/exception containment, `automation/SkillSandbox.kt`) all match exactly what the
+directive and this project's own prior history already claim. No drift found — the
+baseline holds.
+
+### Investigation — Universal Action Fabric (Feature 1)
+The directive asks for a "universal, typed orchestration fabric" above the existing
+closed skill registry: machine-readable capability descriptors, adapter classes for
+different execution mechanisms, and a transactional multi-step workflow engine — with an
+explicit critical rule that no new adapter may become a second authorization path.
+Investigated what already exists rather than assuming a rewrite was needed:
+`automation/SkillManifest.kt`/`SkillSandbox.kt` already are a working single-enforcement-
+point sandbox; `automation/SkillCatalog.kt` already generates a user-facing capability
+list from the same closed Hilt-multibound skill map the router dispatches through. What
+doesn't exist: a machine-readable descriptor covering risk/side-effect/reversibility/
+idempotency/confirmation/adapter fields together, more than one execution mechanism, and
+any notion of a multi-step plan with dependencies, checkpoints, or compensation.
+
+### Implementation
+- `automation/uaf/CapabilityDescriptor.kt` — `CapabilityDescriptor` (action, purpose,
+  parameters, `riskTier`, permissions, `sideEffect`/`reversibility`/`idempotency`/
+  `confirmation` classification, timeout, preferred/fallback adapters) and the pure
+  `capabilityDescriptorFor(action, manifest)` that builds one. `riskTier` is read from the
+  existing `autonomyTierFor`, `permissions`/`parameters`/`timeoutMillis` from the skill's
+  own `SkillManifest` — nothing here is a second source of truth that could drift from
+  what `SkillSandbox` actually enforces. The side-effect/reversibility/idempotency/
+  confirmation classification is a genuinely new per-action judgment, hand-reviewed
+  against each action's real behavior with an exhaustive `when` (no `else`), the same
+  invariant `autonomyTierFor` already holds.
+- `automation/uaf/CapabilityRegistry.kt` — generates every descriptor from the same
+  closed `Map<NuaActionType, NuaSkill>` `NuaIntentRouter`/`SkillCatalog` already read —
+  a third reader of the one registry, not a second registry.
+- `automation/uaf/AuthorizationProof.kt` — `AuthorizationProof` (`NotRequired`/
+  `UserConfirmed`) and the pure `isAuthorizationSufficient(policy, proof)` — the fabric's
+  one authorization checkpoint. `CONFIRM_BEFORE_EXECUTE` accepts only a real
+  `UserConfirmed` proof; `NotRequired` is never sufficient for it, so a step can't
+  silently downgrade its own descriptor's policy by omission.
+- `automation/uaf/ActionAdapter.kt` — the `ActionAdapter` interface plus two real
+  implementations: `LocalNativeAdapter` (delegates to `SkillSandbox.execute` verbatim —
+  not a reimplementation of its enforcement, the same call `NuaIntentRouter.dispatch`
+  already makes, reached through a second entry point rather than a second policy) and
+  `NotificationRemoteInputAdapter` (sends a notification reply through the official
+  RemoteInput mechanism directly, the same API `NotificationReplySender` already wraps —
+  a genuinely distinct execution mechanism, not a rewrapped skill call). Five of the
+  seven `ExecutionAdapterType` members (`ANDROID_INTENT`, `APP_FUNCTIONS`, `MCP`,
+  `ACCESSIBILITY`, `EXTERNAL_API`) are declared but deliberately unbound this round — see
+  below.
+- `automation/uaf/ActionPlan.kt` — `PlanStep`/`ActionPlan` (a dependency DAG),
+  `StepOutcomeState` (7 states including `AWAITING_USER`/`AUTHORIZATION_REFUSED`/
+  `COMPENSATED`, extending this project's existing "truthful multi-state outcome"
+  philosophy rather than a boolean), `PlanRunState` (the whole checkpoint), and the pure
+  decision functions `topologicalOrder`/`nextRunnableStep`/`outcomeForFailedStep`/
+  `shouldStopPlanAfterFailure`/`shouldCompensate`/`isPlanComplete`/`isPlanAwaitingUser`.
+  `nextRunnableStep` recomputes eligibility from `PlanRunState` alone rather than any
+  in-memory loop position — that's what makes resume-after-process-death safe: there is
+  no separate resume path, only "run again from the last checkpoint."
+- `automation/uaf/WorkflowExecutor.kt` — runs a plan to completion or its next pause
+  point. Every step, including a compensation step, goes through the same
+  `isAuthorizationSufficient` check and the same `ActionAdapter` dispatch as any other.
+  `FailurePolicy.STOP` halts the whole plan; `SKIP` continues past independent steps but
+  never runs a step depending on a failed one (FAILED/AUTHORIZATION_REFUSED are not
+  dependency-satisfying states, so dependents are simply left unattempted rather than run
+  against a bad prerequisite); `COMPENSATE` runs the named compensation step once
+  (recorded as `COMPENSATED`, not `SUCCEEDED`, to distinguish it from a normal step) and
+  then halts; `ASK_USER` pauses the run in `AWAITING_USER` rather than failing it.
+- `automation/uaf/AdapterModule.kt` — Hilt multibinding for the two real adapters,
+  mirroring `SkillModule.kt`'s existing `ActionTypeKey`/`@IntoMap` pattern with a new
+  `AdapterTypeKey`.
+
+### Explicitly not attempted this round
+AppFunctions/MCP/Android-Intent/External-API adapter implementations — each needs either
+a real external integration point this codebase doesn't have yet (MCP, external APIs) or
+a version-gated platform API this pass didn't investigate deeply enough to wire safely
+(AppFunctions). The Accessibility adapter specifically was left unbound rather than
+wired to the existing `NuaAccessibilityService` skeleton (itself still unimplemented,
+per this project's own long-standing known gap) — wiring a last-resort adapter to a
+last-resort mechanism that doesn't exist yet would be exactly the speculative work this
+project's whole discipline argues against. No chat-triggered user-facing entry point
+into the workflow engine exists yet — this round is infrastructure, verified by tests,
+the same "writer/reader proven separately" precedent `WorldModelRepository` (P1.9)
+already set for this codebase. A genuinely useful multi-app example command (the
+directive's own "when I leave work, message Pooja..." illustration) needs geofencing +
+SMS + media control composed through a real UI trigger, which is the natural next slice,
+not part of this one.
+
+### Verification
+`ActionPlanTest` (13 cases: dependency ordering, cycle rejection, dependency
+satisfaction by SUCCEEDED/SKIPPED-but-not-FAILED, plan pausing while any step awaits the
+user, every `FailurePolicy` mapping, `shouldCompensate`'s two-condition requirement,
+additive checkpointing, completeness). `CapabilityDescriptorTest` (7 cases, including
+every current `NuaActionType` producing a descriptor whose `riskTier` never diverges from
+`autonomyTierFor`). `AuthorizationProofTest` (3 cases). `WorkflowExecutorTest` (11 cases
+against real `CapabilityRegistry`/fake adapters — the same "exercise the real coroutine
+orchestration, not just the pure functions it calls" discipline `SkillSandboxTest`
+already applies to `executeSandboxed`): a two-step dependency-ordered run; two different
+adapter types used in one plan; an unauthorized sensitive step never reaching an adapter;
+`STOP` halting a later independent step; `SKIP` running an independent step while leaving
+a dependent of the failed step unattempted; `ASK_USER` pausing and a resumed plan (fresh
+`PlanRunState`, same as a process-death restart would hand it) completing past it;
+resuming from a partially-completed checkpoint never re-running an already-succeeded
+step; `COMPENSATE` running its named step once and halting; a cyclic plan rejected before
+any step runs; a step naming an unregistered capability failing cleanly rather than
+crashing the run. Forward-reference and injection-boundary audits both clean.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing. Feature 1 (Universal Action Fabric) is
+SHIPPED_EXTERNAL_ACTIVATION_REQUIRED-equivalent for its core engine and two real
+adapters — a genuinely functioning foundation, not yet the full seven-adapter surface or
+a user-facing entry point; both are explicitly the next slice, not claimed complete here.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
