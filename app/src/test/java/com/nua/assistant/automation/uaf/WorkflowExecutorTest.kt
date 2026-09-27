@@ -5,6 +5,8 @@ import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.automation.NuaSkill
 import com.nua.assistant.automation.SkillManifest
+import com.nua.assistant.trust.lineage.LineageEntry
+import com.nua.assistant.trust.lineage.LineageRecorder
 import com.nua.assistant.voice.NuaLanguage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -39,6 +41,14 @@ private class ScriptedAdapter(
     }
 }
 
+/** Records every entry handed to it, in order — no Room, so [WorkflowExecutorTest] can assert lineage without touching the database. */
+private class FakeLineageRecorder : LineageRecorder {
+    val entries = mutableListOf<LineageEntry>()
+    override suspend fun record(entry: LineageEntry) {
+        entries += entry
+    }
+}
+
 private fun step(
     id: String,
     action: NuaActionType = NuaActionType.GET_WEATHER,
@@ -53,14 +63,14 @@ private fun step(
  * same discipline [SkillSandboxTest] already applies to [executeSandboxed]: the pure
  * decision functions in ActionPlan.kt are tested directly in [ActionPlanTest], this file
  * proves the *engine* that calls them wires authorization, adapter selection, compensation,
- * and resume together correctly.
+ * resume, and Flight Recorder lineage together correctly.
  */
 class WorkflowExecutorTest {
 
     @Test
     fun `a two-step plan runs both steps to SUCCEEDED in dependency order`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
-        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan("p1", listOf(step("a"), step("b", dependsOn = listOf("a"))))
 
         val state = executor.run(plan, CONTEXT)
@@ -79,6 +89,7 @@ class WorkflowExecutorTest {
         val executor = WorkflowExecutor(
             registry,
             mapOf(ExecutionAdapterType.LOCAL_NATIVE to local, ExecutionAdapterType.NOTIFICATION_REMOTE_INPUT to notification),
+            FakeLineageRecorder(),
         )
         val plan = ActionPlan(
             "p1",
@@ -104,7 +115,7 @@ class WorkflowExecutorTest {
     @Test
     fun `a CONFIRM_BEFORE_EXECUTE step with no authorization proof is refused, never reaching an adapter`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
-        val executor = WorkflowExecutor(registryOf(NuaActionType.SMS_SEND), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registryOf(NuaActionType.SMS_SEND), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan("p1", listOf(step("a", action = NuaActionType.SMS_SEND)))
 
         val state = executor.run(plan, CONTEXT)
@@ -117,7 +128,7 @@ class WorkflowExecutorTest {
     fun `STOP halts the whole plan -- a later independent step never runs`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
         local.onStep("a", NuaRouteResult.ActionTaken("nope", succeeded = false))
-        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan("p1", listOf(step("a", failurePolicy = FailurePolicy.STOP), step("b")))
 
         val state = executor.run(plan, CONTEXT)
@@ -131,7 +142,7 @@ class WorkflowExecutorTest {
     fun `SKIP lets an independent later step run, but a dependent of the failed step stays unattempted`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
         local.onStep("a", NuaRouteResult.ActionTaken("nope", succeeded = false))
-        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan(
             "p1",
             listOf(step("a", failurePolicy = FailurePolicy.SKIP), step("independent"), step("dependent", dependsOn = listOf("a"))),
@@ -148,7 +159,7 @@ class WorkflowExecutorTest {
     fun `ASK_USER pauses the run rather than failing it, and resuming with proof continues past it`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
         val registry = registryOf(NuaActionType.SMS_SEND, NuaActionType.GET_WEATHER)
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan(
             "p1",
             listOf(step("a", action = NuaActionType.SMS_SEND, failurePolicy = FailurePolicy.ASK_USER), step("b", action = NuaActionType.GET_WEATHER, dependsOn = listOf("a"))),
@@ -172,7 +183,7 @@ class WorkflowExecutorTest {
     @Test
     fun `resuming from a partially-completed checkpoint never re-runs an already-succeeded step`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
-        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan("p1", listOf(step("a"), step("b", dependsOn = listOf("a"))))
 
         val checkpoint = PlanRunState("p1").withOutcome(StepOutcome("a", StepOutcomeState.SUCCEEDED))
@@ -187,7 +198,7 @@ class WorkflowExecutorTest {
     fun `COMPENSATE runs the named compensation step once, records COMPENSATED, and still halts the plan`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
         local.onStep("a", NuaRouteResult.ActionTaken("nope", succeeded = false))
-        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan(
             "p1",
             listOf(
@@ -208,7 +219,7 @@ class WorkflowExecutorTest {
     @Test
     fun `a cyclic plan is rejected before any step runs`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
-        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan("p1", listOf(step("a", dependsOn = listOf("b")), step("b", dependsOn = listOf("a"))))
 
         try {
@@ -223,12 +234,48 @@ class WorkflowExecutorTest {
     @Test
     fun `a step whose action has no registered capability fails cleanly, never crashing the run`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
-        val executor = WorkflowExecutor(registryOf(), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local))
+        val executor = WorkflowExecutor(registryOf(), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
         val plan = ActionPlan("p1", listOf(step("a")))
 
         val state = executor.run(plan, CONTEXT)
 
         assertEquals(StepOutcomeState.FAILED, state.outcomes["a"]?.state)
         assertTrue(local.calls.isEmpty())
+    }
+
+    @Test
+    fun `every step -- including a compensation step -- is recorded to the Flight Recorder with a matching outcome`() = runTest {
+        val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
+        local.onStep("a", NuaRouteResult.ActionTaken("nope", succeeded = false))
+        val lineage = FakeLineageRecorder()
+        val executor = WorkflowExecutor(registryOf(NuaActionType.GET_WEATHER), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), lineage)
+        val plan = ActionPlan("run-42", listOf(step("a", failurePolicy = FailurePolicy.COMPENSATE, compensationStepId = "undo-a"), step("undo-a")))
+
+        executor.run(plan, CONTEXT)
+
+        assertEquals(2, lineage.entries.size)
+        assertEquals("run-42", lineage.entries[0].runId)
+        assertEquals("a", lineage.entries[0].stepId)
+        assertEquals(StepOutcomeState.FAILED.name, lineage.entries[0].outcomeState)
+        assertEquals("undo-a", lineage.entries[1].stepId)
+        assertEquals(
+            "a step recorded as the plan's official outcome (COMPENSATED) must be recorded identically in its own lineage entry",
+            StepOutcomeState.COMPENSATED.name,
+            lineage.entries[1].outcomeState,
+        )
+    }
+
+    @Test
+    fun `a step refused for missing authorization is still recorded to the Flight Recorder`() = runTest {
+        val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
+        val lineage = FakeLineageRecorder()
+        val executor = WorkflowExecutor(registryOf(NuaActionType.SMS_SEND), mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), lineage)
+        val plan = ActionPlan("p1", listOf(step("a", action = NuaActionType.SMS_SEND)))
+
+        executor.run(plan, CONTEXT)
+
+        assertEquals(1, lineage.entries.size)
+        assertEquals(StepOutcomeState.AUTHORIZATION_REFUSED.name, lineage.entries[0].outcomeState)
+        assertEquals("NotRequired", lineage.entries[0].authorizationKind)
     }
 }

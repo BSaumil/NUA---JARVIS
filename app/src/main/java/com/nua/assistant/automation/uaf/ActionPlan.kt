@@ -115,14 +115,15 @@ fun nextRunnableStep(plan: ActionPlan, state: PlanRunState): PlanStep? {
 /**
  * Pure: what a step's own [FailurePolicy] means once it's failed — not a decision the
  * executor re-derives ad hoc, so [WorkflowExecutorTest] can assert it directly without a
- * fake adapter/coroutine in the loop.
+ * fake adapter/coroutine in the loop. [naturalFailureState] is *why* the step failed
+ * (a plain adapter-execution [StepOutcomeState.FAILED], or the more specific
+ * [StepOutcomeState.AUTHORIZATION_REFUSED] when it never reached an adapter at all) —
+ * [FailurePolicy.ASK_USER] overrides either one to [StepOutcomeState.AWAITING_USER]
+ * uniformly, since "pause for the user" applies the same way regardless of what kind of
+ * failure triggered it; every other policy passes [naturalFailureState] through unchanged.
  */
-fun outcomeForFailedStep(step: PlanStep): StepOutcomeState = when (step.failurePolicy) {
-    FailurePolicy.STOP -> StepOutcomeState.FAILED
-    FailurePolicy.SKIP -> StepOutcomeState.FAILED
-    FailurePolicy.COMPENSATE -> StepOutcomeState.FAILED
-    FailurePolicy.ASK_USER -> StepOutcomeState.AWAITING_USER
-}
+fun outcomeForFailedStep(step: PlanStep, naturalFailureState: StepOutcomeState = StepOutcomeState.FAILED): StepOutcomeState =
+    if (step.failurePolicy == FailurePolicy.ASK_USER) StepOutcomeState.AWAITING_USER else naturalFailureState
 
 /** Pure: whether a failed step (already recorded via [outcomeForFailedStep]) should halt the whole plan. */
 fun shouldStopPlanAfterFailure(step: PlanStep): Boolean = step.failurePolicy == FailurePolicy.STOP

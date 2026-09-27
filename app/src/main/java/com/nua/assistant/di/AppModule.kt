@@ -14,6 +14,7 @@ import com.nua.assistant.memory.NuaDatabase
 import com.nua.assistant.memory.TrustLedgerDao
 import com.nua.assistant.memory.UsageDao
 import com.nua.assistant.memory.VisionMonitorDao
+import com.nua.assistant.memory.LineageDao
 import com.nua.assistant.memory.WorldRelationshipDao
 import dagger.Module
 import dagger.Provides
@@ -75,6 +76,9 @@ object AppModule {
 
     @Provides
     fun provideWorldRelationshipDao(database: NuaDatabase): WorldRelationshipDao = database.worldRelationshipDao()
+
+    @Provides
+    fun provideLineageDao(database: NuaDatabase): LineageDao = database.lineageDao()
 
     @Provides
     @Singleton

@@ -1659,13 +1659,28 @@ any step runs; a step naming an unregistered capability failing cleanly rather t
 crashing the run. Forward-reference and injection-boundary audits both clean.
 
 ### Commit
-`2581cb6` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`2581cb6` — pushed to `claude/new-session-efg0ha`.
 
 ### Status
-PENDING CI verification at time of writing. Feature 1 (Universal Action Fabric) is
-SHIPPED_EXTERNAL_ACTIVATION_REQUIRED-equivalent for its core engine and two real
-adapters — a genuinely functioning foundation, not yet the full seven-adapter surface or
-a user-facing entry point; both are explicitly the next slice, not claimed complete here.
+**CI correctly failed `2581cb6`** (run `36320791337`, `WorkflowExecutorTest > ASK_USER
+pauses the run...` at line 148) — a real defect, not a flaky test:
+`runOneStep`'s two early-return branches ("no capability registered," "authorization
+refused") hardcoded their `StepOutcomeState` (`FAILED`, `AUTHORIZATION_REFUSED`)
+regardless of the step's own `FailurePolicy`, so `outcomeForFailedStep` — the function
+that's supposed to be the *one* place a step's failure policy gets applied — was only
+ever actually consulted on the adapter-execution-failure path. A step declared
+`FailurePolicy.ASK_USER` therefore paused correctly when its *adapter* failed, but not
+when it was refused for missing authorization before ever reaching an adapter — exactly
+the case the test exercised (an `SMS_SEND` step with no proof). Fixed in the next
+commit: `outcomeForFailedStep` now takes the *natural* failure state as a parameter
+(`FAILED` or `AUTHORIZATION_REFUSED`) and overrides it to `AWAITING_USER` uniformly
+whenever the step's policy is `ASK_USER`, regardless of which of `runOneStep`'s three
+failure branches produced it. All 34 tests, including the one that caught this,
+hand-traced against the fixed logic before re-pushing (see the next commit's entry).
+Feature 1 (Universal Action Fabric) is SHIPPED_EXTERNAL_ACTIVATION_REQUIRED-equivalent
+for its core engine and two real adapters once the fix below is confirmed green — a
+genuinely functioning foundation, not yet the full seven-adapter surface or a
+user-facing entry point; both remain the next slice.
 
 ## September 27 (continued) — Privacy Capsules / Data Egress Gateway (Feature 7)
 
@@ -1746,6 +1761,97 @@ PENDING CI verification at time of writing. Feature 7 (Privacy Capsules / Data E
 Gateway) is a real, enforced policy engine with one genuine, currently-active
 integration (the main chat's fact context) — not yet the full-surface retrofit the
 directive's complete DoD describes; that remains the next slice.
+
+## September 27 (continued) — Verifiable Agent Runtime / Flight Recorder (Feature 9); fixes the ASK_USER defect CI caught in `2581cb6`
+
+Third Foundation-phase item, per the directive's own ordering. Also carries the fix for
+the real defect CI caught above.
+
+### Investigation
+The directive asks for full execution lineage — what ran, on what basis it was
+authorized, by which mechanism, with what outcome — reconstructable after the fact, with
+a tamper-evident record for high-risk actions. `TrustRepository`'s existing
+`ActionOutcomeEntity` audit trail already records action/tier/outcome/recipient per
+dispatch, but it's a flat table with no chain linking one record to the next, and no
+concept of "everything that happened in one run" versus isolated events. The one new
+orchestration surface this session that doesn't already have deep audit logging is
+`WorkflowExecutor` (this same round's Feature 1 slice) — `SkillSandbox`'s direct-dispatch
+path already writes to `TrustRepository` from `NuaIntentRouter`/`NuaViewModel`, but
+`WorkflowExecutor.run()` had no lineage of its own beyond the final `PlanRunState`.
+
+### Implementation
+- `memory/MemoryStore.kt` — `LineageRecordEntity` (additive, DB v17→18) + `LineageDao`
+  (`insert`/`mostRecent`/`forRun`/`all`). `hash`/`previousHash` form one global chain
+  across every row ever inserted, not scoped per run.
+- `trust/lineage/LineageChain.kt` — `LineageEntry` (the in-memory record shape) and two
+  pure functions: `nextLineageHash(previousHash, entry)` (SHA-256 over
+  `previousHash + every field of entry`, so altering, reordering, or deleting any past
+  row breaks every hash computed after it) and `verifyLineageChain(records)` (re-walks a
+  list recomputing and comparing every stored hash against its predecessor). Explicitly
+  documented as local, append-only tamper-*evidence*, never claimed as hardware-backed
+  immutability.
+- `trust/lineage/LineageRecorder.kt` — `LineageRecorder` interface +
+  `RoomLineageRecorder` (reads the chain tail, computes the new hash, appends). Interface
+  rather than a concrete class specifically so `WorkflowExecutorTest` can inject a no-op
+  fake without touching Room, the same reason `EmailRepository`/`SmartHomeRepository` are
+  interfaces with a swappable `@Binds` (`trust/lineage/LineageModule.kt`).
+- `automation/uaf/WorkflowExecutor.kt` — every step's execution (including a
+  compensation step) is now recorded as one `LineageEntry`: run id (the plan's own id),
+  step id, action, the adapter type actually used, the authorization proof's kind, the
+  outcome state, and the outcome's detail message — never the fact/document content
+  itself, so a lineage entry never duplicates whatever sensitive payload a step touched.
+
+### The bug this round found and fixed
+Writing the "recorded to the Flight Recorder with a matching outcome" test above
+required hand-tracing exactly what outcome state each of `runOneStep`'s three failure
+branches produces — and that's what surfaced the CI-caught defect described in the
+previous entry: `outcomeForFailedStep` was only consulted on the adapter-execution
+path, so `FailurePolicy.ASK_USER` never actually produced `AWAITING_USER` for an
+authorization refusal, only for an adapter that ran and failed. `ActionPlan.kt`'s
+`outcomeForFailedStep(step, naturalFailureState: StepOutcomeState = FAILED)` now takes
+the *natural* failure classification as a parameter — `FAILED` for an adapter failure or
+a missing capability/adapter registration, `AUTHORIZATION_REFUSED` for a refused
+authorization — and uniformly overrides it to `AWAITING_USER` when the step's policy is
+`ASK_USER`, regardless of which branch produced it. All three of `runOneStep`'s
+early-return branches now route through this one function instead of hardcoding a
+state.
+
+### Explicitly not attempted this round
+No UI surfaces lineage yet — no "why did NUA do this" screen exists, since `WorkflowExecutor`
+itself has no chat-triggered entry point yet either (see the Feature 1 entry above).
+Biometric requirement/outcome is not captured in lineage: `WorkflowExecutor` doesn't
+drive the biometric step-up flow at all yet (that remains `NuaViewModel`'s existing
+pending-confirm dialogs, untouched by this round), so there's genuinely nothing
+biometric-related to record on this path today — recorded honestly as absent, not
+fabricated. `RoomLineageRecorder.record()` is not wrapped in a transaction with its own
+read of the chain tail — two concurrent writers could each read the same tail and both
+append claiming the same `previousHash`, which `verifyLineageChain` would correctly
+flag as a broken chain rather than silently accept, but isn't prevented outright; named
+as a real, small limitation rather than hidden. Replay-in-simulation-mode and a
+tamper-evident chain *specifically scoped* to only high-risk actions (today every step
+is recorded, not just high-risk ones) are both deferred.
+
+### Verification
+`LineageChainTest` (9 cases: deterministic hashing, a changed previous hash changes the
+result, changing any single entry field changes the hash, `verifyLineageChain` accepts a
+correctly-chained sequence, rejects a tampered stored hash, rejects content altered
+after its hash was computed — the actual tamper case — rejects a chain with a record
+removed from the middle, an empty chain is trivially valid).
+`WorkflowExecutorTest` — the existing 10 cases plus 2 new ones (every step including a
+compensation step recorded with a matching outcome; a refused step recorded with its
+authorization kind) — all 12 hand-traced against the fixed `outcomeForFailedStep` logic
+line by line before this push, specifically including the exact `ASK_USER` +
+authorization-refusal scenario CI caught. Forward-reference and injection-boundary
+audits both clean.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing. Feature 9 (Flight Recorder) has a real,
+tamper-evident chain and one real integration (every `WorkflowExecutor` step) — not yet
+a UI, not yet biometric capture (nothing to capture on this path today), not yet applied
+to `TrustRepository`'s older direct-dispatch audit trail; each is a named next slice.
 
 ## What this history is for
 

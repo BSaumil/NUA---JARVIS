@@ -442,6 +442,44 @@ interface WorldRelationshipDao {
     suspend fun updateConfidence(id: Long, confidence: Float)
 }
 
+/**
+ * One entry in the Flight Recorder's append-only execution lineage — see
+ * `trust/lineage/LineageRecorder.kt`. [hash]/[previousHash] form a single global chain
+ * across every row ever inserted (not scoped per [runId]); altering or deleting any past
+ * row breaks every hash computed after it, detectably — a local, append-only tamper-
+ * evidence mechanism, not hardware-backed immutability (never represented as more than
+ * that; see `trust/lineage/LineageChain.kt`'s own doc comment).
+ */
+@Entity(tableName = "lineage_records")
+data class LineageRecordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val runId: String,
+    val stepId: String,
+    val action: String,
+    val adapterType: String,
+    val authorizationKind: String,
+    val outcomeState: String,
+    val detail: String?,
+    val hash: String,
+    val previousHash: String?,
+    val timestampMillis: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface LineageDao {
+    @Insert
+    suspend fun insert(entity: LineageRecordEntity)
+
+    @Query("SELECT * FROM lineage_records ORDER BY id DESC LIMIT 1")
+    suspend fun mostRecent(): LineageRecordEntity?
+
+    @Query("SELECT * FROM lineage_records WHERE runId = :runId ORDER BY id ASC")
+    suspend fun forRun(runId: String): List<LineageRecordEntity>
+
+    @Query("SELECT * FROM lineage_records ORDER BY id ASC")
+    suspend fun all(): List<LineageRecordEntity>
+}
+
 @Dao
 interface MemoryDao {
 
@@ -548,8 +586,9 @@ interface MemoryDao {
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
+        LineageRecordEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -565,4 +604,5 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun visionMonitorDao(): VisionMonitorDao
     abstract fun documentDao(): DocumentDao
     abstract fun worldRelationshipDao(): WorldRelationshipDao
+    abstract fun lineageDao(): LineageDao
 }
