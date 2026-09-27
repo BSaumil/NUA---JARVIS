@@ -9,6 +9,7 @@ import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.ClaudeStreamEvent
 import com.nua.assistant.ai.FactExtractor
 import com.nua.assistant.ai.FactRelevance
+import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.PersonalityEngine
 import com.nua.assistant.ai.SecondBrainResult
@@ -549,7 +550,11 @@ class NuaViewModel @Inject constructor(
             return
         }
 
-        val relevantFacts = FactRelevance.rank(memoryDao.getAllFacts(), userMessage)
+        val rankedFacts = FactRelevance.rank(memoryDao.getAllFacts(), userMessage)
+        // Data Egress Gateway (security/egress/DataEgressGateway.kt): no capsule is
+        // supplied at this call site yet, so this is the strictest policy -- Sensitive-
+        // marked facts never reach the prompt, Standard ones pass through as before.
+        val (relevantFacts, _egressDecision) = DataEgressGateway.filterFacts(capsule = null, facts = rankedFacts)
         val usedAt = System.currentTimeMillis()
         relevantFacts.forEach { fact -> memoryDao.touchFactUsage(fact.key, usedAt) }
         val turnCount = memoryDao.countUserMessages()

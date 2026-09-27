@@ -1659,13 +1659,93 @@ any step runs; a step naming an unregistered capability failing cleanly rather t
 crashing the run. Forward-reference and injection-boundary audits both clean.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`2581cb6` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
 
 ### Status
 PENDING CI verification at time of writing. Feature 1 (Universal Action Fabric) is
 SHIPPED_EXTERNAL_ACTIVATION_REQUIRED-equivalent for its core engine and two real
 adapters — a genuinely functioning foundation, not yet the full seven-adapter surface or
 a user-facing entry point; both are explicitly the next slice, not claimed complete here.
+
+## September 27 (continued) — Privacy Capsules / Data Egress Gateway (Feature 7)
+
+Second Foundation-phase item, per the directive's own Phase A ordering.
+
+### Investigation
+The directive asks for a single gateway all cloud-bound personal data passes through,
+gated by an explicit purpose-bound policy object, refusing calls with no valid policy.
+Investigated what already exists: `security/UntrustedContent.kt`'s `wrapUntrusted` is the
+*inbound* firewall (marks external text as data, not instructions, once it's already been
+decided to send it) and `documents/DocumentRedaction.kt` already pattern-redacts
+structured PII before document text reaches a prompt — real protections, but neither
+governs *whether* a given category of personal data is allowed to leave the device in the
+first place, which is what the directive actually asks for. The one place that decision
+already matters concretely: `ui/NuaViewModel.kt`'s `replyConversationally` builds the main
+chat's system prompt from `FactRelevance.rank(...)`'s output with **no policy check at
+all** — a fact the user explicitly marked `MemoryPrivacyLevel.SENSITIVE` (P1.10, August
+31) was exactly as eligible to reach Claude as any other fact, despite the user's own
+explicit sensitivity marking existing for over three weeks with nothing reading it at
+that boundary.
+
+### Implementation
+- `security/egress/PrivacyCapsule.kt` — `PrivacyCapsule` (purpose, recipient provider,
+  permitted `DataCategory` set, `DisclosureLevel`, network-egress flag, expiry) and the
+  pure `capsuleAuthorizes(capsule, category, now)`.
+- `security/egress/DataEgressGateway.kt` — `DataEgressGateway.filterFacts(capsule, facts,
+  ...)`, the single point personal facts are filtered before a prompt is assembled. A
+  `null` capsule is treated as the *strictest* policy, not "no policy": no
+  `SENSITIVE`-marked fact ever passes without an explicit capsule authorizing
+  `SENSITIVE_FACTS` at `DisclosureLevel.RAW` specifically — a capsule requesting
+  `REDACTED`/`DERIVED_ONLY` for facts is refused rather than silently upgraded to RAW,
+  since no per-fact redaction/derivation mechanism exists yet to actually honor that
+  request. `STANDARD`-marked facts pass unconditionally, matching
+  `MemoryPrivacyLevel`'s own existing meaning (P1.10: the user marks what's sensitive,
+  nothing auto-classifies). Returns an `EgressDecision` (category, provider, purpose,
+  requested/permitted counts) alongside the filtered list — not persisted anywhere yet,
+  but shaped for a future Flight Recorder entry to record without ever needing to
+  duplicate the fact content itself into a second store.
+- `ui/NuaViewModel.kt` — `replyConversationally` now filters `FactRelevance`'s ranked
+  output through `DataEgressGateway.filterFacts(capsule = null, ...)` before it reaches
+  `personalityEngine.systemPrompt` or `memoryDao.touchFactUsage`. Since no capsule is
+  issued anywhere yet, this is a concrete, immediate behavior change: a Sensitive-marked
+  fact that used to reach every chat prompt now never does, while every Standard fact's
+  behavior is unchanged.
+
+### Explicitly not attempted this round
+Retrofitting every other Claude-calling surface (document Q&A/summarization, vision
+description, intent classification, workers) through the gateway — each already has its
+own existing protection (the inbound firewall, document redaction) but isn't yet
+*capsule-gated*, and doing all of them in one pass risked exactly the "giant parallel
+scaffold across a huge blast radius, none of it load-bearing yet" shape the directive
+itself warns against. No capsule-issuing UI or flow exists — nothing in the app can
+currently grant a Sensitive-fact capsule even if a future feature wanted to ask for one;
+today's gateway is deliberately, permanently strict until that's built. Per-fact
+redaction/derivation (to actually honor a `REDACTED`/`DERIVED_ONLY` capsule) is not
+attempted — no such mechanism exists for arbitrary fact text today, only for the
+structured patterns `DocumentRedaction.kt` already matches. Ephemeral one-use access
+tokens are not attempted — `PrivacyCapsule.reusable` is declared but nothing branches on
+it yet. On-device encryption-at-rest hardening was investigated, not rebuilt:
+`security/EncryptionAudit.kt` already truthfully lists what's encrypted (API key, voice
+profile) versus what isn't (the rest of Room) — real, existing, and accurate; a stronger
+at-rest migration is a separately-scoped future slice, not bundled into this one.
+
+### Verification
+`PrivacyCapsuleTest` (6 cases: exact-category authorization, network-egress-required,
+null-never-expires, past/future/exactly-at-expiry boundary cases).
+`DataEgressGatewayTest` (6 cases: a null capsule blocks Sensitive but passes Standard, a
+correctly-scoped RAW capsule passes both, a REDACTED-disclosure capsule still refuses
+rather than silently upgrading, a capsule naming the wrong category refuses, an expired
+capsule refuses, an empty input produces a zero/zero decision). Forward-reference and
+injection-boundary audits both clean.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing. Feature 7 (Privacy Capsules / Data Egress
+Gateway) is a real, enforced policy engine with one genuine, currently-active
+integration (the main chat's fact context) — not yet the full-surface retrofit the
+directive's complete DoD describes; that remains the next slice.
 
 ## What this history is for
 
