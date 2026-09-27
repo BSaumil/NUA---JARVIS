@@ -1853,6 +1853,78 @@ tamper-evident chain and one real integration (every `WorkflowExecutor` step) �
 a UI, not yet biometric capture (nothing to capture on this path today), not yet applied
 to `TrustRepository`'s older direct-dispatch audit trail; each is a named next slice.
 
+## September 27 (continued) — Guardian Lab baseline (Feature 10, part 1)
+
+Fifth and last Foundation-phase item — closes out Phase A per the directive's own
+ordering (Feature 1 → 7 → 9 → 10).
+
+### Investigation
+The directive names sixteen adversarial scenario classes for Guardian Lab. Checked each
+against what's genuinely real in this codebase today rather than writing tests against
+features that don't exist yet: recipe-compiler ambiguity (Feature 6, not built),
+autonomy-contract bypass (Feature 5, not built), and Presence Mesh device-revocation
+(Feature 8, not built) would all require fabricating the very subsystem under test —
+exactly the "no speculative architecture" rule this project holds itself to elsewhere.
+What's concretely testable today: prompt injection (already covered,
+`UntrustedContentTest`, 13 cases), duplicate/replay (`IdempotencyKeyTest`), malformed
+structured model output (`WhatNowParsingTest`/`DailyBriefingParsingTest`, both already
+return an honest null/`Unavailable` rather than silently "nothing needed"), and —
+genuinely new this round — permission escalation and side-effect-boundary bypass through
+the Universal Action Fabric specifically, since `WorkflowExecutor`/`ActionAdapter` are
+new code this session with no adversarial coverage of their own yet, only happy-path
+tests.
+
+### Implementation
+- `tools/uaf_boundary_audit.py` — a third static audit, same self-proving discipline as
+  `forward_ref_audit.py`/`injection_boundary_audit.py`: fails the build if any production
+  file other than `WorkflowExecutor.kt` calls `ActionAdapter.execute(descriptor, ...)`
+  directly. Answers the final report's own security-review question #1 ("Can any
+  side-effecting action bypass UAF?") with an enforced check, not an assertion. Wired
+  into CI as a new "UAF boundary audit" step, right after the injection-boundary audit.
+- `security/guardian/UafAdversarialTest.kt` (4 cases, each targeting a concrete
+  security-review question rather than a happy path): an undeclared/smuggled parameter
+  (a hallucinated classifier field, a fake `bcc`) never reaches a skill even when routed
+  through the new fabric — proves `SkillManifestTest`'s parameter-stripping guarantee
+  survives being reached via `WorkflowExecutor`, not just `NuaIntentRouter`; one plan
+  step's real `UserConfirmed` authorization proof never leaks into satisfying a *sibling*
+  sensitive step's own requirement; a step whose sanctioned adapter (e.g.
+  `NOTIFICATION_REMOTE_INPUT`) isn't registered fails closed rather than silently falling
+  back to a weaker-guarantee mechanism that happens to be available; repeating an
+  unauthorized plan across multiple independent runs never eventually succeeds "by
+  persistence."
+
+### Explicitly not attempted this round
+The remaining twelve adversarial classes the directive names: multilingual/code-
+switching, hallucinated actions (beyond parameter smuggling), permission escalation
+outside UAF specifically, autonomy-contract-bypass, context corruption, stale
+world-model facts, privacy-capsule overreach beyond what `DataEgressGatewayTest` already
+covers, recipe-compiler ambiguity, adversarial Unicode/encoding, long-conversation drift,
+and a CI-trended/machine-readable results dashboard. Several genuinely require a feature
+that doesn't exist yet (Recipes, Autonomy Contracts, Presence Mesh); the rest are real
+gaps, named explicitly rather than silently skipped, and are this feature's own
+remaining slice (task #22, Phase D) — extending coverage alongside each new feature as
+it ships, plus the Runtime Safety Sentinel, rather than attempting all sixteen classes
+against a codebase where most of the subsystems they'd test don't exist yet.
+
+### Verification
+`uaf_boundary_audit.py --selftest` passes (reconstructs a synthetic
+`QuickActionShortcut.kt` calling `.execute(...)` directly and confirms the detector
+flags it). All three static audits (forward-reference, injection-boundary, UAF-boundary)
+clean against real code. `UafAdversarialTest` (4 cases) hand-traced against the current
+`WorkflowExecutor`/`CapabilityDescriptor` logic before this push.
+
+### Commit
+`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+
+### Status
+PENDING CI verification at time of writing. This closes Phase A (Foundation) of the
+5-Year directive: Universal Action Fabric core, Privacy Capsules/Data Egress Gateway,
+Flight Recorder, and Guardian Lab baseline are all real, tested, and — pending this
+push's CI confirmation — merged to the feature branch. None claim their full
+directive-described DoD; each documents exactly what remains as its own named next
+slice. Phase B (Sovereign Model Mesh, Temporal World Model 2.0, Counterfactual Decision
+Simulator) is next, not yet started.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

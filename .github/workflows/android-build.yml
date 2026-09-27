@@ -42,6 +42,13 @@ jobs:
       - name: Injection-boundary audit
         run: python3 tools/injection_boundary_audit.py
 
+      # Catches the Universal Action Fabric's single execution boundary silently eroding:
+      # a new call site invoking ActionAdapter.execute(...) directly instead of through
+      # WorkflowExecutor, which is the only place authorization is checked first.
+      # Self-tests first, same discipline as above.
+      - name: UAF boundary audit
+        run: python3 tools/uaf_boundary_audit.py
+
       - name: Run unit tests
         run: ./gradlew test --stacktrace
 
