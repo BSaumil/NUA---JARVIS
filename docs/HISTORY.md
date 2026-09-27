@@ -1754,13 +1754,17 @@ capsule refuses, an empty input produces a zero/zero decision). Forward-referenc
 injection-boundary audits both clean.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`0c1f8dd`
 
 ### Status
-PENDING CI verification at time of writing. Feature 7 (Privacy Capsules / Data Egress
-Gateway) is a real, enforced policy engine with one genuine, currently-active
-integration (the main chat's fact context) — not yet the full-surface retrofit the
-directive's complete DoD describes; that remains the next slice.
+`0c1f8dd`'s own CI run (`36320995263`) failed — inherited, not a defect in this commit's
+own code: it stacked on top of the still-broken `2581cb6` (see that entry's Status), so
+it carried the same `WorkflowExecutorTest` failure forward. Confirmed CI-green as part of
+the later `420f2ea` run (`36338965594`, 16/16 steps) once the fix landed in `9960d8c`.
+Feature 7 (Privacy Capsules / Data Egress Gateway) is a real, enforced policy engine with
+one genuine, currently-active integration (the main chat's fact context) — not yet the
+full-surface retrofit the directive's complete DoD describes; that remains the next
+slice.
 
 ## September 27 (continued) — Verifiable Agent Runtime / Flight Recorder (Feature 9); fixes the ASK_USER defect CI caught in `2581cb6`
 
@@ -1845,10 +1849,12 @@ authorization-refusal scenario CI caught. Forward-reference and injection-bounda
 audits both clean.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`9960d8c`
 
 ### Status
-PENDING CI verification at time of writing. Feature 9 (Flight Recorder) has a real,
+CONFIRMED CI-green (run `36338785059`, 15/15 steps — the "UAF boundary audit" step
+arrives in the next commit — including the fixed `WorkflowExecutorTest` suite and the DB
+v17→18 migration compiling cleanly). Feature 9 (Flight Recorder) has a real,
 tamper-evident chain and one real integration (every `WorkflowExecutor` step) — not yet
 a UI, not yet biometric capture (nothing to capture on this path today), not yet applied
 to `TrustRepository`'s older direct-dispatch audit trail; each is a named next slice.
@@ -1914,13 +1920,15 @@ clean against real code. `UafAdversarialTest` (4 cases) hand-traced against the 
 `WorkflowExecutor`/`CapabilityDescriptor` logic before this push.
 
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`420f2ea`
 
 ### Status
-PENDING CI verification at time of writing. This closes Phase A (Foundation) of the
-5-Year directive: Universal Action Fabric core, Privacy Capsules/Data Egress Gateway,
-Flight Recorder, and Guardian Lab baseline are all real, tested, and — pending this
-push's CI confirmation — merged to the feature branch. None claim their full
+CONFIRMED CI-green (run `36338965594`, 16/16 steps — the new "UAF boundary audit" step
+confirmed present and passing at position 9, alongside the two existing static audits).
+This closes Phase A (Foundation) of the 5-Year directive: Universal Action Fabric core,
+Privacy Capsules/Data Egress Gateway, Flight Recorder, and Guardian Lab baseline are all
+real, tested, CI-green, and pushed to the feature branch (not yet merged to `Main` — no
+merge requested this round). None claim their full
 directive-described DoD; each documents exactly what remains as its own named next
 slice. Phase B (Sovereign Model Mesh, Temporal World Model 2.0, Counterfactual Decision
 Simulator) is next, not yet started.
