@@ -2484,11 +2484,13 @@ what the tests actually assert.
 
 ### Commit
 `1d6c04f` (initial push, CI red — the naming-collision compile error above), fixed by
-a follow-up commit on `claude/new-session-efg0ha`; final SHA recorded once CI confirms
-green.
+`8a8f632` on `claude/new-session-efg0ha`. Confirmed CI-green job-level at `8a8f632`
+(all 16 steps, run 36434471187): forward-reference, injection-boundary, and
+UAF-boundary audits all pass, `Run unit tests`/`Verify tests actually ran` both green,
+debug and release (R8-minified) APKs both build.
 
 ### Status
-Feature 10 part 2 has a real, shared, tested autonomy-decision rule (replacing two
+DONE. Feature 10 part 2 has a real, shared, tested autonomy-decision rule (replacing two
 independently-drifting copies), a new production diagnostic component
 (`RuntimeSafetySentinel`, not yet wired to a live caller), and adversarial proof that
 both Contextual Autonomy Contracts and NUA Recipes cannot bypass the Universal Action
