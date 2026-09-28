@@ -2304,11 +2304,13 @@ into a plain, non-inline pure function's callback parameter — resolved into a 
 up front instead) caught during that trace, before ever running a build.
 
 ### Commit
-PENDING — pushed to `claude/new-session-efg0ha`; SHA and CI result recorded once
-confirmed green at the job level.
+`9f3aeda` on `claude/new-session-efg0ha`. Confirmed CI-green job-level on the first push
+(all 16 steps, run 36430388594): forward-reference, injection-boundary, and
+UAF-boundary audits all pass, `Run unit tests`/`Verify tests actually ran` both green,
+debug and release (R8-minified) APKs both build.
 
 ### Status
-Feature 6 (NUA Recipes) has a real, deterministic, fully-tested compiler
+DONE. Feature 6 (NUA Recipes) has a real, deterministic, fully-tested compiler
 (parse → typed IR → registry resolution → zero-side-effect simulation) that targets the
 Universal Action Fabric's actual runtime rather than a new one — its first genuine
 production caller. Not yet LLM-assisted parsing, scheduling/triggers, step dependencies,
