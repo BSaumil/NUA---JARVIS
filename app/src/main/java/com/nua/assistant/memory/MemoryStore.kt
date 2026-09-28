@@ -175,6 +175,17 @@ interface ActionOutcomeDao {
 
     @Query("SELECT * FROM action_outcomes WHERE recipient = :recipient AND actionType = :actionType AND timestamp >= :sinceMillis ORDER BY timestamp DESC")
     suspend fun recentByRecipient(recipient: String, actionType: String, sinceMillis: Long): List<ActionOutcomeEntity>
+
+    /** All outcomes for [actionType] since [sinceMillis], regardless of recipient — the
+     *  Contextual Autonomy Contracts frequency-cap query (trust/AutonomyContract.kt). */
+    @Query("SELECT * FROM action_outcomes WHERE actionType = :actionType AND timestamp >= :sinceMillis ORDER BY timestamp DESC")
+    suspend fun recentByActionType(actionType: String, sinceMillis: Long): List<ActionOutcomeEntity>
+
+    /** The [limit] most recent outcomes for [actionType], newest first, regardless of
+     *  recipient or time — the drift-detection input for
+     *  trust/AutonomyContract.kt's contractShouldSuspend. */
+    @Query("SELECT * FROM action_outcomes WHERE actionType = :actionType ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun mostRecentByActionType(actionType: String, limit: Int): List<ActionOutcomeEntity>
 }
 
 /**
@@ -210,6 +221,96 @@ interface AutonomyPreferenceDao {
 
     @Query("UPDATE autonomy_preferences SET autoApproveEnabled = :enabled WHERE actionType = :actionType")
     suspend fun setAutoApprove(actionType: String, enabled: Boolean)
+}
+
+/**
+ * A context-bounded autonomy grant — Feature 5 (Contextual Autonomy Contracts) of the
+ * 5-Year Standalone Master Directive. Extends, rather than replaces,
+ * [AutonomyPreferenceEntity]'s unscoped 30-day grant: a contract additionally scopes by
+ * recipient, caps frequency, and declares a risk ceiling, and can auto-suspend itself on
+ * a failure spike (see trust/AutonomyContract.kt's contractShouldSuspend). One active
+ * contract per actionType — the same granularity the legacy grant already uses; several
+ * simultaneous per-recipient contracts for one action type is a named future extension,
+ * not attempted this round. See trust/TrustRepository.kt's contractDecisionFor for how
+ * this is evaluated, and trust/AutonomyContract.kt for why each dimension is here.
+ */
+@Entity(tableName = "autonomy_contracts", indices = [Index(value = ["actionType"], unique = true)])
+data class AutonomyContractEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val actionType: String,
+    /** Null = any recipient. Set = this contract only ever permits this exact recipient
+     *  (a phone number for SMS_SEND, a notification title for REPLY_TO_NOTIFICATION). */
+    val recipient: String? = null,
+    /** Null = no explicit ceiling (the action type's own fixed tier always applies, since
+     *  every actionType this contract can govern already has one — see
+     *  trust/AutonomyTier.kt's autonomyTierFor). Set = void the contract the moment the
+     *  action type's fixed tier exceeds it. */
+    val riskCeiling: AutonomyTier? = null,
+    /** Null = no frequency cap. Both this and [windowMillis] must be set together for a
+     *  cap to apply — see trust/AutonomyContract.kt's evaluateContract. */
+    val maxPerWindow: Int? = null,
+    val windowMillis: Long? = null,
+    val expiresAt: Long,
+    /** Predict-but-don't-execute — see trust/TrustRepository.kt's contractDecisionFor and
+     *  recordShadowPrediction. A shadow contract's decision is still fully computed every
+     *  time; it's just never acted on. */
+    val shadowMode: Boolean = false,
+    /** Cleared to false by drift detection (contractShouldSuspend) on a failure spike, or
+     *  by explicit user revocation — never re-activated automatically. */
+    val active: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface AutonomyContractDao {
+    @Query("SELECT * FROM autonomy_contracts WHERE actionType = :actionType LIMIT 1")
+    suspend fun get(actionType: String): AutonomyContractEntity?
+
+    @Query("SELECT * FROM autonomy_contracts")
+    suspend fun getAll(): List<AutonomyContractEntity>
+
+    @Query("SELECT * FROM autonomy_contracts")
+    fun observeAll(): Flow<List<AutonomyContractEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AutonomyContractEntity)
+
+    @Query("UPDATE autonomy_contracts SET active = 0 WHERE actionType = :actionType")
+    suspend fun suspendContract(actionType: String)
+}
+
+/**
+ * One shadow-mode prediction: what a contract would have decided, recorded without ever
+ * acting on it, then resolved against what the user actually did with the same proposal
+ * — the accuracy signal a shadow contract needs before anyone trusts it enough to go
+ * live. Correlated to its proposal by id (see NuaViewModel's pendingShadowPredictionId),
+ * not by a time-window guess.
+ */
+@Entity(tableName = "shadow_predictions")
+data class ShadowPredictionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val contractId: Long,
+    val actionType: String,
+    val recipient: String? = null,
+    val predictedPermit: Boolean,
+    val reason: String,
+    /** Null until confirmPending-/dismissPending- resolves it — "APPROVED" or "REJECTED".
+     *  No "EDITED" outcome exists yet: the UI has no edit-then-send flow for a pending
+     *  proposal to observe, so that feedback channel the directive names is deferred. */
+    val actualOutcome: String? = null,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface ShadowPredictionDao {
+    @Insert
+    suspend fun insert(entity: ShadowPredictionEntity): Long
+
+    @Query("UPDATE shadow_predictions SET actualOutcome = :outcome WHERE id = :id")
+    suspend fun resolve(id: Long, outcome: String)
+
+    @Query("SELECT * FROM shadow_predictions WHERE actualOutcome IS NOT NULL ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recentResolved(limit: Int): List<ShadowPredictionEntity>
 }
 
 /** A durable goal the user has set — see goals/GoalRepository.kt. */
@@ -586,9 +687,9 @@ interface MemoryDao {
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
-        LineageRecordEntity::class,
+        LineageRecordEntity::class, AutonomyContractEntity::class, ShadowPredictionEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -605,4 +706,6 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun documentDao(): DocumentDao
     abstract fun worldRelationshipDao(): WorldRelationshipDao
     abstract fun lineageDao(): LineageDao
+    abstract fun autonomyContractDao(): AutonomyContractDao
+    abstract fun shadowPredictionDao(): ShadowPredictionDao
 }

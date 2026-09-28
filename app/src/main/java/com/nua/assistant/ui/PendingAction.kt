@@ -40,3 +40,18 @@ fun pendingEffectFor(proposal: PendingProposal, autoApproved: Boolean): PendingU
     is PendingProposal.Reply -> PendingUiEffect(pendingReply = proposal.proposed, autoApprovedPending = autoApproved)
     is PendingProposal.Sms -> PendingUiEffect(pendingSms = proposal.proposed, autoApprovedPending = autoApproved)
 }
+
+/**
+ * Pure: the recipient identifier a Contextual Autonomy Contract scopes against for
+ * [proposal] — a phone number for [PendingProposal.Sms], the source notification's title
+ * for [PendingProposal.Reply] (the same "who this is from" identifier the confirmation
+ * message already surfaces), or null for [PendingProposal.Plan] (no single recipient
+ * concept applies to a multi-step personal plan). Null means "any recipient" to a
+ * contract that doesn't scope by recipient at all — see trust/AutonomyContract.kt's
+ * evaluateContract.
+ */
+fun recipientFor(proposal: PendingProposal): String? = when (proposal) {
+    is PendingProposal.Plan -> null
+    is PendingProposal.Reply -> proposal.proposed.notification.title
+    is PendingProposal.Sms -> proposal.proposed.phoneNumber
+}

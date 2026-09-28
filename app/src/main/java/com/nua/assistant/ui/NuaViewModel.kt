@@ -78,6 +78,7 @@ import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
 import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
+import com.nua.assistant.trust.ContractDecision
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.idempotencyKeyFor
 import com.nua.assistant.trust.sameDayWindowStart
@@ -130,6 +131,12 @@ data class NuaUiState(
      * turn), so a single flag is enough to describe all three.
      */
     val autoApprovedPending: Boolean = false,
+    /** Set only when a shadow-mode Contextual Autonomy Contract recorded a prediction for
+     *  the current pending* proposal — see TrustRepository.recordShadowPrediction. Cleared,
+     *  and the prediction resolved against what the user actually did, by whichever
+     *  confirmPending-/dismissPending- method fires next. Never influences autoApprovedPending
+     *  — shadow mode predicts, it never acts. */
+    val pendingShadowPredictionId: Long? = null,
     val needsApiKey: Boolean = false,
 )
 
@@ -530,9 +537,31 @@ class NuaViewModel @Inject constructor(
         }
     }
 
-    /** Publishes a routed proposal to [NuaUiState] via [pendingEffectFor] — see that function's doc comment. */
+    /**
+     * Publishes a routed proposal to [NuaUiState] via [pendingEffectFor] — see that
+     * function's doc comment. Two independent votes can auto-approve: the legacy,
+     * unscoped [TrustRepository.isAutoApproved] grant, and a live (non-shadow)
+     * Contextual Autonomy Contract (Feature 5) via [TrustRepository.contractDecisionFor]
+     * — either alone is enough, matching "extend, don't replace" for the legacy grant
+     * during migration. A shadow-mode contract never contributes to auto-approval no
+     * matter what it decides; it only records a prediction (see
+     * [TrustRepository.recordShadowPrediction]) for later comparison against what the
+     * user actually does with this same proposal.
+     */
     private suspend fun applyPendingEffect(proposal: PendingProposal, actionType: NuaActionType) {
-        val effect = pendingEffectFor(proposal, autoApproved = trustRepository.isAutoApproved(actionType))
+        val legacyAutoApproved = trustRepository.isAutoApproved(actionType)
+        val recipient = recipientFor(proposal)
+        val (contract, decision) = trustRepository.contractDecisionFor(actionType, recipient)
+        var shadowPredictionId: Long? = null
+        val contractAutoApproved = when {
+            contract == null -> false
+            contract.shadowMode -> {
+                shadowPredictionId = trustRepository.recordShadowPrediction(contract, actionType, recipient, decision)
+                false
+            }
+            else -> decision is ContractDecision.Permit
+        }
+        val effect = pendingEffectFor(proposal, autoApproved = legacyAutoApproved || contractAutoApproved)
         _uiState.update {
             it.copy(
                 isProcessing = false,
@@ -540,6 +569,7 @@ class NuaViewModel @Inject constructor(
                 pendingReply = effect.pendingReply,
                 pendingSms = effect.pendingSms,
                 autoApprovedPending = effect.autoApprovedPending,
+                pendingShadowPredictionId = shadowPredictionId,
             )
         }
     }
@@ -764,8 +794,10 @@ class NuaViewModel @Inject constructor(
     // this reasoning doesn't cover — see trust/IdempotencyKey.kt.
     fun confirmPendingPlan() {
         val plan = _uiState.value.pendingPlan ?: return
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
         viewModelScope.launch {
-            _uiState.update { it.copy(pendingPlan = null) }
+            _uiState.update { it.copy(pendingPlan = null, pendingShadowPredictionId = null) }
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = true) }
             trustRepository.recordApproval(NuaActionType.PLAN_TASK)
             executeConfirmedPlan(plan)
         }
@@ -792,8 +824,10 @@ class NuaViewModel @Inject constructor(
 
     fun dismissPendingPlan() {
         val plan = _uiState.value.pendingPlan ?: return
-        _uiState.update { it.copy(pendingPlan = null) }
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
+        _uiState.update { it.copy(pendingPlan = null, pendingShadowPredictionId = null) }
         viewModelScope.launch {
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = false) }
             trustRepository.recordOutcome(
                 actionType = NuaActionType.PLAN_TASK.name,
                 tier = AutonomyTier.T4,
@@ -806,8 +840,10 @@ class NuaViewModel @Inject constructor(
 
     fun confirmPendingReply() {
         val pending = _uiState.value.pendingReply ?: return
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
         viewModelScope.launch {
-            _uiState.update { it.copy(pendingReply = null) }
+            _uiState.update { it.copy(pendingReply = null, pendingShadowPredictionId = null) }
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = true) }
             trustRepository.recordApproval(NuaActionType.REPLY_TO_NOTIFICATION)
             executeConfirmedReply(pending)
         }
@@ -842,8 +878,10 @@ class NuaViewModel @Inject constructor(
 
     fun dismissPendingReply() {
         val pending = _uiState.value.pendingReply ?: return
-        _uiState.update { it.copy(pendingReply = null) }
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
+        _uiState.update { it.copy(pendingReply = null, pendingShadowPredictionId = null) }
         viewModelScope.launch {
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = false) }
             trustRepository.recordOutcome(
                 actionType = NuaActionType.REPLY_TO_NOTIFICATION.name,
                 tier = AutonomyTier.T3,
@@ -856,8 +894,10 @@ class NuaViewModel @Inject constructor(
 
     fun confirmPendingSms() {
         val pending = _uiState.value.pendingSms ?: return
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
         viewModelScope.launch {
-            _uiState.update { it.copy(pendingSms = null) }
+            _uiState.update { it.copy(pendingSms = null, pendingShadowPredictionId = null) }
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = true) }
             trustRepository.recordApproval(NuaActionType.SMS_SEND)
             executeConfirmedSms(pending)
         }
@@ -889,8 +929,10 @@ class NuaViewModel @Inject constructor(
 
     fun dismissPendingSms() {
         val pending = _uiState.value.pendingSms ?: return
-        _uiState.update { it.copy(pendingSms = null) }
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
+        _uiState.update { it.copy(pendingSms = null, pendingShadowPredictionId = null) }
         viewModelScope.launch {
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = false) }
             trustRepository.recordOutcome(
                 actionType = NuaActionType.SMS_SEND.name,
                 tier = AutonomyTier.T3,

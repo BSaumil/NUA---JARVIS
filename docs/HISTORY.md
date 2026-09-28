@@ -2092,6 +2092,114 @@ Recorded here so the final report (task #23), if and when it's produced, states 
 that these two were skipped on direct user instruction — not silently left out, not
 forgotten, not claimed complete.
 
+## September 28 — Contextual Autonomy Contracts + Shadow Mode (Feature 5), Phase C
+
+First Autonomy-moat item of the 5-Year Standalone Master Directive.
+
+### Investigation
+Read the existing "Earned Autonomy" system end to end before designing anything new:
+`memory/MemoryStore.kt`'s `AutonomyPreferenceEntity` (one row per `NuaActionType`,
+`autoApproveEnabled` + `expiresAt`), `trust/AutonomyGrant.kt`'s pure
+`isGrantActive`/`AUTONOMY_GRANT_DURATION_MILLIS` (30 days, fixed), and
+`trust/TrustRepository.kt`'s `isAutoApproved`/`setAutoApprove`/`revokeAutoApproveIfGranted`
+(a single failure zero-tolerance-revokes the grant). Its one runtime enforcement point is
+`ui/PendingAction.kt`'s `pendingEffectFor` + `ui/NuaViewModel.kt`'s `applyPendingEffect` —
+already centralized, already fails closed, already the exact place an architecture review
+fixed a real auto-approve-bypasses-step-up defect (see `pendingEffectFor`'s own doc
+comment). The grant is scoped by `actionType` alone — no recipient, frequency, or risk
+dimension exists — confirming the directive's own framing: this is real, working, but
+unscoped autonomy, and Feature 5's job is to add real scoping on top of it, not replace
+its enforcement point.
+
+### Implementation
+- `trust/AutonomyContract.kt` — `ContractDecision` (`NoContract`/`Permit`/`Deny(reason)`),
+  pure `evaluateContract(contract, actionType, recipient, now, recentCommittedCountInWindow)`
+  (fails closed on every dimension: suspended, expired, wrong recipient, risk ceiling
+  exceeded by the action type's own fixed tier, frequency cap reached), and pure
+  `contractShouldSuspend(recentOutcomes, lookback=3, failureThreshold=2)` — drift
+  detection, deliberately less trigger-happy than the legacy grant's zero-tolerance
+  revoke-on-any-failure (a real design difference, not an oversight).
+- `memory/MemoryStore.kt` — `AutonomyContractEntity` (additive; recipient/riskCeiling/
+  maxPerWindow+windowMillis/expiresAt/shadowMode/active, one per actionType, same
+  granularity the legacy grant already uses) + `AutonomyContractDao`;
+  `ShadowPredictionEntity` (contractId/actionType/recipient/predictedPermit/reason/
+  actualOutcome, correlated to its proposal by id, not a time-window guess) +
+  `ShadowPredictionDao`. Two new `ActionOutcomeDao` queries (`recentByActionType` for the
+  frequency-cap count, `mostRecentByActionType` for drift detection's ordered lookback).
+  DB version 18→19.
+- `trust/TrustRepository.kt` — `createContract`/`revokeContract`/`allContracts`;
+  `contractDecisionFor(actionType, recipient, now)` — the single decision point a
+  contract contributes, always computed, fail-closed, wired alongside (not replacing)
+  `isAutoApproved`; `recordShadowPrediction`/`resolveShadowPrediction`/
+  `recentResolvedShadowPredictions`; `suspendContractIfDrifting`, hooked into
+  `recordOutcome`'s existing failure branch right next to `revokeAutoApproveIfGranted`.
+- `ui/PendingAction.kt` — pure `recipientFor(proposal)`: phone number for Sms, the source
+  notification's title for Reply, null for Plan (no single-recipient concept applies).
+- `ui/NuaViewModel.kt` — `NuaUiState.pendingShadowPredictionId` (new, nullable);
+  `applyPendingEffect` now computes both the legacy grant's vote and a live contract's
+  vote and ORs them (either alone is enough to auto-approve — "extend, don't replace"
+  during migration), while a shadow-mode contract's vote never contributes to
+  auto-approval no matter what it decides — it only records a prediction via
+  `recordShadowPrediction`, returning an id stored on `NuaUiState`. Every
+  `confirmPending*`/`dismissPending*` method now captures that id before clearing
+  pending state and resolves it (`approved = true`/`false`) against what the user
+  actually did — exact id correlation, not a time-window guess.
+  `pendingEffectFor` itself is completely unchanged: the security property
+  `PendingActionTest.kt` already enforces (auto-approval only skips the tap, never the
+  pending field a gated confirm depends on) is preserved by construction, not by new code
+  — contracts only ever feed the same `autoApproved` boolean the legacy grant already fed.
+
+### Explicitly not attempted this round
+Four of the directive's named contract dimensions are not implemented: **place/location**
+(no location subsystem feeds this decision point today), **data-category** (no such
+taxonomy exists in this codebase), **confidence-threshold** (`SmsProposed`/
+`ReplyProposed`/`PlanProposed` don't carry a confidence score through to
+`applyPendingEffect`; only `ClassifiedIntent` — upstream, at classification time — does),
+and **adapter-scope** (that's the Universal Action Fabric's `CapabilityDescriptor`
+concept, a genuinely separate dispatch path from the legacy `sendMessage`/
+`pendingEffectFor` flow this contract governs — Feature 1 and Feature 5 are not merged
+this round). Shadow Mode's feedback channel is accept/reject only — no "edit" outcome,
+because the UI has no edit-then-send flow for a pending proposal to observe in the first
+place. One active contract per actionType, matching the legacy grant's own granularity —
+several simultaneous per-recipient contracts for one action type is a named future
+extension. No Settings UI exists yet to create/view/revoke a contract or review shadow
+prediction accuracy by hand — `createContract`/`allContracts`/
+`recentResolvedShadowPredictions` are real, tested-by-construction infrastructure not yet
+surfaced to a screen, the same writer-then-reader-proven-separately precedent this
+session's Flight Recorder and Universal Action Fabric slices already established.
+
+### Verification
+`AutonomyContractTest` (14 cases): an unrestricted contract permits anything; suspended
+and expired contracts both deny (including the exact expiry-boundary instant, exclusive,
+matching the legacy grant's own `isGrantActive` boundary convention); a scoped contract
+denies a mismatched recipient and permits an exact match; a risk ceiling below the action
+type's fixed tier voids the contract, at or above permits it; a frequency cap at/above the
+recent count denies, under it permits; drift detection needs at least 3 recorded
+outcomes, trips at 2-of-3 failures, doesn't trip at 1-of-3, and never counts a failure
+outside its lookback window. `PendingActionTest` (+3 cases): `recipientFor` extracts the
+right identifier per proposal type. Forward-reference, injection-boundary, and
+UAF-boundary audits all clean. `TrustRepository`/`NuaViewModel` wiring itself is not
+directly unit tested — `TrustRepository` has never had direct JVM tests in this codebase
+(it constructs `SharedPreferences` from a real `Context`, and this project has no
+Robolectric — see `TrustUiControllerTest.kt`'s own doc comment on exactly this wall) —
+consistent with this session's established "pure core tested, impure wrapper hand-traced"
+precedent (`ModelMesh`'s `CloudCompletionProvider`, `LineageRecorder`, `ActionAdapter`).
+Hand-traced line by line before pushing: both auto-approval votes, the shadow-mode
+never-auto-approves guarantee, the exact-id prediction/resolution correlation, and that
+`pendingEffectFor`'s existing security property is untouched.
+
+### Commit
+PENDING — pushed to `claude/new-session-efg0ha`; SHA and CI result recorded once
+confirmed green at the job level.
+
+### Status
+Feature 5 (Contextual Autonomy Contracts + Shadow Mode) has a real, tested, deterministic
+decision core (recipient/risk-ceiling/frequency-cap scoping, drift-based auto-suspend,
+shadow-mode predict-without-acting) wired into the same centralized, fail-closed
+enforcement point the legacy grant already used — not yet a full dimension set, a
+creation/review UI, or merged with the Universal Action Fabric; each is a named next
+slice.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

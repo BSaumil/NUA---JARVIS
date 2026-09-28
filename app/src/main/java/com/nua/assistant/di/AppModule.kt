@@ -3,6 +3,7 @@ package com.nua.assistant.di
 import android.content.Context
 import androidx.room.Room
 import com.nua.assistant.memory.ActionOutcomeDao
+import com.nua.assistant.memory.AutonomyContractDao
 import com.nua.assistant.memory.AutonomyPreferenceDao
 import com.nua.assistant.memory.DecisionDao
 import com.nua.assistant.memory.DocumentDao
@@ -15,6 +16,7 @@ import com.nua.assistant.memory.TrustLedgerDao
 import com.nua.assistant.memory.UsageDao
 import com.nua.assistant.memory.VisionMonitorDao
 import com.nua.assistant.memory.LineageDao
+import com.nua.assistant.memory.ShadowPredictionDao
 import com.nua.assistant.memory.WorldRelationshipDao
 import dagger.Module
 import dagger.Provides
@@ -79,6 +81,12 @@ object AppModule {
 
     @Provides
     fun provideLineageDao(database: NuaDatabase): LineageDao = database.lineageDao()
+
+    @Provides
+    fun provideAutonomyContractDao(database: NuaDatabase): AutonomyContractDao = database.autonomyContractDao()
+
+    @Provides
+    fun provideShadowPredictionDao(database: NuaDatabase): ShadowPredictionDao = database.shadowPredictionDao()
 
     @Provides
     @Singleton
