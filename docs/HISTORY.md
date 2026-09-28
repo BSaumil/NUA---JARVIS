@@ -2316,6 +2316,74 @@ Universal Action Fabric's actual runtime rather than a new one — its first gen
 production caller. Not yet LLM-assisted parsing, scheduling/triggers, step dependencies,
 or a review/creation UI; each is a named next slice.
 
+## September 28 (continued) — Presence Mesh (Feature 8) investigated, deliberately not
+## built this round
+
+Phase D's first item, per the standing 5-Year Standalone Master Directive's "finish
+everything" instruction (Phase C — Features 5 and 6 — is now done; this is the natural
+next item in phase order).
+
+### Investigation
+Before writing any code, investigated what this app already has to build "multi-device
+continuity" on — a full subagent pass across the repo, not an assumption. The findings
+were categorical, not partial:
+- The `:wear` module (`settings.gradle.kts`) is real and compiles, but is a static Tile
+  (`wear/src/main/java/com/nua/assistant/wear/NuaTileService.kt`) with no dynamic data —
+  its own code comment and `README.md`'s "Known gaps" section both already say plainly:
+  no Wearable Data Layer API (`DataClient`/`MessageClient`) is wired up, and it has never
+  been verified against a real Wear OS device or emulator. It's also marked
+  `android:standalone="true"` in its manifest — it installs independently, not as a true
+  phone companion.
+- Zero device-identity concept exists anywhere (`deviceId`, install UUID, `ANDROID_ID` —
+  grepped, no matches).
+- Zero cross-device transport of any kind exists — no Bluetooth, WebSocket, Firebase, or
+  Nearby Connections usage anywhere in `app/` or `wear/`. The repo's `backend/`/
+  `frontend/` directories are a separate, unrelated Emergent-platform build that
+  `README.md` itself states shares no code or docs with the Android app — not a backend
+  this app can route through.
+- Zero presence/last-active/handoff concept exists in Room (`memory/MemoryStore.kt`'s 20
+  entities) or any repository.
+- `state/NuaStateRepository.kt`/`NuaState.kt` (the Command Centre's model, `#8` from the
+  earlier phase) is a well-shaped, real, single-device state aggregator — but "single
+  device" is load-bearing in its own design; nothing about "which device" exists in it.
+- `ROADMAP.md` already names this exact gap as future work ("Multi-device presence
+  (`#28`)... building on the already-merged Wear and Auto surfaces") — filed, not started.
+
+### Decision: not attempted this round, and why that's the right call here (not just a
+### time-box)
+Every prerequisite for a real "presence mesh" — device identity, a transport, a way to
+verify two devices actually see each other — is completely absent, and this session has
+no way to add the one piece that would make it verifiable: there is no real Wear OS
+device or emulator pairing available in this environment (the `:wear` module's own
+existing, pre-session disclosure already says as much for its Tile alone). Building a
+local-only device-identity primitive and calling it "Presence Mesh" was considered and
+rejected: unlike Sovereign Model Mesh (which shipped a real, complete, *working* routing
+core even though only one tier had a real implementation — every migrated call site
+genuinely worked end to end) or NUA Recipes (whose compiler is real and complete even
+without a scheduling UI), presence's entire value proposition *is* the cross-device part
+— a lone device ID with no second device to compare against isn't a smaller honest
+version of multi-device continuity, it's a different, much less meaningful feature
+wearing its name. Shipping it under "Presence Mesh" would be exactly the
+"claim shipped-on-scaffolding" failure mode this directive's own engineering rules name
+explicitly, and there is no way to verify the one piece (a real transport) that would
+make it not that.
+
+### What a real first slice would need (named for whoever picks this up next)
+A genuine smallest-honest-slice would need, in order: (1) a decision on transport — the
+Wearable Data Layer API (`com.google.android.gms.play-services-wearable`) is the standard
+choice given the existing `:wear` module, but that's a new Play Services dependency in
+both `app/build.gradle.kts` and `wear/build.gradle.kts`, not a refactor of existing code;
+(2) a real paired Wear OS device or emulator to verify against, since `DataClient`/
+`MessageClient` behavior cannot be meaningfully unit-tested — the pure logic around it
+(message schemas, presence merge rules) can be, the transport itself can't; (3) only then
+does a device-identity primitive and a presence data model become worth building, because
+only then would they have something real to connect to. None of the three exist yet.
+
+### Status
+NOT ATTEMPTED. Investigated thoroughly; the gap is real, total, and — in this
+environment specifically — unverifiable, not merely large. Recorded here so the final
+report states this plainly rather than silently omitting Feature 8.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
