@@ -2189,16 +2189,18 @@ never-auto-approves guarantee, the exact-id prediction/resolution correlation, a
 `pendingEffectFor`'s existing security property is untouched.
 
 ### Commit
-PENDING — pushed to `claude/new-session-efg0ha`; SHA and CI result recorded once
-confirmed green at the job level.
+`904a158` on `claude/new-session-efg0ha`. Confirmed CI-green job-level on the first push
+(all 16 steps, run 36428333124): forward-reference, injection-boundary, and
+UAF-boundary audits all pass, `Run unit tests`/`Verify tests actually ran` both green,
+debug and release (R8-minified) APKs both build.
 
 ### Status
-Feature 5 (Contextual Autonomy Contracts + Shadow Mode) has a real, tested, deterministic
-decision core (recipient/risk-ceiling/frequency-cap scoping, drift-based auto-suspend,
-shadow-mode predict-without-acting) wired into the same centralized, fail-closed
-enforcement point the legacy grant already used — not yet a full dimension set, a
-creation/review UI, or merged with the Universal Action Fabric; each is a named next
-slice.
+DONE. Feature 5 (Contextual Autonomy Contracts + Shadow Mode) has a real, tested,
+deterministic decision core (recipient/risk-ceiling/frequency-cap scoping, drift-based
+auto-suspend, shadow-mode predict-without-acting) wired into the same centralized,
+fail-closed enforcement point the legacy grant already used — not yet a full dimension
+set, a creation/review UI, or merged with the Universal Action Fabric; each is a named
+next slice.
 
 ## What this history is for
 
