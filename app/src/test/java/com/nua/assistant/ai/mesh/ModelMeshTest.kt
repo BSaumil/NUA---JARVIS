@@ -85,7 +85,7 @@ class ModelMeshTest {
     @Test
     fun `classifyIntent resolves locally without ever invoking the cloud path when a keyword rule matches`() = runTest {
         val provider = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
+        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.LOCAL_RULES, ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
         var cloudCalls = 0
 
         val result = mesh.classifyIntent(UserUtterance("open spotify")) { cloudCalls++; null }
@@ -97,7 +97,7 @@ class ModelMeshTest {
     @Test
     fun `classifyIntent falls through to the cloud path when no keyword rule matches`() = runTest {
         val provider = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
+        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.LOCAL_RULES, ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
         val expected = ClassifiedIntent(NuaActionType.GET_WEATHER, confidence = 0.9)
 
         val result = mesh.classifyIntent(UserUtterance("something ambiguous entirely")) { expected }
@@ -108,7 +108,7 @@ class ModelMeshTest {
     @Test
     fun `classifyIntent invokes the cloud path at most once, even though two cloud tiers are available -- the duplicate-call defect`() = runTest {
         val provider = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
+        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.LOCAL_RULES, ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
         var cloudCalls = 0
 
         val result = mesh.classifyIntent(UserUtterance("something ambiguous entirely")) { cloudCalls++; null }

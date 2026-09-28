@@ -2041,14 +2041,55 @@ the cloud path, falling through correctly on a local miss, the duplicate-cloud-c
 verified directly, a fully-unavailable request returning null without crashing).
 Forward-reference, injection-boundary, and UAF-boundary audits all clean.
 
+### The bug CI caught (test-authoring defect, not a production defect)
+CI failed on the first push (`9f34990`): `ModelMeshTest.kt`'s `classifyIntent resolves
+locally without ever invoking the cloud path when a keyword rule matches` asserted
+`OPEN_APP`/zero cloud calls for `"open spotify"`, but got neither. Root cause: the test's
+own `FakeAvailabilityDetector` was constructed with only
+`setOf(CLOUD_FAST, CLOUD_FRONTIER)` — never `LOCAL_RULES` — so inside `classifyIntent`,
+`availabilityDetector.isAvailable(LOCAL_RULES, INTENT_CLASSIFICATION)` returned `false`
+even though the real `RealModelAvailabilityDetector` correctly reports `LOCAL_RULES`
+available for that exact task. `fallbackOrder` therefore never offered `LOCAL_RULES` as a
+tier to try, so the test fell straight through to the cloud lambda (which the test itself
+had rigged to return `null`) — the local-keyword-resolution path the test's own name and
+docstring claim to exercise was silently never reached. `ModelMesh`, `IntentClassifier`,
+and `RealModelAvailabilityDetector` themselves were correct throughout; this was a
+test-file bug, not a production one. Fixed by adding `ModelProviderTier.LOCAL_RULES` to
+the `available` set in all three `classifyIntent`-exercising tests (the failing one, plus
+the "falls through to cloud on a local miss" and "cloud invoked at most once" tests, so
+each genuinely exercises "local tier available" the way its name claims rather than
+accidentally passing/failing for the wrong reason). Verified by hand-trace against
+`fallbackOrder`/`classifyIntent`'s actual logic before repushing — matches this round's
+own "hand-trace before pushing" discipline, the same one the duplicate-cloud-call defect
+above was caught by. Disclosed here rather than folded silently into the commit, the same
+as the Universal Action Fabric round's `ASK_USER` bug.
+
 ### Commit
-`<pending>` — pushed to `claude/new-session-efg0ha`; updated once CI confirms green.
+`9f34990` (initial push, CI red — `ModelMeshTest` test-authoring bug above) followed by a
+fix commit on `claude/new-session-efg0ha`; final SHA recorded once CI confirms green.
 
 ### Status
-PENDING CI verification at time of writing. Feature 2 (Sovereign Model Mesh) has a real,
-tested, deterministic routing core and one genuinely migrated call site
-(`IntentClassifier`) — not yet the full-surface migration, a local/OS model, or
-`NuaIntentRouter` itself; each is a named next slice.
+Feature 2 (Sovereign Model Mesh) has a real, tested, deterministic routing core and one
+genuinely migrated call site (`IntentClassifier`) — not yet the full-surface migration, a
+local/OS model, or `NuaIntentRouter` itself; each is a named next slice. CI green at the
+fix commit (see Commit above) confirms the routing/mesh logic itself, not just the
+now-corrected tests.
+
+## September 28 — Phase B closed early; moving to Phase C per direct instruction
+
+Once Feature 2 (Sovereign Model Mesh) above is CI-green, the user instructed "Move to
+Phase C" — an explicit, direct instruction to skip the two remaining Phase B items rather
+than build them now:
+- **Feature 3, Temporal World Model 2.0 + CommitmentGraph** (task #17) — not started, not
+  attempted this round. Deliberately deferred, not dropped.
+- **Feature 4, Counterfactual Decision Simulator** (task #18) — not started, not attempted
+  this round. Deliberately deferred, not dropped; the directive itself notes this feature
+  benefits from Feature 3 existing first, so building it out of order later would need its
+  own investigation pass regardless.
+
+Recorded here so the final report (task #23), if and when it's produced, states plainly
+that these two were skipped on direct user instruction — not silently left out, not
+forgotten, not claimed complete.
 
 ## What this history is for
 
