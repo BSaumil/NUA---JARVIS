@@ -2498,6 +2498,20 @@ Fabric's authorization gate under several concrete attack framings. Ten of the o
 sixteen directive-named adversarial classes remain deferred, each requiring a feature or
 subsystem this session either didn't build or explicitly found unbuildable.
 
+## September 28 (continued) — final report published, 5-Year Standalone Master Directive
+## session closed
+
+`FINAL_5_YEAR_STANDALONE_IMPLEMENTATION_REPORT.md` (commit `0c36082`) synthesizes every
+entry above into one top-level account: outcome by phase, what shipped and why each slice
+was scoped the way it was, the two Phase B items skipped on direct user instruction, the
+one feature (Presence Mesh) investigated and found unbuildable in this environment, direct
+answers to the directive's own named security-review questions, the full commit ledger
+with CI status, and a prioritized next-steps list. Confirmed CI-green job-level at
+`0c36082` (all 16 steps, run 36437074630). No feature-level detail lives only in the
+report — every claim in it traces back to a dated entry in this file, written at the time
+that feature actually shipped, not reconstructed afterward. This is the last entry for
+this session's `/goal` scope; task #23 (final report) is closed.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
