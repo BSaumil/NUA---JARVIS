@@ -2202,6 +2202,118 @@ fail-closed enforcement point the legacy grant already used — not yet a full d
 set, a creation/review UI, or merged with the Universal Action Fabric; each is a named
 next slice.
 
+## September 28 (continued) — NUA Recipes (Feature 6), Phase C
+
+Second Autonomy-moat item of the 5-Year Standalone Master Directive.
+
+### Investigation
+Read the Universal Action Fabric (Feature 1, this session's earlier Phase A work) end to
+end before designing anything: `automation/uaf/ActionPlan.kt`'s `PlanStep`/`ActionPlan`
+is already exactly the "typed IR" the directive asks a recipe compiler to produce —
+action, parameters, dependency graph, failure policy, authorization proof.
+`automation/uaf/CapabilityRegistry.kt` is already "resolve against the real registry" —
+generated from the same closed skill map the live router dispatches through, so an
+unregistered action simply has no descriptor. `automation/uaf/WorkflowExecutor.kt` is
+already the "deterministic runtime" — topological execution, one enforcement point
+(`isAuthorizationSufficient`) no adapter can bypass, full lineage recording to the Flight
+Recorder (Feature 9). Confirmed by grep that **nothing in production code calls
+`WorkflowExecutor.run` yet** — it exists, is tested (`WorkflowExecutorTest`), and has
+never had a real caller. This reframed the whole feature: NUA Recipes isn't a new
+automation engine, it's a natural-language compiler that targets the engine already
+built, and its first real production integration.
+
+### Implementation
+- `recipes/RecipeCompiler.kt` — pure `splitIntoClauses` (deterministic tokenization on
+  commas/semicolons/"and"/"then") and `compileRecipe(description, descriptorFor)`:
+  resolves each clause through the exact same `KeywordIntentMatcher` the live router's
+  local-rules tier already uses (real, tested, zero-network) rather than an LLM round
+  trip. A clause it can't resolve — or that resolves to an action with no registered
+  capability — is reported in `CompiledRecipe.unresolvedClauses` verbatim, never dropped
+  or guessed at. Pure `failurePolicyFor(descriptor)`: `ASK_USER` when the capability
+  requires confirmation, `SKIP` otherwise — a step needing a human is never quietly
+  skipped, and one step failing never silently blocks the rest of an otherwise-
+  independent recipe. No `AuthorizationProof` is ever assigned at compile time.
+- `recipes/RecipeSimulator.kt` — pure `simulateRecipe`: a zero-side-effect preview
+  (`WOULD_EXECUTE`/`WOULD_AWAIT_USER`/`UNRESOLVED` per step) that never touches
+  `WorkflowExecutor` or any `ActionAdapter` — there is no code path in it that can
+  perform a real side effect. Takes the caller's already-computed autonomy-grant answer
+  as a plain function rather than querying `TrustRepository` itself, keeping it free of
+  any database access.
+- `recipes/RecipeStepData.kt` — the persisted, flattened form of a `PlanStep`
+  (`toData()`/`toPlanStep()`). Deliberately not `PlanStep` itself: it carries an
+  `AuthorizationProof`, and a recipe must never persist authorization — restoring always
+  yields a fresh `AuthorizationProof.NotRequired`, resolved for real at every run. An
+  `actionName`/`failurePolicyName` that names no real enum constant returns null, never a
+  guess.
+- `memory/MemoryStore.kt` — `RecipeEntity` (name/description/stepsJson/
+  unresolvedClauseCount, additive) + `RecipeDao`; `RecipeRunEntity` (recipeId/startedAt/
+  completedAt/succeededSteps/failedSteps/awaitingUserSteps, additive) + `RecipeRunDao` —
+  the recipe-level health rollup on top of the Flight Recorder's own per-step lineage,
+  not a second copy of the same detail. DB version 19→20.
+- `recipes/RecipeRepository.kt` — `createRecipe` (compiles + persists, including
+  unresolved clauses); `simulate` (loads, resolves each distinct action's real
+  autonomy-grant answer once, calls `simulateRecipe`); `runRecipe` — the feature's core:
+  resolves each step's `AuthorizationProof` fresh from the real autonomy state (the exact
+  same legacy-grant-OR-live-contract rule `ui/NuaViewModel.kt`'s `applyPendingEffect`
+  already uses for the manual chat path — a recipe never gets a looser standard than a
+  live request), builds an `ActionPlan`, and hands it to the real `WorkflowExecutor` —
+  the fabric's own `isAuthorizationSufficient` check is what actually refuses an
+  unauthorized step, not a second copy of that rule here. Records a `RecipeRunEntity`
+  from the resulting `PlanRunState`.
+
+### Explicitly not attempted this round
+**Parsing is deterministic/keyword-only, not LLM-assisted** — a recipe can only compile
+clauses `KeywordIntentMatcher` already resolves (open/launch, media control, weather,
+notifications, email status, morning briefing); anything else is reported unresolved
+rather than guessed at by a model. LLM-assisted parsing for clauses a keyword split
+misses is a named next slice, the same "local rules first, cloud fallback" shape
+`ai/mesh/ModelMesh.kt`'s `classifyIntent` already formalizes for the main router. **No
+triggers/scheduling** — a recipe runs only when `runRecipe` is called directly; time-based
+or event-based firing (the directive's implied "every morning" framing) would need a
+WorkManager/AlarmManager integration not attempted this round. **No user-review or
+creation UI** — `createRecipe`/`simulate`/`runRecipe` are real, tested-by-construction
+infrastructure, not yet surfaced to a screen, the same writer-then-reader-proven-
+separately precedent this session's Flight Recorder, Universal Action Fabric, and
+Contextual Autonomy Contracts slices already established. **Steps are independent, not a
+dependency graph** — every compiled step has an empty `dependsOn`; ordering dependencies
+between recipe steps (e.g. "wait for X before Y") is real `PlanStep` capability already
+present in the fabric, just not exercised by this compiler yet.
+
+### Verification
+`RecipeCompilerTest` (10 cases): clause splitting (commas/semicolons/and/then, stray
+separators, single-clause input); a resolvable clause with no confirmation compiles to
+`SKIP`; `failurePolicyFor` assigns `ASK_USER` for confirmation-required capabilities
+(exercised directly, since `KeywordIntentMatcher` happens not to resolve any
+confirmation-required action today — noted honestly in the test itself, not hidden); an
+unresolvable clause is reported verbatim; a keyword-matched clause with no registered
+capability is reported unresolved, never fabricated; a mixed recipe resolves what it can
+and reports the rest in original order; step ids reflect original clause position so
+gaps from unresolved clauses stay visible; no authorization is ever assigned at compile
+time. `RecipeSimulatorTest` (6 cases): every `SimulatedStepStatus` branch, unresolved
+clauses passing through unchanged, purity. `RecipeStepDataTest` (5 cases): round-trip
+fidelity, authorization never carried over, null (never a guess) for an unrecognized
+action or failure policy name, empty-parameters round-trip. Forward-reference,
+injection-boundary, and UAF-boundary audits all clean — confirms `RecipeRepository`
+reaches `WorkflowExecutor.run` only, never `ActionAdapter.execute` directly.
+`RecipeRepository` itself is not directly unit tested — it depends on `TrustRepository`,
+which has never had direct JVM tests in this codebase (real `Context`/`SharedPreferences`,
+no Robolectric) — consistent with this session's established "pure core tested, impure
+wrapper hand-traced" precedent. Hand-traced line by line before pushing, including the
+`simulateRecipe`/suspend-boundary fix (a suspend autonomy check can't be passed directly
+into a plain, non-inline pure function's callback parameter — resolved into a plain set
+up front instead) caught during that trace, before ever running a build.
+
+### Commit
+PENDING — pushed to `claude/new-session-efg0ha`; SHA and CI result recorded once
+confirmed green at the job level.
+
+### Status
+Feature 6 (NUA Recipes) has a real, deterministic, fully-tested compiler
+(parse → typed IR → registry resolution → zero-side-effect simulation) that targets the
+Universal Action Fabric's actual runtime rather than a new one — its first genuine
+production caller. Not yet LLM-assisted parsing, scheduling/triggers, step dependencies,
+or a review/creation UI; each is a named next slice.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

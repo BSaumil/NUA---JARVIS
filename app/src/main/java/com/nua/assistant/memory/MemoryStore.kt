@@ -313,6 +313,70 @@ interface ShadowPredictionDao {
     suspend fun recentResolved(limit: Int): List<ShadowPredictionEntity>
 }
 
+/**
+ * NUA Recipes (Feature 6) — a natural-language automation description compiled once into
+ * a typed, inspectable plan and persisted for repeat manual runs. [stepsJson] holds the
+ * compiled steps as a JSON-encoded `List<`[com.nua.assistant.recipes.RecipeStepData]`>`
+ * (see recipes/RecipeStepData.kt for why steps, not `PlanStep`, are what's persisted —
+ * authorization is never carried over between runs). [description] is kept verbatim
+ * alongside the compiled result so re-compiling after a `KeywordIntentMatcher` change (or
+ * a future smarter parser) is always possible without asking the user to retype it.
+ */
+@Entity(tableName = "recipes")
+data class RecipeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val description: String,
+    val stepsJson: String,
+    /** How many clauses of [description] KeywordIntentMatcher couldn't resolve at compile
+     *  time — surfaced so a recipe with gaps is never presented as fully understood. */
+    val unresolvedClauseCount: Int = 0,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface RecipeDao {
+    @Insert
+    suspend fun insert(entity: RecipeEntity): Long
+
+    @Query("SELECT * FROM recipes WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): RecipeEntity?
+
+    @Query("SELECT * FROM recipes ORDER BY createdAt DESC")
+    suspend fun getAll(): List<RecipeEntity>
+
+    @Query("SELECT * FROM recipes ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<RecipeEntity>>
+
+    @Query("DELETE FROM recipes WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
+/** One completed run of a recipe — the audit/health record the directive names, built
+ *  from the [com.nua.assistant.automation.uaf.PlanRunState] WorkflowExecutor.run returns.
+ *  Every step it covers is *also* recorded individually to the Flight Recorder's lineage
+ *  chain (Feature 9) by WorkflowExecutor itself — this is the recipe-level rollup on top
+ *  of that, not a second copy of the same per-step detail. */
+@Entity(tableName = "recipe_runs")
+data class RecipeRunEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val recipeId: Long,
+    val startedAt: Long,
+    val completedAt: Long,
+    val succeededSteps: Int,
+    val failedSteps: Int,
+    val awaitingUserSteps: Int,
+)
+
+@Dao
+interface RecipeRunDao {
+    @Insert
+    suspend fun insert(entity: RecipeRunEntity)
+
+    @Query("SELECT * FROM recipe_runs WHERE recipeId = :recipeId ORDER BY startedAt DESC LIMIT :limit")
+    suspend fun recentForRecipe(recipeId: Long, limit: Int): List<RecipeRunEntity>
+}
+
 /** A durable goal the user has set — see goals/GoalRepository.kt. */
 @Entity(tableName = "goals")
 data class GoalEntity(
@@ -688,8 +752,9 @@ interface MemoryDao {
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
         LineageRecordEntity::class, AutonomyContractEntity::class, ShadowPredictionEntity::class,
+        RecipeEntity::class, RecipeRunEntity::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = false,
 )
 abstract class NuaDatabase : RoomDatabase() {
@@ -708,4 +773,6 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun lineageDao(): LineageDao
     abstract fun autonomyContractDao(): AutonomyContractDao
     abstract fun shadowPredictionDao(): ShadowPredictionDao
+    abstract fun recipeDao(): RecipeDao
+    abstract fun recipeRunDao(): RecipeRunDao
 }

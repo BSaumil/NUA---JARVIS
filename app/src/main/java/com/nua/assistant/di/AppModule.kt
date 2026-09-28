@@ -16,6 +16,8 @@ import com.nua.assistant.memory.TrustLedgerDao
 import com.nua.assistant.memory.UsageDao
 import com.nua.assistant.memory.VisionMonitorDao
 import com.nua.assistant.memory.LineageDao
+import com.nua.assistant.memory.RecipeDao
+import com.nua.assistant.memory.RecipeRunDao
 import com.nua.assistant.memory.ShadowPredictionDao
 import com.nua.assistant.memory.WorldRelationshipDao
 import dagger.Module
@@ -87,6 +89,12 @@ object AppModule {
 
     @Provides
     fun provideShadowPredictionDao(database: NuaDatabase): ShadowPredictionDao = database.shadowPredictionDao()
+
+    @Provides
+    fun provideRecipeDao(database: NuaDatabase): RecipeDao = database.recipeDao()
+
+    @Provides
+    fun provideRecipeRunDao(database: NuaDatabase): RecipeRunDao = database.recipeRunDao()
 
     @Provides
     @Singleton
