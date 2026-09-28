@@ -2065,15 +2065,16 @@ above was caught by. Disclosed here rather than folded silently into the commit,
 as the Universal Action Fabric round's `ASK_USER` bug.
 
 ### Commit
-`9f34990` (initial push, CI red — `ModelMeshTest` test-authoring bug above) followed by a
-fix commit on `claude/new-session-efg0ha`; final SHA recorded once CI confirms green.
+`9f34990` (initial push, CI red — `ModelMeshTest` test-authoring bug above), fixed by
+`c0cbfe0` on `claude/new-session-efg0ha`. Confirmed CI-green at `c0cbfe0` job-level (all
+16 steps, run 36426368031): forward-reference, injection-boundary, and UAF-boundary audits
+all pass, `Run unit tests`/`Verify tests actually ran` both green, debug and release
+(R8-minified) APKs both build.
 
 ### Status
-Feature 2 (Sovereign Model Mesh) has a real, tested, deterministic routing core and one
-genuinely migrated call site (`IntentClassifier`) — not yet the full-surface migration, a
-local/OS model, or `NuaIntentRouter` itself; each is a named next slice. CI green at the
-fix commit (see Commit above) confirms the routing/mesh logic itself, not just the
-now-corrected tests.
+DONE. Feature 2 (Sovereign Model Mesh) has a real, tested, deterministic routing core and
+one genuinely migrated call site (`IntentClassifier`) — not yet the full-surface
+migration, a local/OS model, or `NuaIntentRouter` itself; each is a named next slice.
 
 ## September 28 — Phase B closed early; moving to Phase C per direct instruction
 
