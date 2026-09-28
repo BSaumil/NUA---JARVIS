@@ -71,3 +71,21 @@ fun contractShouldSuspend(
     if (recentOutcomesMostRecentFirst.size < lookback) return false
     return recentOutcomesMostRecentFirst.take(lookback).count { it.countsAsFailure() } >= failureThreshold
 }
+
+/**
+ * Pure: the single combined auto-approve answer from the legacy unscoped grant and a
+ * Contextual Autonomy Contract together — either alone is enough ("extend, don't
+ * replace" for the legacy grant during migration), and a shadow-mode contract's decision
+ * NEVER contributes, no matter what it decided ([ContractDecision.Permit] included —
+ * shadow mode predicts, it never acts). Extracted so `ui/NuaViewModel.kt`'s
+ * `applyPendingEffect` and `recipes/RecipeRepository.kt`'s `wouldAutoApprove` — the two
+ * real call sites that decide this — can never independently drift on the rule, and so
+ * this one rule is directly adversarially testable
+ * (`security/guardian/AutonomyContractAdversarialTest.kt`) without needing either
+ * caller's own impure dependencies (`TrustRepository`, Room, `Context`) in the test.
+ */
+fun finalAutoApproveDecision(legacyGrantActive: Boolean, contract: AutonomyContractEntity?, decision: ContractDecision): Boolean {
+    if (legacyGrantActive) return true
+    if (contract == null || contract.shadowMode) return false
+    return decision is ContractDecision.Permit
+}

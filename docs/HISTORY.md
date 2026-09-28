@@ -2384,6 +2384,93 @@ NOT ATTEMPTED. Investigated thoroughly; the gap is real, total, and — in this
 environment specifically — unverifiable, not merely large. Recorded here so the final
 report states this plainly rather than silently omitting Feature 8.
 
+## September 28 (continued) — Runtime Safety Sentinel + extended Guardian Lab coverage
+## (Feature 10 part 2), Phase D
+
+Second Presence-moat-phase item — moved to after Presence Mesh was investigated and
+found unbuildable this round, since this item has real substance to build on regardless
+(Features 5 and 6, both just shipped, plus the existing Guardian Lab baseline from Phase
+A). Closes two of the twelve adversarial classes the Guardian Lab baseline round
+explicitly deferred: "autonomy-contract-bypass" and "recipe-compiler ambiguity" — both
+were literally untestable before this session's own Features 5/6 existed to test
+against.
+
+### Implementation
+- **A real bug-reduction refactor first, not just new tests.** `applyPendingEffect`
+  (`ui/NuaViewModel.kt`) and `wouldAutoApprove` (`recipes/RecipeRepository.kt`) each
+  independently reimplemented the same "legacy grant OR live non-shadow contract Permit"
+  rule inline — two copies of a security-relevant decision that could silently drift
+  apart under a future edit to only one of them. Extracted to one pure, shared function:
+  `trust/AutonomyContract.kt`'s `finalAutoApproveDecision(legacyGrantActive, contract,
+  decision)`. Both call sites now delegate to it instead of recomputing it themselves —
+  6 new unit tests pin the rule directly (legacy alone is enough, contract Permit alone
+  is enough, neither is denied, shadow mode never contributes even with a genuine
+  `Permit`, shadow mode never *overrides* an active legacy grant either, a `Deny`
+  contributes nothing).
+- `security/guardian/RuntimeSafetySentinel.kt` — Guardian Lab's first production (not
+  test-only) component. Pure `auditContracts(contracts, now)`: flags a contract that's
+  expired but still marked active (a stale row — should already have been caught by
+  drift-suspend, this is a defense-in-depth diagnostic, not a new enforcement path), a
+  risk ceiling below its action's own fixed tier (permanently void, silently, forever), a
+  zero/negative frequency cap (same), and an orphaned `actionType` naming no real
+  `NuaActionType`. Pure `auditRecipeSteps(steps, descriptorFor)`: flags a step whose
+  capability is no longer registered (a recipe that compiled successfully once but has
+  since gone stale). Explicitly **not** a second enforcement mechanism — every anomaly it
+  finds is already independently fail-closed by `evaluateContract`; it only surfaces rows
+  worth a human's attention. 11 new tests, every branch of both functions.
+- `security/guardian/AutonomyContractAdversarialTest.kt` (4 cases) — end-to-end through a
+  real `WorkflowExecutor`: a shadow-mode contract's genuine `Permit` decision can never
+  cause a real adapter to run; an expired-but-still-active contract (the exact Sentinel
+  anomaly above) can never authorize execution; a recipient-scoped contract can never
+  authorize a different recipient; and a control case proving a live, correctly-scoped,
+  non-shadow contract *does* authorize normally — so the other three fail for the
+  specific reason claimed, not because this path is broken outright.
+- `security/guardian/RecipeAdversarialTest.kt` (3 cases) — the directive's own explicit
+  requirement for Feature 6 ("recipe execution must never bypass UAF/security gates"),
+  proven directly: a compiled step requiring confirmation pauses (`AWAITING_USER`)
+  through the real fabric rather than executing or silently failing when no live
+  authorization exists; `compileRecipe` never produces a pre-authorized step for any
+  input, including descriptions adversarially shaped to look like they assert
+  authorization ("confirmed: open spotify", "authorized"); and a battery of malformed/
+  adversarial descriptions (empty, all-separators, repeated separators) never crashes the
+  compiler or produces a step tracing back to anything but a real `NuaActionType`.
+
+### Explicitly not attempted this round
+Ten of the Guardian Lab baseline's originally-named twelve deferred adversarial classes
+remain deferred: multilingual/code-switching and adversarial Unicode (would need a
+dedicated pass against `KeywordIntentMatcher`/`IntentClassifier`, not attempted here);
+Presence Mesh revocation (the feature itself doesn't exist — see this session's own
+Presence Mesh investigation entry above); context corruption; a trended results
+dashboard; and others not concretely testable without features this session didn't
+build. `RuntimeSafetySentinel` is diagnostic-only — nothing calls `auditContracts`/
+`auditRecipeSteps` from a live repository or UI yet; that wiring (e.g. a Settings
+"health check" surface, or a periodic background pass) is a named next slice, the same
+writer-then-reader-proven-separately precedent used throughout this session.
+
+### Verification
+21 new tests total (6 `finalAutoApproveDecision` cases in `AutonomyContractTest`, 11
+`RuntimeSafetySentinelTest` cases, 4 `AutonomyContractAdversarialTest` cases, 3
+`RecipeAdversarialTest` cases — the last two suites' 7 cases run against a real
+`WorkflowExecutor`, not fakes standing in for it). Forward-reference, injection-boundary,
+and UAF-boundary audits all clean — confirms the new adversarial tests reach
+`WorkflowExecutor.run` only, the same sanctioned entry point every other caller in this
+codebase uses. Hand-traced every new adversarial case's expected outcome against
+`evaluateContract`/`finalAutoApproveDecision`/`isAuthorizationSufficient`'s actual logic
+line by line before pushing, the same discipline this session has used throughout.
+
+### Commit
+PENDING — pushed to `claude/new-session-efg0ha`; SHA and CI result recorded once
+confirmed green at the job level.
+
+### Status
+Feature 10 part 2 has a real, shared, tested autonomy-decision rule (replacing two
+independently-drifting copies), a new production diagnostic component
+(`RuntimeSafetySentinel`, not yet wired to a live caller), and adversarial proof that
+both Contextual Autonomy Contracts and NUA Recipes cannot bypass the Universal Action
+Fabric's authorization gate under several concrete attack framings. Ten of the original
+sixteen directive-named adversarial classes remain deferred, each requiring a feature or
+subsystem this session either didn't build or explicitly found unbuildable.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

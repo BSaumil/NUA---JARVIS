@@ -78,7 +78,7 @@ import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
 import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
-import com.nua.assistant.trust.ContractDecision
+import com.nua.assistant.trust.finalAutoApproveDecision
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.idempotencyKeyFor
 import com.nua.assistant.trust.sameDayWindowStart
@@ -539,12 +539,13 @@ class NuaViewModel @Inject constructor(
 
     /**
      * Publishes a routed proposal to [NuaUiState] via [pendingEffectFor] — see that
-     * function's doc comment. Two independent votes can auto-approve: the legacy,
-     * unscoped [TrustRepository.isAutoApproved] grant, and a live (non-shadow)
-     * Contextual Autonomy Contract (Feature 5) via [TrustRepository.contractDecisionFor]
-     * — either alone is enough, matching "extend, don't replace" for the legacy grant
-     * during migration. A shadow-mode contract never contributes to auto-approval no
-     * matter what it decides; it only records a prediction (see
+     * function's doc comment. The combined auto-approve answer — the legacy, unscoped
+     * [TrustRepository.isAutoApproved] grant, OR a live (non-shadow) Contextual Autonomy
+     * Contract (Feature 5) — is decided by the one shared pure rule,
+     * `trust/AutonomyContract.kt`'s `finalAutoApproveDecision`, not recomputed here, so
+     * this call site and `recipes/RecipeRepository.kt`'s `wouldAutoApprove` can never
+     * independently drift on it. A shadow-mode contract never contributes no matter what
+     * it decides; it only records a prediction (see
      * [TrustRepository.recordShadowPrediction]) for later comparison against what the
      * user actually does with this same proposal.
      */
@@ -553,15 +554,11 @@ class NuaViewModel @Inject constructor(
         val recipient = recipientFor(proposal)
         val (contract, decision) = trustRepository.contractDecisionFor(actionType, recipient)
         var shadowPredictionId: Long? = null
-        val contractAutoApproved = when {
-            contract == null -> false
-            contract.shadowMode -> {
-                shadowPredictionId = trustRepository.recordShadowPrediction(contract, actionType, recipient, decision)
-                false
-            }
-            else -> decision is ContractDecision.Permit
+        if (contract != null && contract.shadowMode) {
+            shadowPredictionId = trustRepository.recordShadowPrediction(contract, actionType, recipient, decision)
         }
-        val effect = pendingEffectFor(proposal, autoApproved = legacyAutoApproved || contractAutoApproved)
+        val autoApproved = finalAutoApproveDecision(legacyAutoApproved, contract, decision)
+        val effect = pendingEffectFor(proposal, autoApproved = autoApproved)
         _uiState.update {
             it.copy(
                 isProcessing = false,

@@ -109,6 +109,39 @@ class AutonomyContractTest {
     }
 
     @Test
+    fun `finalAutoApproveDecision -- legacy grant alone is enough, even with no contract at all`() {
+        assertEquals(true, finalAutoApproveDecision(legacyGrantActive = true, contract = null, decision = ContractDecision.NoContract))
+    }
+
+    @Test
+    fun `finalAutoApproveDecision -- a live non-shadow contract's Permit alone is enough, with no legacy grant`() {
+        val c = contract()
+        assertEquals(true, finalAutoApproveDecision(legacyGrantActive = false, contract = c, decision = ContractDecision.Permit))
+    }
+
+    @Test
+    fun `finalAutoApproveDecision -- neither vote present denies`() {
+        assertEquals(false, finalAutoApproveDecision(legacyGrantActive = false, contract = null, decision = ContractDecision.NoContract))
+    }
+
+    @Test
+    fun `finalAutoApproveDecision -- a shadow-mode contract's Permit never contributes on its own`() {
+        val shadow = contract().copy(shadowMode = true)
+        assertEquals(false, finalAutoApproveDecision(legacyGrantActive = false, contract = shadow, decision = ContractDecision.Permit))
+    }
+
+    @Test
+    fun `finalAutoApproveDecision -- a shadow-mode contract can never override an active legacy grant either way`() {
+        val shadow = contract().copy(shadowMode = true)
+        assertEquals(true, finalAutoApproveDecision(legacyGrantActive = true, contract = shadow, decision = ContractDecision.Deny("x")))
+    }
+
+    @Test
+    fun `finalAutoApproveDecision -- a contract that denies never contributes, with no legacy grant`() {
+        assertEquals(false, finalAutoApproveDecision(legacyGrantActive = false, contract = contract(), decision = ContractDecision.Deny("expired")))
+    }
+
+    @Test
     fun `a failure outside the lookback window is never counted`() {
         // Newest-first: the 2 failures are 4th and 5th -- outside the default 3-attempt lookback.
         val outcomes = listOf(

@@ -14,8 +14,8 @@ import com.nua.assistant.memory.RecipeDao
 import com.nua.assistant.memory.RecipeEntity
 import com.nua.assistant.memory.RecipeRunDao
 import com.nua.assistant.memory.RecipeRunEntity
-import com.nua.assistant.trust.ContractDecision
 import com.nua.assistant.trust.TrustRepository
+import com.nua.assistant.trust.finalAutoApproveDecision
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.decodeFromString
@@ -114,13 +114,14 @@ class RecipeRepository @Inject constructor(
     }
 
     /** True when either the legacy unscoped grant or a live (non-shadow) Contextual
-     *  Autonomy Contract currently permits [action] to run without asking — the exact
-     *  same two-vote rule `ui/NuaViewModel.kt`'s applyPendingEffect already uses for the
-     *  manual chat path, so a recipe never gets a looser standard than a live request. */
+     *  Autonomy Contract currently permits [action] to run without asking — decided by
+     *  the same shared pure rule (`trust/AutonomyContract.kt`'s finalAutoApproveDecision)
+     *  `ui/NuaViewModel.kt`'s applyPendingEffect uses for the manual chat path, so a
+     *  recipe can never get a looser standard than a live request via independent drift. */
     private suspend fun wouldAutoApprove(action: NuaActionType): Boolean {
-        if (trustRepository.isAutoApproved(action)) return true
+        val legacyGrantActive = trustRepository.isAutoApproved(action)
         val (contract, decision) = trustRepository.contractDecisionFor(action, recipient = null)
-        return contract != null && !contract.shadowMode && decision is ContractDecision.Permit
+        return finalAutoApproveDecision(legacyGrantActive, contract, decision)
     }
 
     private suspend fun recordRun(recipeId: Long, startedAt: Long, plan: ActionPlan, result: PlanRunState) {
