@@ -31,7 +31,7 @@ import org.junit.Test
 private val CONTEXT = AdapterExecutionContext(originalUtterance = "adversarial probe", pinnedLanguage = null)
 private const val NOW = 1_000_000L
 
-private class RecordingSkill(override val manifest: SkillManifest) : NuaSkill {
+private class ContractRecordingSkill(override val manifest: SkillManifest) : NuaSkill {
     var called = false
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         called = true
@@ -39,7 +39,7 @@ private class RecordingSkill(override val manifest: SkillManifest) : NuaSkill {
     }
 }
 
-private class NoOpLineageRecorder : LineageRecorder {
+private class ContractNoOpLineageRecorder : LineageRecorder {
     override suspend fun record(entry: LineageEntry) {}
 }
 
@@ -65,7 +65,7 @@ class AutonomyContractAdversarialTest {
 
     @Test
     fun `a shadow-mode contract's Permit decision can never cause a real adapter to run`() = runTest {
-        val skill = RecordingSkill(SkillManifest())
+        val skill = ContractRecordingSkill(SkillManifest())
         val registry = CapabilityRegistry(mapOf(NuaActionType.SMS_SEND to skill))
         val local = object : ActionAdapter {
             override val type = ExecutionAdapterType.LOCAL_NATIVE
@@ -74,7 +74,7 @@ class AutonomyContractAdversarialTest {
                 return NuaRouteResult.ActionTaken("this must never run under shadow mode")
             }
         }
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), NoOpLineageRecorder())
+        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), ContractNoOpLineageRecorder())
 
         val shadowContract = AutonomyContractEntity(actionType = NuaActionType.SMS_SEND.name, shadowMode = true, expiresAt = NOW + 1000)
         val decision = evaluateContract(shadowContract, NuaActionType.SMS_SEND, recipient = null, now = NOW, recentCommittedCountInWindow = 0)
@@ -90,7 +90,7 @@ class AutonomyContractAdversarialTest {
 
     @Test
     fun `an expired contract still marked active can never authorize execution`() = runTest {
-        val skill = RecordingSkill(SkillManifest())
+        val skill = ContractRecordingSkill(SkillManifest())
         val registry = CapabilityRegistry(mapOf(NuaActionType.SMS_SEND to skill))
         val local = object : ActionAdapter {
             override val type = ExecutionAdapterType.LOCAL_NATIVE
@@ -99,7 +99,7 @@ class AutonomyContractAdversarialTest {
                 return NuaRouteResult.ActionTaken("this must never run for an expired contract")
             }
         }
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), NoOpLineageRecorder())
+        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), ContractNoOpLineageRecorder())
 
         // The exact RuntimeSafetySentinel "stale row" anomaly (active=true, expiresAt in
         // the past) -- a database inconsistency the drift-suspend path should have
@@ -117,7 +117,7 @@ class AutonomyContractAdversarialTest {
 
     @Test
     fun `a contract scoped to a different recipient can never authorize this one`() = runTest {
-        val skill = RecordingSkill(SkillManifest())
+        val skill = ContractRecordingSkill(SkillManifest())
         val registry = CapabilityRegistry(mapOf(NuaActionType.SMS_SEND to skill))
         val local = object : ActionAdapter {
             override val type = ExecutionAdapterType.LOCAL_NATIVE
@@ -126,7 +126,7 @@ class AutonomyContractAdversarialTest {
                 return NuaRouteResult.ActionTaken("this must never run for the wrong recipient")
             }
         }
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), NoOpLineageRecorder())
+        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), ContractNoOpLineageRecorder())
 
         val scopedContract = AutonomyContractEntity(actionType = NuaActionType.SMS_SEND.name, recipient = "+15551234567", expiresAt = NOW + 1000)
         // The recipe/proposal being authorized is actually for a *different* number.
@@ -144,7 +144,7 @@ class AutonomyContractAdversarialTest {
     fun `a live, correctly-scoped, non-shadow contract does authorize execution -- the control case`() = runTest {
         // Proves the above three tests fail for the *specific* reason claimed, not because
         // this whole path is broken and nothing would ever execute regardless.
-        val skill = RecordingSkill(SkillManifest())
+        val skill = ContractRecordingSkill(SkillManifest())
         val registry = CapabilityRegistry(mapOf(NuaActionType.SMS_SEND to skill))
         val local = object : ActionAdapter {
             override val type = ExecutionAdapterType.LOCAL_NATIVE
@@ -153,7 +153,7 @@ class AutonomyContractAdversarialTest {
                 return NuaRouteResult.ActionTaken("sent")
             }
         }
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), NoOpLineageRecorder())
+        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), ContractNoOpLineageRecorder())
 
         val liveContract = AutonomyContractEntity(actionType = NuaActionType.SMS_SEND.name, expiresAt = NOW + 1000)
         val decision = evaluateContract(liveContract, NuaActionType.SMS_SEND, recipient = null, now = NOW, recentCommittedCountInWindow = 0)

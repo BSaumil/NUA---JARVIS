@@ -2458,9 +2458,34 @@ codebase uses. Hand-traced every new adversarial case's expected outcome against
 `evaluateContract`/`finalAutoApproveDecision`/`isAuthorizationSufficient`'s actual logic
 line by line before pushing, the same discipline this session has used throughout.
 
+### The bug CI caught (test-file naming collision, not a logic defect)
+CI failed on the first push (`1d6c04f`): `:app:compileReleaseUnitTestKotlin` failed with
+`Redeclaration` errors in `AutonomyContractAdversarialTest.kt` and cascading
+`Cannot access '...it is private in file'`/`Unresolved reference 'lastParameters'` errors
+in the pre-existing `UafAdversarialTest.kt`. Root cause: both new test files declared
+their own top-level `private class RecordingSkill`/`private class NoOpLineageRecorder` —
+copying the exact fixture names `UafAdversarialTest.kt` (same package,
+`security/guardian`) already used. Kotlin's `private` visibility on a top-level
+*function or property* is genuinely file-scoped (compiled as a private static member of
+that file's facade class, so identical names across files never collide — the precedent
+this session relied on when reusing names like `CONTEXT`/`NOW` freely across test files).
+A top-level *class*, even `private`, is not: it still compiles to its own single
+`ClassName.class` in the package, so three files declaring the same class name in the
+same package is a real, direct collision — confirmed by hand-review of the actual
+compiler output once the full (not tail-truncated) job log was fetched. Fixed by
+renaming each new file's fixtures uniquely (`ContractRecordingSkill`/
+`ContractNoOpLineageRecorder` in `AutonomyContractAdversarialTest.kt`,
+`RecipeGuardianRecordingSkill`/`RecipeNoOpLineageRecorder` in `RecipeAdversarialTest.kt`),
+leaving `UafAdversarialTest.kt` untouched. No test logic changed; every case's expected
+outcome had already been hand-traced correctly against the real
+`evaluateContract`/`finalAutoApproveDecision`/`isAuthorizationSufficient` behavior before
+the first push — this was purely a naming problem the compiler caught, not a defect in
+what the tests actually assert.
+
 ### Commit
-PENDING — pushed to `claude/new-session-efg0ha`; SHA and CI result recorded once
-confirmed green at the job level.
+`1d6c04f` (initial push, CI red — the naming-collision compile error above), fixed by
+a follow-up commit on `claude/new-session-efg0ha`; final SHA recorded once CI confirms
+green.
 
 ### Status
 Feature 10 part 2 has a real, shared, tested autonomy-decision rule (replacing two

@@ -32,7 +32,7 @@ import org.junit.Test
 
 private val CONTEXT = AdapterExecutionContext(originalUtterance = "adversarial recipe probe", pinnedLanguage = null)
 
-private class RecordingSkill(override val manifest: SkillManifest) : NuaSkill {
+private class RecipeGuardianRecordingSkill(override val manifest: SkillManifest) : NuaSkill {
     var called = false
     override suspend fun execute(intent: ClassifiedIntent, originalUtterance: String, pinnedLanguage: NuaLanguage?): NuaRouteResult {
         called = true
@@ -40,7 +40,7 @@ private class RecordingSkill(override val manifest: SkillManifest) : NuaSkill {
     }
 }
 
-private class NoOpLineageRecorder : LineageRecorder {
+private class RecipeNoOpLineageRecorder : LineageRecorder {
     override suspend fun record(entry: LineageEntry) {}
 }
 
@@ -54,7 +54,7 @@ class RecipeAdversarialTest {
 
     @Test
     fun `a compiled step requiring confirmation pauses through the real fabric, never executing without real authorization`() = runTest {
-        val smsSkill = RecordingSkill(SkillManifest())
+        val smsSkill = RecipeGuardianRecordingSkill(SkillManifest())
         val registry = CapabilityRegistry(mapOf(NuaActionType.SMS_SEND to smsSkill))
         val local = object : ActionAdapter {
             override val type = ExecutionAdapterType.LOCAL_NATIVE
@@ -63,7 +63,7 @@ class RecipeAdversarialTest {
                 return NuaRouteResult.ActionTaken("this must never run from a compiled recipe with no live authorization")
             }
         }
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), NoOpLineageRecorder())
+        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), RecipeNoOpLineageRecorder())
 
         // What RecipeRepository.runRecipe actually builds when wouldAutoApprove(SMS_SEND)
         // is false: the compiler's own ASK_USER failurePolicy (failurePolicyFor), and
