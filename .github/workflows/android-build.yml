@@ -77,17 +77,26 @@ jobs:
       # keystore.properties.example and app/build.gradle.kts's signingConfigs block for
       # how the build picks these up); skipped entirely — not failed — when they don't,
       # so a fork or a repo that hasn't set up signing yet still builds an unsigned
-      # release APK exactly as before this step existed.
+      # release APK exactly as before this step existed. The `secrets` context can't be
+      # used directly in a step's `if:` (GitHub Actions rejects the whole workflow with
+      # "Unrecognized named-value: 'secrets'" if it is) — routed through `env:` instead,
+      # which both `if:` and `run:` can read.
       - name: Decode release keystore
-        if: ${{ secrets.RELEASE_STORE_BASE64 != '' }}
+        if: ${{ env.HAS_RELEASE_SIGNING == 'true' }}
+        env:
+          HAS_RELEASE_SIGNING: ${{ secrets.RELEASE_STORE_BASE64 != '' }}
+          RELEASE_STORE_BASE64: ${{ secrets.RELEASE_STORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.RELEASE_STORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/nua-release.keystore"
-          cat > keystore.properties <<EOF
-          storeFile=$RUNNER_TEMP/nua-release.keystore
-          storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}
-          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
-          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
-          EOF
+          echo "$RELEASE_STORE_BASE64" | base64 -d > "$RUNNER_TEMP/nua-release.keystore"
+          {
+            echo "storeFile=$RUNNER_TEMP/nua-release.keystore"
+            echo "storePassword=$RELEASE_STORE_PASSWORD"
+            echo "keyAlias=$RELEASE_KEY_ALIAS"
+            echo "keyPassword=$RELEASE_KEY_PASSWORD"
+          } > keystore.properties
 
       # isMinifyEnabled=true for release (app/build.gradle.kts), but nothing had ever
       # actually run R8 against this codebase before this step existed — CI only ever
