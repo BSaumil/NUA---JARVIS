@@ -2512,6 +2512,66 @@ report — every claim in it traces back to a dated entry in this file, written 
 that feature actually shipped, not reconstructed afterward. This is the last entry for
 this session's `/goal` scope; task #23 (final report) is closed.
 
+## September 30 — release signing infrastructure
+
+First deployment-readiness step, prompted by the user asking what's left to deploy NUA
+as an app. Investigation found `app/build.gradle.kts`'s `release` build type had no
+`signingConfig` at all — CI's own "release" build has always been deliberately unsigned
+(it exists only to verify R8/minification), and nothing prior to this ever needed a real
+signed build.
+
+Added a conditional signing setup: `app/build.gradle.kts` loads
+`storeFile`/`storePassword`/`keyAlias`/`keyPassword` from a local, gitignored
+`keystore.properties` if present, else from CI-injected Gradle properties
+(`RELEASE_STORE_FILE`/etc., set by `.github/workflows/android-build.yml` from four new
+repository secrets), else neither — a release build with none of these still succeeds
+unsigned, exactly as before. `.github/workflows/android-build.yml` gained a "Decode
+release keystore" step that decodes a base64 keystore secret and writes
+`keystore.properties` before the release build runs, skipped (not failed) when the
+secrets don't exist. A release keystore (`nua-release.keystore`, alias `nua-release`,
+10,000-day validity) was generated and handed directly to the repository owner —
+alongside its passwords and setup instructions — to add as the four repository secrets;
+this session never had and does not retain a copy.
+
+Two real CI-caught defects along the way, both fixed forward and disclosed here rather
+than hidden:
+1. **`secrets` context used directly in a step's `if:`** — the first push after adding
+   the signing step failed at workflow-parse time with zero jobs scheduled (not a job
+   failure; GitHub rejected the whole workflow before running anything, which a
+   push-triggered run's API response didn't surface clearly — a manual
+   `workflow_dispatch` attempt did: `"Unrecognized named-value: 'secrets'"`). GitHub
+   Actions doesn't allow the `secrets` context inside a step's `if:`, only in
+   `env:`/`with:`/`run:`. Fixed by computing the check into an `env:` var
+   (`HAS_RELEASE_SIGNING`) first, which `if:` can read. A heredoc whose closing `EOF` was
+   indented to match the YAML block (invalid — bash requires an unindented terminator
+   for a plain `<<EOF`) was replaced with a plain `{ echo ...; } > file` block in the
+   same fix.
+2. **`java.util.Properties()` referenced inline at script top level didn't resolve** —
+   the next push failed inside `:app:compileReleaseUnitTestKotlin`/normal compilation
+   with `Unresolved reference: util` / `Unresolved reference: load` at the signing
+   block's `java.util.Properties()`/`.load(it)` calls. An inline fully-qualified
+   `java.util.X` reference at a `.gradle.kts` script's top level doesn't reliably resolve
+   in this Gradle Kotlin DSL compilation context. Fixed by switching to the standard,
+   well-established idiom instead — `import java.util.Properties` /
+   `import java.io.FileInputStream` at the top of the file, then a plain `Properties()`
+   — the exact boilerplate used across essentially every real Android project's
+   keystore-based signing config, rather than a bespoke inline version.
+
+### Commit
+`2d5dad6` on `claude/new-session-efg0ha`. Confirmed CI-green job-level (all 17 steps,
+run 36655037460): "Decode release keystore" correctly shows `skipped` (no secrets yet),
+"Build release APK" succeeds unsigned, exactly as designed until the repository owner
+adds the four secrets.
+
+### Status
+Signing infrastructure is real and CI-verified, but the release APK is still unsigned
+in this repository's CI until the repository owner adds the four `RELEASE_*` secrets —
+a step only they can do (this session cannot create repository secrets). Play Store
+submission itself — developer account, privacy policy, Data Safety form, and
+specifically the `SEND_SMS` permission's Play policy requirement that an app be a
+registered default SMS/Assistant handler — is deliberately paused until the user has
+tested a sideloaded build on their own device first, per their own explicit direction.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:
