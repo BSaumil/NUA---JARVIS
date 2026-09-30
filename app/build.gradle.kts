@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -21,9 +24,9 @@ val ciPropertyNames = mapOf(
     "keyAlias" to "RELEASE_KEY_ALIAS",
     "keyPassword" to "RELEASE_KEY_PASSWORD",
 )
-val signingProps = java.util.Properties().apply {
+val signingProps = Properties().apply {
     if (keystorePropsFile.exists()) {
-        keystorePropsFile.inputStream().use { load(it) }
+        load(FileInputStream(keystorePropsFile))
     } else {
         ciPropertyNames.forEach { (key, ciProp) ->
             (project.findProperty(ciProp) as String?)?.let { setProperty(key, it) }
