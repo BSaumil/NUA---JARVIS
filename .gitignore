@@ -13,6 +13,12 @@ app/release/
 *.hprof
 local.properties
 
+# Release signing -- never committed. See app/build.gradle.kts's signingConfigs block
+# and keystore.properties.example for how a local/CI build supplies these.
+*.keystore
+*.jks
+keystore.properties
+
 # --- Emergent app (backend/, frontend/, ...) ---
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 

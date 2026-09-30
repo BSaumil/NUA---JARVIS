@@ -7,9 +7,46 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Release signing -- loaded from keystore.properties (local, gitignored; see
+// keystore.properties.example) if present, else from CI-injected Gradle properties
+// (RELEASE_STORE_FILE/RELEASE_STORE_PASSWORD/RELEASE_KEY_ALIAS/RELEASE_KEY_PASSWORD, set
+// by .github/workflows/android-build.yml from repository secrets), else absent entirely.
+// A release build with none of these still succeeds unsigned, exactly as before this
+// signing setup existed -- CI's own "verifies R8/minification" release step never
+// required signing and must keep not requiring it.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val ciPropertyNames = mapOf(
+    "storeFile" to "RELEASE_STORE_FILE",
+    "storePassword" to "RELEASE_STORE_PASSWORD",
+    "keyAlias" to "RELEASE_KEY_ALIAS",
+    "keyPassword" to "RELEASE_KEY_PASSWORD",
+)
+val signingProps = java.util.Properties().apply {
+    if (keystorePropsFile.exists()) {
+        keystorePropsFile.inputStream().use { load(it) }
+    } else {
+        ciPropertyNames.forEach { (key, ciProp) ->
+            (project.findProperty(ciProp) as String?)?.let { setProperty(key, it) }
+        }
+    }
+}
+val hasReleaseSigning = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { !signingProps.getProperty(it).isNullOrBlank() }
+
 android {
     namespace = "com.nua.assistant"
     compileSdk = 35
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(signingProps.getProperty("storeFile"))
+                storePassword = signingProps.getProperty("storePassword")
+                keyAlias = signingProps.getProperty("keyAlias")
+                keyPassword = signingProps.getProperty("keyPassword")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.nua.assistant"
@@ -31,6 +68,9 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             isMinifyEnabled = false

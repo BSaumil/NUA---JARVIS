@@ -73,22 +73,38 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+      # Signs the release build when the four RELEASE_* repository secrets exist (see
+      # keystore.properties.example and app/build.gradle.kts's signingConfigs block for
+      # how the build picks these up); skipped entirely — not failed — when they don't,
+      # so a fork or a repo that hasn't set up signing yet still builds an unsigned
+      # release APK exactly as before this step existed.
+      - name: Decode release keystore
+        if: ${{ secrets.RELEASE_STORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.RELEASE_STORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/nua-release.keystore"
+          cat > keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/nua-release.keystore
+          storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}
+          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
+          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
+          EOF
+
       # isMinifyEnabled=true for release (app/build.gradle.kts), but nothing had ever
       # actually run R8 against this codebase before this step existed — CI only ever
       # built debug. R8 stripping/renaming a class Room, Hilt, or kotlinx.serialization
       # reach via reflection is exactly the failure mode that only shows up in a release
-      # build, at the worst possible time to discover it. Unsigned (no keystore secret
-      # is available here) — this verifies R8/resource shrinking completes cleanly, which
-      # is the release-specific risk; signing is a separate, standard step at actual
-      # publish time.
-      - name: Build release APK (unsigned, verifies R8/minification)
+      # build, at the worst possible time to discover it. Signed when the step above ran
+      # (real repository secrets present), unsigned otherwise — either way this verifies
+      # R8/resource shrinking completes cleanly, which is the release-specific risk this
+      # step exists to catch.
+      - name: Build release APK
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Upload release APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: nua-release-apk-unsigned
+          name: nua-release-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
