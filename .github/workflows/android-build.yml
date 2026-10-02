@@ -49,8 +49,19 @@ jobs:
       - name: UAF boundary audit
         run: python3 tools/uaf_boundary_audit.py
 
+      # testDebugUnitTest specifically, not the `test` aggregate task: this project has no
+      # debug/release-specific source sets (app/src/{debug,release} don't exist), so
+      # testReleaseUnitTest would compile and run the exact same tests against the exact
+      # same sources -- pure duplication, and tools/verify_tests_ran.py already only ever
+      # checked testDebugUnitTest's own report directory. Running both in one invocation is
+      # also what triggered a real defect: Room's exportSchema (added alongside this fix)
+      # writes app/schemas/.../20.json from kspDebugKotlin, and kspReleaseKotlin's own run
+      # in the same invocation read that file back mid-write and crashed with
+      # "IllegalStateException: Empty schema file" -- a genuine two-variant race on a
+      # shared, Gradle-untracked output path, not a flake. Scoping to one variant here
+      # removes the race rather than papering over it.
       - name: Run unit tests
-        run: ./gradlew test --stacktrace
+        run: ./gradlew testDebugUnitTest --stacktrace
 
       # A green "Run unit tests" step proves the task completed, not that it exercised
       # anything: Gradle reports BUILD SUCCESSFUL whether 263 tests ran or zero
