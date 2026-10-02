@@ -2,8 +2,8 @@
 <resources>
     <!-- Compose owns theming (see ui/theme/NuaTheme.kt); this is only the pre-Compose
          window background used while the activity is launching. It must stay in sync with
-         NuaColors.NuaBackground (#08090D): NUA is dark-only, so a light launch theme
-         flashes white for a frame before the first Compose frame lands. -->
+         NuaColors.NuaBackground (#111113, NUA Sovereign Obsidian): NUA is dark-only, so a
+         light launch theme flashes white for a frame before the first Compose frame lands. -->
     <style name="Theme.Nua" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/nua_background</item>
         <item name="android:navigationBarColor">@color/nua_background</item>

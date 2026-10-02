@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Placeholder background; see README "known gaps" — no real launcher icon yet. -->
+<!-- NUA Sovereign adaptive icon background — Obsidian, the brand's main dark ground.
+     See docs/BRAND_NUA_SOVEREIGN.md and ic_launcher_foreground.xml for the Sovereign N. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#1A1B22" />
+    <solid android:color="#111113" />
 </shape>

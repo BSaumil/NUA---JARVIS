@@ -1,5 +1,6 @@
 package com.nua.assistant.ui
 
+import com.nua.assistant.BuildConfig
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -185,6 +186,7 @@ fun SettingsScreen(
             item { SecurityCard() }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
+            item { AboutCard() }
             item { Text("What NUA remembers", style = MaterialTheme.typography.titleMedium) }
 
             if (facts.isNotEmpty()) {
@@ -1286,6 +1288,27 @@ private fun rememberRefreshingOnResume(compute: () -> Boolean): Boolean {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     return value
+}
+
+/**
+ * NUA Sovereign's one live in-app brand touchpoint beyond the Orb/launcher icon — see
+ * `docs/BRAND_NUA_SOVEREIGN.md`. The tagline belongs here and nowhere else in the
+ * working UI: the brand spec is explicit that it must not be repeated throughout
+ * ordinary screens.
+ */
+@Composable
+private fun AboutCard() {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("NUA", style = MaterialTheme.typography.titleMedium)
+            Text("Your Intelligence. Your Control.", style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Version ${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
 }
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean {

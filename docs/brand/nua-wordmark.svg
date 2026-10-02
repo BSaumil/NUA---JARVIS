@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NUA Sovereign wordmark — master editable source.
+  Geometric, minimal uppercase "NUA"; the A's counter doubles as its intelligence node.
+  Colour is parameterised via currentColor so this one file drives every lockup
+  (nua-wordmark-dark.svg, nua-wordmark-light.svg, nua-wordmark-mono.svg each just set
+  a different `color` on the <svg> root) — see docs/BRAND_NUA_SOVEREIGN.md.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 100" width="260" height="100">
+  <!-- N -->
+  <path fill="currentColor" d="M10,15 L22,15 L22,85 L10,85 Z" />
+  <path fill="currentColor" d="M22,15 L58,65 L58,15 L70,15 L70,85 L58,85 L22,35 Z" />
+
+  <!-- U -->
+  <path fill="currentColor" d="M95,15 L107,15 L107,73 L143,73 L143,15 L155,15 L155,85 L95,85 Z" />
+
+  <!-- A, with its counter as the intelligence node -->
+  <path fill="currentColor" fill-rule="evenodd"
+        d="M210,15 L242,85 L224,85 L218,70 L202,70 L196,85 L178,85 Z
+           M210,42 L202,62 L218,62 Z" />
+</svg>

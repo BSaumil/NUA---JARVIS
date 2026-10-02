@@ -77,11 +77,14 @@ data class OrbAppearance(
  * brand gradient doesn't read as a warning.
  */
 enum class OrbPalette {
-    /** Orange→violet, NUA's identity. */
+    /** Burgundy→violet, NUA's identity — restrained at rest, carried toward violet as activity rises. */
     BRAND,
 
-    /** Reaches into Future Pink — the exceptional/active state. */
+    /** Reaches into Deep Wine — the exceptional/active state. */
     EXCEPTIONAL,
+
+    /** Violet-dominant — reserved for [OrbState.THINKING], where intelligence itself is the thing to show. */
+    INTELLIGENCE,
 
     /** Flat warning colour. */
     WARNING,
@@ -92,7 +95,7 @@ enum class OrbPalette {
     /** Flat critical colour. */
     CRITICAL,
 
-    /** Desaturated brand, for offline. */
+    /** Muted Graphite treatment, for offline — reads as inert, not as a dimmed brand gradient. */
     MUTED,
 }
 
@@ -130,7 +133,7 @@ fun appearanceFor(state: OrbState): OrbAppearance = when (state) {
         showsParticles = true,
         showsSweep = false,
         intensity = 1f,
-        palette = OrbPalette.BRAND,
+        palette = OrbPalette.INTELLIGENCE,
     )
 
     OrbState.ACTING -> OrbAppearance(

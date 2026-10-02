@@ -9,9 +9,9 @@ private const val WCAG_AA_LARGE = 3.0
 private const val WCAG_AAA_BODY = 7.0
 
 private val SURFACES = mapOf(
-    "background" to NuaPalette.BACKGROUND,
-    "surface" to NuaPalette.SURFACE,
-    "elevated surface" to NuaPalette.SURFACE_ELEVATED,
+    "background" to NuaPalette.OBSIDIAN,
+    "surface" to NuaPalette.GRAPHITE,
+    "elevated surface" to NuaPalette.GRAPHITE_ELEVATED,
 )
 
 class NuaPaletteTest {
@@ -22,18 +22,18 @@ class NuaPaletteTest {
     // -----------------------------------------------------------------------------------
 
     @Test
-    fun `brand colours match the specified values exactly`() {
-        assertEquals(0xFFF58C14L, NuaPalette.ORANGE)
+    fun `brand colours match the specified NUA Sovereign values exactly`() {
+        assertEquals(0xFF6B1738L, NuaPalette.BURGUNDY)
+        assertEquals(0xFF3C0B21L, NuaPalette.DEEP_WINE)
         assertEquals(0xFF8B5CF6L, NuaPalette.VIOLET)
-        assertEquals(0xFFEC4899L, NuaPalette.PINK)
     }
 
     @Test
     fun `dark surface and text tokens match the specified values exactly`() {
-        assertEquals(0xFF08090DL, NuaPalette.BACKGROUND)
-        assertEquals(0xFF11131AL, NuaPalette.SURFACE)
-        assertEquals(0xFF181B24L, NuaPalette.SURFACE_ELEVATED)
-        assertEquals(0xFFF5F7FAL, NuaPalette.TEXT_PRIMARY)
+        assertEquals(0xFF111113L, NuaPalette.OBSIDIAN)
+        assertEquals(0xFF25252AL, NuaPalette.GRAPHITE)
+        assertEquals(0xFF2F2F36L, NuaPalette.GRAPHITE_ELEVATED)
+        assertEquals(0xFFF6F0E5L, NuaPalette.TEXT_PRIMARY)
         assertEquals(0xFF9299A8L, NuaPalette.TEXT_SECONDARY)
     }
 
@@ -52,7 +52,7 @@ class NuaPaletteTest {
     @Test
     fun `contrast ratio math matches known WCAG reference values`() {
         assertEquals(21.0, contrastRatio(0xFFFFFFFF, 0xFF000000), 0.01)
-        assertEquals(1.0, contrastRatio(0xFF08090D, 0xFF08090D), 0.01)
+        assertEquals(1.0, contrastRatio(0xFF111113, 0xFF111113), 0.01)
     }
 
     @Test
@@ -87,37 +87,48 @@ class NuaPaletteTest {
     }
 
     @Test
-    fun `the identity colour clears AA body text on every surface`() {
-        // Orange carries NUA's identity and does appear as text, so it's held to the
-        // stricter bar than the two accents below.
-        SURFACES.forEach { (name, surface) ->
-            val ratio = contrastRatio(NuaPalette.ORANGE, surface)
-            assertTrue("orange on $name was $ratio", ratio >= WCAG_AA_BODY)
+    fun `violet clears AA large-text and UI-component contrast on every surface`() {
+        // Violet is an accent — gradients, indicators, active states, large display type
+        // — not body copy. It sits just under the 4.5 body threshold on the elevated
+        // surface, which is exactly why it's documented as an accent in NuaColors.kt
+        // rather than being used for running text.
+        SURFACES.forEach { (surfaceName, surface) ->
+            val ratio = contrastRatio(NuaPalette.VIOLET, surface)
+            assertTrue("violet on $surfaceName was $ratio", ratio >= WCAG_AA_LARGE)
         }
     }
 
     @Test
-    fun `accent colours clear AA large-text and UI-component contrast on every surface`() {
-        // Violet and pink are accents — gradients, indicators, active states, large
-        // display type — not body copy. Violet on the elevated surface sits just under
-        // the 4.5 body threshold, which is exactly why they're documented as accents in
-        // NuaColors.kt rather than being used for running text.
-        listOf("violet" to NuaPalette.VIOLET, "pink" to NuaPalette.PINK).forEach { (name, color) ->
+    fun `burgundy and deep wine fail as foreground colour on dark surfaces -- they are filled-surface colours, not text`() {
+        // The NUA Sovereign brand refresh's one genuinely new contrast property, pinned
+        // explicitly rather than left to be rediscovered by accident: unlike the prior
+        // Orange identity colour (bright, legible as foreground), Burgundy and Deep Wine
+        // are both dark. Neither clears even the lenient AA-large (3.0) bar directly
+        // against any dark surface -- they are only ever used as a *filled* surface
+        // (button/card/hero background) with light text on top, or inside a gradient
+        // where Violet's higher contrast carries the far stop's visibility. See
+        // NuaPalette.kt's own doc comment and NuaTheme.kt's onPrimary/onTertiary mapping.
+        listOf("burgundy" to NuaPalette.BURGUNDY, "deep wine" to NuaPalette.DEEP_WINE).forEach { (name, color) ->
             SURFACES.forEach { (surfaceName, surface) ->
                 val ratio = contrastRatio(color, surface)
-                assertTrue("$name on $surfaceName was $ratio", ratio >= WCAG_AA_LARGE)
+                assertTrue("$name on $surfaceName was $ratio, expected it to stay below AA-large", ratio < WCAG_AA_LARGE)
             }
         }
     }
 
     @Test
-    fun `dark text is the legible choice on each brand colour`() {
-        // Justifies onPrimary/onSecondary/onTertiary being the near-black background
-        // rather than white in NuaTheme's Material3 mapping.
-        listOf(NuaPalette.ORANGE, NuaPalette.VIOLET, NuaPalette.PINK).forEach { brand ->
-            val onDark = contrastRatio(NuaPalette.BACKGROUND, brand)
-            val onLight = contrastRatio(NuaPalette.TEXT_PRIMARY, brand)
-            assertTrue("dark-on-brand ($onDark) should beat light-on-brand ($onLight)", onDark > onLight)
+    fun `light text is the legible choice on burgundy and deep wine -- the opposite of the old orange identity`() {
+        listOf(NuaPalette.BURGUNDY, NuaPalette.DEEP_WINE).forEach { brand ->
+            val darkOn = contrastRatio(NuaPalette.OBSIDIAN, brand)
+            val lightOn = contrastRatio(NuaPalette.TEXT_PRIMARY, brand)
+            assertTrue("light-on-brand ($lightOn) should beat dark-on-brand ($darkOn) for $brand", lightOn > darkOn)
         }
+    }
+
+    @Test
+    fun `dark text is the legible choice on violet, unchanged from before the brand refresh`() {
+        val darkOn = contrastRatio(NuaPalette.OBSIDIAN, NuaPalette.VIOLET)
+        val lightOn = contrastRatio(NuaPalette.TEXT_PRIMARY, NuaPalette.VIOLET)
+        assertTrue("dark-on-violet ($darkOn) should beat light-on-violet ($lightOn)", darkOn > lightOn)
     }
 }
