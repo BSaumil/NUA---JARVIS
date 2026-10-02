@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- NUA Sovereign "N" mark — two interlocking strokes meeting at an intelligence node.
+<!-- NUA Sovereign "N" mark: two interlocking strokes meeting at an intelligence node.
      Left stroke (Burgundy): Human / intent / identity / ownership.
      Diagonal + right stroke, as one continuous bent stroke (Violet): Intelligence /
-     reasoning / memory / execution -- it reasons (the diagonal), then executes (the
+     reasoning / memory / execution; it reasons (the diagonal), then executes (the
      vertical it bends into).
      The small Warm Ivory circle where they meet, centred exactly on the 108x108 canvas,
      is the intelligence node.
      Geometry is kept inside a 42x42 box centred on the canvas (corners ~30dp from
      centre, comfortably within the ~33dp adaptive-icon safe-zone radius so it isn't
-     clipped by a circular or squircle launcher mask) and to simple rectilinear + one
-     diagonal shapes so it stays legible at favicon/app-icon scale (16-24px) -- see
+     clipped by a circular or squircle launcher mask) and to simple rectilinear plus one
+     diagonal shapes so it stays legible at favicon/app-icon scale (16-24px); see
      docs/BRAND_NUA_SOVEREIGN.md. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
