@@ -40,8 +40,12 @@ object AppModule {
     @Singleton
     fun provideNuaDatabase(@ApplicationContext context: Context): NuaDatabase =
         Room.databaseBuilder(context, NuaDatabase::class.java, DATABASE_NAME)
-            // No migration path exists yet (pre-release) — destructive is fine until
-            // there's a real installed base to preserve across schema changes.
+            // Versions 1-20 were pre-release dev churn with no exported schema history
+            // and no real installed base to preserve -- destructive is the documented,
+            // intentional policy for that range (docs/DATABASE_MIGRATION_POLICY.md).
+            // The policy changes at 21: once a personal-test build is on a real device
+            // with real data, the next version bump must ship an addMigrations(...) entry
+            // here instead of relying on this fallback.
             .fallbackToDestructiveMigration()
             .build()
 

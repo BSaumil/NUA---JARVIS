@@ -755,7 +755,11 @@ interface MemoryDao {
         RecipeEntity::class, RecipeRunEntity::class,
     ],
     version = 20,
-    exportSchema = false,
+    // Exported to app/schemas/ -- see docs/DATABASE_MIGRATION_POLICY.md. This is the
+    // baseline every future version bump's Migration (and MigrationTestHelper test) is
+    // written and verified against; versions 1-20 themselves were never exported and
+    // have no recoverable schema history, which is exactly why 21 is the line.
+    exportSchema = true,
 )
 abstract class NuaDatabase : RoomDatabase() {
     abstract fun memoryDao(): MemoryDao

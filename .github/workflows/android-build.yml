@@ -124,3 +124,18 @@ jobs:
           name: unit-test-reports
           path: app/build/reports/tests/
           if-no-files-found: ignore
+
+      # Room's KSP processor (room.schemaLocation, app/build.gradle.kts) writes a JSON
+      # snapshot of NuaDatabase's schema to app/schemas/ as a side effect of the builds
+      # above. This repository's own sandbox can't run Gradle locally, so CI is the only
+      # place that schema file can actually be generated -- uploaded here so it can be
+      # pulled down and committed as the real, non-fabricated baseline for the next
+      # Migration (docs/DATABASE_MIGRATION_POLICY.md), rather than hand-written from
+      # reading entity definitions.
+      - name: Upload Room schemas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas/
+          if-no-files-found: ignore

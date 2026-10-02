@@ -101,6 +101,15 @@ android {
     }
 }
 
+// Room schema export -- see docs/DATABASE_MIGRATION_POLICY.md. Every NuaDatabase
+// version bump now produces a committed schema snapshot under app/schemas/, which is
+// the prerequisite for writing and testing a real Migration the next time the version
+// changes (rather than relying on fallbackToDestructiveMigration(), which is only
+// acceptable pre-release per that policy doc).
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     // Core / Compose
     implementation("androidx.core:core-ktx:1.15.0")
