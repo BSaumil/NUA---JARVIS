@@ -79,16 +79,23 @@ those versions to lose), but it must not be what silently handles 20→21.
 ## Current status (as of this policy's introduction)
 
 - `exportSchema = true` is now set on `NuaDatabase`, and `app/build.gradle.kts`
-  passes `room.schemaLocation` to KSP. This repository's own development
-  sandbox cannot run a local Gradle build (confirmed repeatedly elsewhere in
-  `docs/HISTORY.md` — network/proxy restrictions block Google's Gradle
-  plugin repositories), so the actual `20.json` schema snapshot cannot be
-  generated here. `.github/workflows/android-build.yml` now uploads
-  `app/schemas/` as a CI artifact (`room-schemas`) so that file can be
-  pulled from the next green CI run and committed as a real, CI-generated
-  baseline rather than hand-written from reading entity definitions. **As of
-  this commit, that file has not yet been pulled down and committed** — that
-  is the concrete next step, not a claim already fulfilled.
+  passes `room.schemaLocation` to KSP. CI run `36971938630` (commit
+  `53d221c`) confirms this works end-to-end: `kspDebugKotlin` generated the
+  schema and the "Upload Room schemas" step published it as the
+  `room-schemas` artifact. **That artifact could not be pulled into this
+  development sandbox to commit** — `download_workflow_run_artifact`
+  resolves to a `productionresultssa*.blob.core.windows.net` URL, and this
+  sandbox's outbound network policy rejects that host (`CONNECT` refused
+  with 403; confirmed via the proxy's own status endpoint, not a transient
+  failure). This is the same class of sandbox limitation as the
+  already-documented inability to run Gradle locally — a real environment
+  boundary, not something to route around by fabricating the file's
+  contents. **Owner action:** run a local `./gradlew :app:kspDebugKotlin` (or
+  any debug build/test) once on this branch, or download the `room-schemas`
+  artifact from run `36971938630` (or any later green run) by hand, and
+  commit the resulting `app/schemas/com.nua.assistant.memory.NuaDatabase/20.json`
+  file. Until then this is the one piece of this policy marked NOT DONE
+  rather than DONE.
 - No `Migration` objects exist yet. None are needed yet — the version is
   still 20.
 - `fallbackToDestructiveMigration()` remains in `AppModule.kt`, now with a

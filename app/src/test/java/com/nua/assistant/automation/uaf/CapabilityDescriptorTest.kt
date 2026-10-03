@@ -58,10 +58,17 @@ class CapabilityDescriptorTest {
     }
 
     @Test
-    fun `REPLY_TO_NOTIFICATION names NOTIFICATION_REMOTE_INPUT as its fallback adapter, no other action does`() {
-        assertEquals(listOf(ExecutionAdapterType.NOTIFICATION_REMOTE_INPUT), capabilityDescriptorFor(NuaActionType.REPLY_TO_NOTIFICATION, SkillManifest()).fallbackAdapters)
-        for (action in NuaActionType.entries.filter { it != NuaActionType.REPLY_TO_NOTIFICATION }) {
-            assertTrue("$action must not carry the REPLY_TO_NOTIFICATION-only fallback", capabilityDescriptorFor(action, SkillManifest()).fallbackAdapters.isEmpty())
+    fun `each confirm-before-execute action names its own real send mechanism as its fallback adapter, no other action carries one`() {
+        val expectedFallbacks = mapOf(
+            NuaActionType.REPLY_TO_NOTIFICATION to ExecutionAdapterType.NOTIFICATION_REMOTE_INPUT,
+            NuaActionType.SMS_SEND to ExecutionAdapterType.SMS_MANAGER,
+            NuaActionType.PLAN_TASK to ExecutionAdapterType.PLAN_CONFIRMATION,
+        )
+        for ((action, expectedAdapter) in expectedFallbacks) {
+            assertEquals("$action must name its real mechanism as its one fallback adapter", listOf(expectedAdapter), capabilityDescriptorFor(action, SkillManifest()).fallbackAdapters)
+        }
+        for (action in NuaActionType.entries.filter { it !in expectedFallbacks.keys }) {
+            assertTrue("$action must not carry any fallback adapter -- it has no propose/confirm split", capabilityDescriptorFor(action, SkillManifest()).fallbackAdapters.isEmpty())
         }
     }
 

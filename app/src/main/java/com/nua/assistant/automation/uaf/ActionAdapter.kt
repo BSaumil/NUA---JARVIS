@@ -2,15 +2,22 @@ package com.nua.assistant.automation.uaf
 
 import com.nua.assistant.ai.ClassifiedIntent
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.ai.SuggestedReminder
 import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.automation.NuaSkill
 import com.nua.assistant.automation.SkillSandbox
+import com.nua.assistant.calendar.CalendarReader
 import com.nua.assistant.notifications.NotificationReplySender
 import com.nua.assistant.notifications.NotificationRepository
+import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.trust.ActionOutcomeState
+import com.nua.assistant.ui.planConfirmationMessage
+import com.nua.assistant.ui.planConfirmationOutcome
 import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 
 /** Carries what every [ActionAdapter] needs but a [CapabilityDescriptor]/param map doesn't. */
 data class AdapterExecutionContext(
@@ -103,3 +110,78 @@ class NotificationRemoteInputAdapter @Inject constructor(
         )
     }
 }
+
+/**
+ * [NuaActionType.SMS_SEND]'s real send mechanism (Android's [SmsSender]), reached only
+ * once a step's authorization is already proven -- [LocalNativeAdapter]'s SmsSendSkill
+ * path only ever *resolves a contact and proposes* a message, the same
+ * propose/confirm split [NotificationRemoteInputAdapter] documents for replies. Expects
+ * "phoneNumber" and "message" parameters -- already-resolved values from the proposal,
+ * not a contact name to re-resolve, so confirming can never silently text a different
+ * number than the one actually shown to the user.
+ */
+@Singleton
+class SmsManagerAdapter @Inject constructor(
+    private val smsSender: SmsSender,
+) : ActionAdapter {
+    override val type = ExecutionAdapterType.SMS_MANAGER
+
+    override suspend fun execute(
+        descriptor: CapabilityDescriptor,
+        parameters: Map<String, String>,
+        context: AdapterExecutionContext,
+    ): NuaRouteResult {
+        if (descriptor.action != NuaActionType.SMS_SEND) return NuaRouteResult.FallThroughToChat
+        val phoneNumber = parameters["phoneNumber"]
+        val message = parameters["message"]
+        if (phoneNumber.isNullOrBlank() || message.isNullOrBlank()) return NuaRouteResult.FallThroughToChat
+
+        val outcome = smsSender.send(phoneNumber, message)
+        return NuaRouteResult.ActionTaken(
+            message = "Sent — texted $phoneNumber. (NUA can only confirm it was handed off, not that it was delivered.)",
+            succeeded = outcome == ActionOutcomeState.ACCEPTED,
+        )
+    }
+}
+
+/**
+ * [NuaActionType.PLAN_TASK]'s real confirmation mechanism: creates the plan's actual
+ * calendar reminders via [CalendarReader] -- [LocalNativeAdapter]'s PlanTaskSkill path
+ * only ever *proposes* a plan (calls [com.nua.assistant.ai.TaskPlanner.propose]).
+ * Deliberately does not re-call [com.nua.assistant.ai.TaskPlanner.propose] or re-ask
+ * Claude for a plan: that could produce a *different* plan than the one actually shown
+ * to and confirmed by the user. Instead takes exactly the reminders the proposal already
+ * decided on, carried through the plan step's own "reminders" parameter as a JSON-encoded
+ * [SuggestedReminder] list (the same shape [com.nua.assistant.ai.TaskPlanner] already
+ * uses) -- a flat string because [PlanStep.parameters] is `Map<String, String>`, not
+ * because this data is naturally string-shaped.
+ */
+@Singleton
+class PlanConfirmationAdapter @Inject constructor(
+    private val calendarReader: CalendarReader,
+    private val json: Json,
+) : ActionAdapter {
+    override val type = ExecutionAdapterType.PLAN_CONFIRMATION
+
+    override suspend fun execute(
+        descriptor: CapabilityDescriptor,
+        parameters: Map<String, String>,
+        context: AdapterExecutionContext,
+    ): NuaRouteResult {
+        if (descriptor.action != NuaActionType.PLAN_TASK) return NuaRouteResult.FallThroughToChat
+        val remindersJson = parameters["reminders"] ?: return NuaRouteResult.FallThroughToChat
+        val reminders = runCatching {
+            json.decodeFromString(ListSerializer(SuggestedReminder.serializer()), remindersJson)
+        }.getOrNull() ?: return NuaRouteResult.FallThroughToChat
+
+        val results = reminders.map { calendarReader.createReminder(title = it.title, whenMillis = it.whenMillis) }
+        return NuaRouteResult.ActionTaken(
+            message = planConfirmationMessage(results),
+            succeeded = planConfirmationOutcome(results) == ActionOutcomeState.COMPLETED,
+        )
+    }
+}
+
+/** Encodes a plan's reminders for [PlanConfirmationAdapter]'s "reminders" parameter -- see its doc comment for why this can't just carry the [com.nua.assistant.ai.TaskPlan] object directly. */
+fun encodePlanReminders(json: Json, reminders: List<SuggestedReminder>): String =
+    json.encodeToString(ListSerializer(SuggestedReminder.serializer()), reminders)

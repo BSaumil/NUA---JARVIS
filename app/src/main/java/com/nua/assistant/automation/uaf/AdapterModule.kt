@@ -31,4 +31,14 @@ abstract class AdapterModule {
     @IntoMap
     @AdapterTypeKey(ExecutionAdapterType.NOTIFICATION_REMOTE_INPUT)
     abstract fun bindNotificationRemoteInputAdapter(impl: NotificationRemoteInputAdapter): ActionAdapter
+
+    @Binds
+    @IntoMap
+    @AdapterTypeKey(ExecutionAdapterType.SMS_MANAGER)
+    abstract fun bindSmsManagerAdapter(impl: SmsManagerAdapter): ActionAdapter
+
+    @Binds
+    @IntoMap
+    @AdapterTypeKey(ExecutionAdapterType.PLAN_CONFIRMATION)
+    abstract fun bindPlanConfirmationAdapter(impl: PlanConfirmationAdapter): ActionAdapter
 }

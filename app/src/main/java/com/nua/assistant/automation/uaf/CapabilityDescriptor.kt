@@ -22,6 +22,12 @@ enum class ExecutionAdapterType {
     NOTIFICATION_REMOTE_INPUT,
     ACCESSIBILITY,
     EXTERNAL_API,
+
+    /** The real SMS-sending mechanism (Android's SmsManager) -- see [com.nua.assistant.automation.uaf.SmsManagerAdapter]. */
+    SMS_MANAGER,
+
+    /** The real plan-confirmation mechanism (creates the actual calendar reminders) -- see [com.nua.assistant.automation.uaf.PlanConfirmationAdapter]. */
+    PLAN_CONFIRMATION,
 }
 
 /** Whether a capability changes anything outside NUA's own database. */
@@ -85,15 +91,17 @@ fun capabilityDescriptorFor(action: NuaActionType, manifest: SkillManifest): Cap
         confirmation = confirmation,
         timeoutMillis = manifest.timeoutMillis,
         preferredAdapter = ExecutionAdapterType.LOCAL_NATIVE,
-        // REPLY_TO_NOTIFICATION's LOCAL_NATIVE path (ReplyToNotificationSkill via
-        // SkillSandbox) only ever *proposes* a reply -- confirming and actually sending it
-        // is a distinct official mechanism (NotificationRemoteInputAdapter). Named here so
-        // WorkflowExecutor can route to it once a step's authorization is already proven,
-        // instead of re-proposing something already confirmed.
-        fallbackAdapters = if (action == NuaActionType.REPLY_TO_NOTIFICATION) {
-            listOf(ExecutionAdapterType.NOTIFICATION_REMOTE_INPUT)
-        } else {
-            emptyList()
+        // REPLY_TO_NOTIFICATION/SMS_SEND/PLAN_TASK's LOCAL_NATIVE path (their skill, via
+        // SkillSandbox) only ever *proposes* -- confirming and actually performing the real
+        // side effect (sending through the notification's quick-reply action, sending the
+        // SMS, creating the calendar reminders) is each a distinct official mechanism.
+        // Named here so WorkflowExecutor can route to it once a step's authorization is
+        // already proven, instead of re-proposing something already confirmed.
+        fallbackAdapters = when (action) {
+            NuaActionType.REPLY_TO_NOTIFICATION -> listOf(ExecutionAdapterType.NOTIFICATION_REMOTE_INPUT)
+            NuaActionType.SMS_SEND -> listOf(ExecutionAdapterType.SMS_MANAGER)
+            NuaActionType.PLAN_TASK -> listOf(ExecutionAdapterType.PLAN_CONFIRMATION)
+            else -> emptyList()
         },
     )
 }
