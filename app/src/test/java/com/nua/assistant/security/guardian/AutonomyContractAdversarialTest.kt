@@ -153,7 +153,14 @@ class AutonomyContractAdversarialTest {
                 return NuaRouteResult.ActionTaken("sent")
             }
         }
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), ContractNoOpLineageRecorder())
+        // SMS_SEND's fallback adapter (SMS_MANAGER) is what this contract's resulting
+        // UserConfirmed proof actually routes to -- registering it against the same fake
+        // keeps this test about contract evaluation, not adapter selection.
+        val executor = WorkflowExecutor(
+            registry,
+            mapOf(ExecutionAdapterType.LOCAL_NATIVE to local, ExecutionAdapterType.SMS_MANAGER to local),
+            ContractNoOpLineageRecorder(),
+        )
 
         val liveContract = AutonomyContractEntity(actionType = NuaActionType.SMS_SEND.name, expiresAt = NOW + 1000)
         val decision = evaluateContract(liveContract, NuaActionType.SMS_SEND, recipient = null, now = NOW, recentCommittedCountInWindow = 0)

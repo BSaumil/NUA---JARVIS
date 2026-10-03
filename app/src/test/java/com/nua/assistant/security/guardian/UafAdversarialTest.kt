@@ -98,7 +98,15 @@ class UafAdversarialTest {
                 return NuaRouteResult.ActionTaken("sent")
             }
         }
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), NoOpLineageRecorder())
+        // SMS_SEND's fallback adapter (SMS_MANAGER) is what the confirmed step below
+        // actually routes to once its authorization is proven -- registering it against
+        // the same fake keeps this test about authorization-proof isolation, not adapter
+        // selection.
+        val executor = WorkflowExecutor(
+            registry,
+            mapOf(ExecutionAdapterType.LOCAL_NATIVE to local, ExecutionAdapterType.SMS_MANAGER to local),
+            NoOpLineageRecorder(),
+        )
         val plan = ActionPlan(
             "adversarial-2",
             listOf(

@@ -159,7 +159,14 @@ class WorkflowExecutorTest {
     fun `ASK_USER pauses the run rather than failing it, and resuming with proof continues past it`() = runTest {
         val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
         val registry = registryOf(NuaActionType.SMS_SEND, NuaActionType.GET_WEATHER)
-        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), FakeLineageRecorder())
+        // SMS_SEND's fallback adapter (SMS_MANAGER) is what the resumed, now-UserConfirmed
+        // step below actually routes to -- registering it against the same fake keeps this
+        // test about the executor's pause/resume orchestration, not adapter selection.
+        val executor = WorkflowExecutor(
+            registry,
+            mapOf(ExecutionAdapterType.LOCAL_NATIVE to local, ExecutionAdapterType.SMS_MANAGER to local),
+            FakeLineageRecorder(),
+        )
         val plan = ActionPlan(
             "p1",
             listOf(step("a", action = NuaActionType.SMS_SEND, failurePolicy = FailurePolicy.ASK_USER), step("b", action = NuaActionType.GET_WEATHER, dependsOn = listOf("a"))),
