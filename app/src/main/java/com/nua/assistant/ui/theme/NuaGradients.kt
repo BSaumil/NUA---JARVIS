@@ -4,8 +4,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 /**
- * The orange→violet NUA gradient. Deliberately **not** a general-purpose decoration: it
- * is reserved for the four places that mean "NUA itself is doing something" —
+ * The Burgundy→Violet NUA Sovereign gradient (`docs/BRAND_NUA_SOVEREIGN.md`). Deliberately
+ * **not** a general-purpose decoration: it is reserved for the four places that mean
+ * "NUA itself is doing something" —
  *
  *  - the Orb,
  *  - AI activity indicators,
@@ -21,7 +22,7 @@ import androidx.compose.ui.graphics.Color
  */
 object NuaGradients {
 
-    private val stops = arrayOf(0f to NuaOrange, 1f to NeuralViolet)
+    private val stops = arrayOf(0f to NuaBurgundy, 1f to NeuralViolet)
 
     /** Left-to-right — hero cards, wide activity bars. */
     fun horizontal(): Brush = Brush.horizontalGradient(colorStops = stops)
@@ -39,19 +40,19 @@ object NuaGradients {
      * Sweep — used for the Orb's "thinking" and "acting" states, where energy reads as
      * travelling around the orb rather than sitting still.
      */
-    fun sweep(): Brush = Brush.sweepGradient(listOf(NuaOrange, NeuralViolet, NuaOrange))
+    fun sweep(): Brush = Brush.sweepGradient(listOf(NuaBurgundy, NeuralViolet, NuaBurgundy))
 
     /**
-     * The exceptional/active variant, reaching for Future Pink at the far end. Reserved
-     * for genuinely exceptional states so pink keeps its meaning — see [NuaColors].
+     * The exceptional/active variant, reaching for Deep Wine at the far end. Reserved
+     * for genuinely exceptional states so Deep Wine keeps its meaning — see [NuaColors].
      */
-    fun exceptional(): Brush = Brush.horizontalGradient(listOf(NuaOrange, NeuralViolet, FuturePink))
+    fun exceptional(): Brush = Brush.horizontalGradient(listOf(NuaBurgundy, NeuralViolet, NuaDeepWine))
 
     /**
      * A soft-glass wash for card surfaces: the brand tint at very low alpha over an
      * elevated surface, giving depth without the gradient reading as decoration.
      */
     fun glassTint(base: Color = NuaSurfaceElevated): Brush = Brush.verticalGradient(
-        listOf(NuaOrange.copy(alpha = 0.06f), base.copy(alpha = 0f)),
+        listOf(NuaBurgundy.copy(alpha = 0.06f), base.copy(alpha = 0f)),
     )
 }

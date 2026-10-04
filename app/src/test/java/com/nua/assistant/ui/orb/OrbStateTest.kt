@@ -74,9 +74,15 @@ class OrbStateTest {
     }
 
     @Test
-    fun `only the states meant to be exceptional reach for pink`() {
+    fun `only the states meant to be exceptional reach into deep wine`() {
         val exceptional = OrbState.entries.filter { appearanceFor(it).palette == OrbPalette.EXCEPTIONAL }
         assertEquals(listOf(OrbState.LISTENING), exceptional)
+    }
+
+    @Test
+    fun `only thinking uses the violet-dominant intelligence palette`() {
+        val intelligence = OrbState.entries.filter { appearanceFor(it).palette == OrbPalette.INTELLIGENCE }
+        assertEquals(listOf(OrbState.THINKING), intelligence)
     }
 
     @Test

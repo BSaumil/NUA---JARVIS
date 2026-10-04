@@ -9,14 +9,13 @@ import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.ClaudeStreamEvent
 import com.nua.assistant.ai.FactExtractor
 import com.nua.assistant.ai.FactRelevance
+import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.PersonalityEngine
 import com.nua.assistant.ai.SecondBrainResult
 import com.nua.assistant.ai.SecondBrainSearch
-import com.nua.assistant.ai.PlannedStep
 import com.nua.assistant.ai.SuggestedReminder
 import com.nua.assistant.ai.TaskPlan
-import com.nua.assistant.ai.TaskPlanner
 import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.ai.UsageTracker
 import com.nua.assistant.automation.NuaIntentRouter
@@ -70,6 +69,13 @@ import com.nua.assistant.network.ConnectivityMonitor
 import com.nua.assistant.notifications.NotificationReplySender
 import com.nua.assistant.notifications.NotificationRepository
 import com.nua.assistant.notifications.NotificationSummary
+import com.nua.assistant.automation.uaf.ActionPlan
+import com.nua.assistant.automation.uaf.AdapterExecutionContext
+import com.nua.assistant.automation.uaf.AuthorizationProof
+import com.nua.assistant.automation.uaf.PlanStep
+import com.nua.assistant.automation.uaf.StepOutcomeState
+import com.nua.assistant.automation.uaf.WorkflowExecutor
+import com.nua.assistant.automation.uaf.encodePlanReminders
 import com.nua.assistant.privacy.PrivacyRepository
 import com.nua.assistant.privacy.buildDataExport
 import com.nua.assistant.sms.SmsSender
@@ -77,6 +83,7 @@ import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
 import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
+import com.nua.assistant.trust.finalAutoApproveDecision
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.idempotencyKeyFor
 import com.nua.assistant.trust.sameDayWindowStart
@@ -106,6 +113,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 
 data class ChatMessage(val role: MessageRole, val content: String)
 
@@ -129,6 +137,12 @@ data class NuaUiState(
      * turn), so a single flag is enough to describe all three.
      */
     val autoApprovedPending: Boolean = false,
+    /** Set only when a shadow-mode Contextual Autonomy Contract recorded a prediction for
+     *  the current pending* proposal — see TrustRepository.recordShadowPrediction. Cleared,
+     *  and the prediction resolved against what the user actually did, by whichever
+     *  confirmPending-/dismissPending- method fires next. Never influences autoApprovedPending
+     *  — shadow mode predicts, it never acts. */
+    val pendingShadowPredictionId: Long? = null,
     val needsApiKey: Boolean = false,
 )
 
@@ -142,11 +156,9 @@ class NuaViewModel @Inject constructor(
     private val personalityEngine: PersonalityEngine,
     private val intentRouter: NuaIntentRouter,
     private val factExtractor: FactExtractor,
-    private val taskPlanner: TaskPlanner,
     private val secureKeyRepository: SecureKeyRepository,
     private val voiceManager: VoiceManager,
     private val notificationRepository: NotificationRepository,
-    private val notificationReplySender: NotificationReplySender,
     private val smsSender: SmsSender,
     private val languagePreferenceStore: LanguagePreferenceStore,
     private val briefingScheduleStore: BriefingScheduleStore,
@@ -175,6 +187,8 @@ class NuaViewModel @Inject constructor(
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
     private val nuaStateRepository: NuaStateRepository,
     private val skillCatalog: SkillCatalog,
+    private val workflowExecutor: WorkflowExecutor,
+    private val json: Json,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NuaUiState())
@@ -529,9 +543,28 @@ class NuaViewModel @Inject constructor(
         }
     }
 
-    /** Publishes a routed proposal to [NuaUiState] via [pendingEffectFor] — see that function's doc comment. */
+    /**
+     * Publishes a routed proposal to [NuaUiState] via [pendingEffectFor] — see that
+     * function's doc comment. The combined auto-approve answer — the legacy, unscoped
+     * [TrustRepository.isAutoApproved] grant, OR a live (non-shadow) Contextual Autonomy
+     * Contract (Feature 5) — is decided by the one shared pure rule,
+     * `trust/AutonomyContract.kt`'s `finalAutoApproveDecision`, not recomputed here, so
+     * this call site and `recipes/RecipeRepository.kt`'s `wouldAutoApprove` can never
+     * independently drift on it. A shadow-mode contract never contributes no matter what
+     * it decides; it only records a prediction (see
+     * [TrustRepository.recordShadowPrediction]) for later comparison against what the
+     * user actually does with this same proposal.
+     */
     private suspend fun applyPendingEffect(proposal: PendingProposal, actionType: NuaActionType) {
-        val effect = pendingEffectFor(proposal, autoApproved = trustRepository.isAutoApproved(actionType))
+        val legacyAutoApproved = trustRepository.isAutoApproved(actionType)
+        val recipient = recipientFor(proposal)
+        val (contract, decision) = trustRepository.contractDecisionFor(actionType, recipient)
+        var shadowPredictionId: Long? = null
+        if (contract != null && contract.shadowMode) {
+            shadowPredictionId = trustRepository.recordShadowPrediction(contract, actionType, recipient, decision)
+        }
+        val autoApproved = finalAutoApproveDecision(legacyAutoApproved, contract, decision)
+        val effect = pendingEffectFor(proposal, autoApproved = autoApproved)
         _uiState.update {
             it.copy(
                 isProcessing = false,
@@ -539,6 +572,7 @@ class NuaViewModel @Inject constructor(
                 pendingReply = effect.pendingReply,
                 pendingSms = effect.pendingSms,
                 autoApprovedPending = effect.autoApprovedPending,
+                pendingShadowPredictionId = shadowPredictionId,
             )
         }
     }
@@ -549,7 +583,11 @@ class NuaViewModel @Inject constructor(
             return
         }
 
-        val relevantFacts = FactRelevance.rank(memoryDao.getAllFacts(), userMessage)
+        val rankedFacts = FactRelevance.rank(memoryDao.getAllFacts(), userMessage)
+        // Data Egress Gateway (security/egress/DataEgressGateway.kt): no capsule is
+        // supplied at this call site yet, so this is the strictest policy -- Sensitive-
+        // marked facts never reach the prompt, Standard ones pass through as before.
+        val (relevantFacts, _egressDecision) = DataEgressGateway.filterFacts(capsule = null, facts = rankedFacts)
         val usedAt = System.currentTimeMillis()
         relevantFacts.forEach { fact -> memoryDao.touchFactUsage(fact.key, usedAt) }
         val turnCount = memoryDao.countUserMessages()
@@ -759,13 +797,21 @@ class NuaViewModel @Inject constructor(
     // this reasoning doesn't cover — see trust/IdempotencyKey.kt.
     fun confirmPendingPlan() {
         val plan = _uiState.value.pendingPlan ?: return
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
         viewModelScope.launch {
-            _uiState.update { it.copy(pendingPlan = null) }
+            _uiState.update { it.copy(pendingPlan = null, pendingShadowPredictionId = null) }
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = true) }
             trustRepository.recordApproval(NuaActionType.PLAN_TASK)
             executeConfirmedPlan(plan)
         }
     }
 
+    // Executes through WorkflowExecutor/PlanConfirmationAdapter, not a direct
+    // taskPlanner.confirmPlan(plan) call: this is the step that actually creates calendar
+    // reminders, so it's exactly the kind of side-effecting, already-confirmed action the
+    // Universal Action Fabric's single authorization checkpoint (AuthorizationProof) and
+    // Flight Recorder lineage logging exist for — see docs covering Task 5 of the
+    // personal-test deployment directive, "Universal Action Fabric convergence".
     private suspend fun executeConfirmedPlan(plan: TaskPlan) {
         val stepsKey = plan.steps.joinToString("|") { "${it.title}@${it.suggestedReminder?.whenMillis ?: -1}" }
         val idempotencyKey = idempotencyKeyFor(NuaActionType.PLAN_TASK.name, plan.summary, stepsKey)
@@ -773,13 +819,26 @@ class NuaViewModel @Inject constructor(
             respond(DUPLICATE_PLAN_SUPPRESSED_MESSAGE, extractFacts = false)
             return
         }
-        val results = taskPlanner.confirmPlan(plan)
-        val confirmation = planConfirmationMessage(results)
+        val reminders = plan.steps.mapNotNull { it.suggestedReminder }
+        val actionPlan = ActionPlan(
+            id = idempotencyKey,
+            steps = listOf(
+                PlanStep(
+                    id = "confirm",
+                    action = NuaActionType.PLAN_TASK,
+                    parameters = mapOf("reminders" to encodePlanReminders(json, reminders)),
+                    authorizationProof = AuthorizationProof.UserConfirmed(System.currentTimeMillis()),
+                ),
+            ),
+        )
+        val context = AdapterExecutionContext(originalUtterance = plan.summary, pinnedLanguage = pinnedLanguage.value)
+        val outcome = workflowExecutor.run(actionPlan, context).outcomes["confirm"]
+        val confirmation = outcome?.detail ?: "That plan's reminders didn't save — nothing was added."
         trustRepository.recordOutcome(
             actionType = NuaActionType.PLAN_TASK.name,
             tier = AutonomyTier.T4,
             summary = "Confirmed plan: ${plan.summary} — $confirmation",
-            outcome = planConfirmationOutcome(results),
+            outcome = if (outcome?.state == StepOutcomeState.SUCCEEDED) ActionOutcomeState.COMPLETED else ActionOutcomeState.FAILED,
             idempotencyKey = idempotencyKey,
         )
         respond(confirmation, extractFacts = false)
@@ -787,8 +846,10 @@ class NuaViewModel @Inject constructor(
 
     fun dismissPendingPlan() {
         val plan = _uiState.value.pendingPlan ?: return
-        _uiState.update { it.copy(pendingPlan = null) }
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
+        _uiState.update { it.copy(pendingPlan = null, pendingShadowPredictionId = null) }
         viewModelScope.launch {
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = false) }
             trustRepository.recordOutcome(
                 actionType = NuaActionType.PLAN_TASK.name,
                 tier = AutonomyTier.T4,
@@ -801,8 +862,10 @@ class NuaViewModel @Inject constructor(
 
     fun confirmPendingReply() {
         val pending = _uiState.value.pendingReply ?: return
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
         viewModelScope.launch {
-            _uiState.update { it.copy(pendingReply = null) }
+            _uiState.update { it.copy(pendingReply = null, pendingShadowPredictionId = null) }
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = true) }
             trustRepository.recordApproval(NuaActionType.REPLY_TO_NOTIFICATION)
             executeConfirmedReply(pending)
         }
@@ -818,18 +881,31 @@ class NuaViewModel @Inject constructor(
             respond(DUPLICATE_REPLY_SUPPRESSED_MESSAGE, extractFacts = false)
             return
         }
-        val replyAction = pending.notification.replyAction
-        val outcome = if (replyAction != null) {
-            notificationReplySender.sendReply(replyAction, pending.message)
-        } else {
-            ActionOutcomeState.FAILED
-        }
-        val confirmation = replyConfirmationMessage(outcome, pending.notification.title)
+        // Through WorkflowExecutor/NotificationRemoteInputAdapter, not a direct call to
+        // NotificationReplySender's own send method — the same real send mechanism the
+        // Universal Action Fabric's Recipes path already trusts for this exact action, now
+        // reached with a formal AuthorizationProof and Flight Recorder lineage logging on
+        // the live chat path too.
+        val actionPlan = ActionPlan(
+            id = idempotencyKey,
+            steps = listOf(
+                PlanStep(
+                    id = "confirm",
+                    action = NuaActionType.REPLY_TO_NOTIFICATION,
+                    parameters = mapOf("target" to pending.notification.title, "message" to pending.message),
+                    authorizationProof = AuthorizationProof.UserConfirmed(System.currentTimeMillis()),
+                ),
+            ),
+        )
+        val context = AdapterExecutionContext(originalUtterance = pending.message, pinnedLanguage = pinnedLanguage.value)
+        val outcome = workflowExecutor.run(actionPlan, context).outcomes["confirm"]
+        val outcomeState = if (outcome?.state == StepOutcomeState.SUCCEEDED) ActionOutcomeState.ACCEPTED else ActionOutcomeState.FAILED
+        val confirmation = replyConfirmationMessage(outcomeState, pending.notification.title)
         trustRepository.recordOutcome(
             actionType = NuaActionType.REPLY_TO_NOTIFICATION.name,
             tier = AutonomyTier.T3,
             summary = confirmation,
-            outcome = outcome,
+            outcome = outcomeState,
             idempotencyKey = idempotencyKey,
         )
         respond(confirmation, extractFacts = false)
@@ -837,8 +913,10 @@ class NuaViewModel @Inject constructor(
 
     fun dismissPendingReply() {
         val pending = _uiState.value.pendingReply ?: return
-        _uiState.update { it.copy(pendingReply = null) }
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
+        _uiState.update { it.copy(pendingReply = null, pendingShadowPredictionId = null) }
         viewModelScope.launch {
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = false) }
             trustRepository.recordOutcome(
                 actionType = NuaActionType.REPLY_TO_NOTIFICATION.name,
                 tier = AutonomyTier.T3,
@@ -851,8 +929,10 @@ class NuaViewModel @Inject constructor(
 
     fun confirmPendingSms() {
         val pending = _uiState.value.pendingSms ?: return
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
         viewModelScope.launch {
-            _uiState.update { it.copy(pendingSms = null) }
+            _uiState.update { it.copy(pendingSms = null, pendingShadowPredictionId = null) }
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = true) }
             trustRepository.recordApproval(NuaActionType.SMS_SEND)
             executeConfirmedSms(pending)
         }
@@ -869,7 +949,22 @@ class NuaViewModel @Inject constructor(
             actionType = NuaActionType.SMS_SEND.name,
             sinceMillis = sameDayWindowStart(System.currentTimeMillis()),
         ).size
-        val outcome = smsSender.send(pending.phoneNumber, pending.message)
+        // Through WorkflowExecutor/SmsManagerAdapter, not a direct call to SmsSender's own
+        // send method — see executeConfirmedReply's matching comment above.
+        val actionPlan = ActionPlan(
+            id = idempotencyKey,
+            steps = listOf(
+                PlanStep(
+                    id = "confirm",
+                    action = NuaActionType.SMS_SEND,
+                    parameters = mapOf("phoneNumber" to pending.phoneNumber, "message" to pending.message),
+                    authorizationProof = AuthorizationProof.UserConfirmed(System.currentTimeMillis()),
+                ),
+            ),
+        )
+        val context = AdapterExecutionContext(originalUtterance = pending.message, pinnedLanguage = pinnedLanguage.value)
+        val stepOutcome = workflowExecutor.run(actionPlan, context).outcomes["confirm"]
+        val outcome = if (stepOutcome?.state == StepOutcomeState.SUCCEEDED) ActionOutcomeState.ACCEPTED else ActionOutcomeState.FAILED
         val confirmation = smsConfirmationMessage(outcome, smsSender.hasPermission(), pending.contactName, priorSendsToday)
         trustRepository.recordOutcome(
             actionType = NuaActionType.SMS_SEND.name,
@@ -884,8 +979,10 @@ class NuaViewModel @Inject constructor(
 
     fun dismissPendingSms() {
         val pending = _uiState.value.pendingSms ?: return
-        _uiState.update { it.copy(pendingSms = null) }
+        val shadowPredictionId = _uiState.value.pendingShadowPredictionId
+        _uiState.update { it.copy(pendingSms = null, pendingShadowPredictionId = null) }
         viewModelScope.launch {
+            shadowPredictionId?.let { trustRepository.resolveShadowPrediction(it, approved = false) }
             trustRepository.recordOutcome(
                 actionType = NuaActionType.SMS_SEND.name,
                 tier = AutonomyTier.T3,
@@ -982,30 +1079,45 @@ class NuaViewModel @Inject constructor(
     }
 
     /** "Remind later" — creates a plain reminder an hour out via the same reminder path
-     *  TaskPlanner's confirmed plans use, rather than a new one-off mechanism. */
+     *  TaskPlanner's confirmed plans use, rather than a new one-off mechanism. Routed
+     *  through WorkflowExecutor/PlanConfirmationAdapter exactly like executeConfirmedPlan:
+     *  tapping this card's button is the user's confirmation, the same as tapping "confirm"
+     *  on a proposed plan, so it gets the same AuthorizationProof, lineage logging, and
+     *  Trust Ledger entry rather than a quieter, unaudited one-off call. */
     fun remindNextBestActionLater() {
         val recommendation = _nextBestAction.value as? WhatNowResult.Recommendation ?: return
         _nextBestAction.value = null
         viewModelScope.launch {
-            val plan = TaskPlan(
-                summary = recommendation.action,
+            val reminder = SuggestedReminder(
+                title = recommendation.action,
+                whenMillis = System.currentTimeMillis() + REMIND_LATER_OFFSET_MILLIS,
+            )
+            val idempotencyKey = idempotencyKeyFor(NuaActionType.PLAN_TASK.name, recommendation.action, reminder.whenMillis.toString())
+            val actionPlan = ActionPlan(
+                id = idempotencyKey,
                 steps = listOf(
-                    PlannedStep(
-                        title = recommendation.action,
-                        detail = recommendation.reason,
-                        suggestedReminder = SuggestedReminder(
-                            title = recommendation.action,
-                            whenMillis = System.currentTimeMillis() + REMIND_LATER_OFFSET_MILLIS,
-                        ),
+                    PlanStep(
+                        id = "confirm",
+                        action = NuaActionType.PLAN_TASK,
+                        parameters = mapOf("reminders" to encodePlanReminders(json, listOf(reminder))),
+                        authorizationProof = AuthorizationProof.UserConfirmed(System.currentTimeMillis()),
                     ),
                 ),
             )
-            val results = taskPlanner.confirmPlan(plan)
-            val confirmation = if (results.all { it.isSuccess }) {
+            val context = AdapterExecutionContext(originalUtterance = recommendation.action, pinnedLanguage = pinnedLanguage.value)
+            val outcome = workflowExecutor.run(actionPlan, context).outcomes["confirm"]
+            val confirmation = if (outcome?.state == StepOutcomeState.SUCCEEDED) {
                 "Okay, I'll remind you about that in an hour."
             } else {
                 "Couldn't set that reminder."
             }
+            trustRepository.recordOutcome(
+                actionType = NuaActionType.PLAN_TASK.name,
+                tier = AutonomyTier.T4,
+                summary = "Remind later: ${recommendation.action} — $confirmation",
+                outcome = if (outcome?.state == StepOutcomeState.SUCCEEDED) ActionOutcomeState.COMPLETED else ActionOutcomeState.FAILED,
+                idempotencyKey = idempotencyKey,
+            )
             respond(confirmation, extractFacts = false)
         }
     }

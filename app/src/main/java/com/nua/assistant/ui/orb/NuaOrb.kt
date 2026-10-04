@@ -20,11 +20,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.nua.assistant.ui.theme.FuturePink
+import com.nua.assistant.ui.theme.NuaBurgundy
+import com.nua.assistant.ui.theme.NuaDeepWine
 import com.nua.assistant.ui.theme.NeuralViolet
 import com.nua.assistant.ui.theme.NuaCritical
-import com.nua.assistant.ui.theme.NuaOrange
 import com.nua.assistant.ui.theme.NuaSuccess
+import com.nua.assistant.ui.theme.NuaSurfaceElevated
 import com.nua.assistant.ui.theme.rememberMotionEnabled
 import com.nua.assistant.ui.theme.NuaWarning
 import kotlin.math.cos
@@ -159,7 +160,9 @@ private fun DrawScope.drawParticles(center: Offset, radius: Float, orbitDegrees:
             y = center.y + (orbitRadius * sin(angle)).toFloat(),
         )
         drawCircle(
-            color = NuaOrange.copy(alpha = 0.75f * intensity),
+            // THINKING is violet-dominant (OrbPalette.INTELLIGENCE) — the particles
+            // carry that same colour rather than the brand identity colour.
+            color = NeuralViolet.copy(alpha = 0.75f * intensity),
             radius = particleRadius,
             center = position,
         )
@@ -167,10 +170,14 @@ private fun DrawScope.drawParticles(center: Offset, radius: Float, orbitDegrees:
 }
 
 private fun paletteColors(palette: OrbPalette): List<Color> = when (palette) {
-    OrbPalette.BRAND -> listOf(NuaOrange, NeuralViolet)
-    OrbPalette.EXCEPTIONAL -> listOf(NuaOrange, NeuralViolet, FuturePink)
+    OrbPalette.BRAND -> listOf(NuaBurgundy, NeuralViolet)
+    OrbPalette.EXCEPTIONAL -> listOf(NuaBurgundy, NeuralViolet, NuaDeepWine)
+    OrbPalette.INTELLIGENCE -> listOf(NeuralViolet, NeuralViolet.copy(alpha = 0.55f))
     OrbPalette.WARNING -> listOf(NuaWarning, NuaWarning.copy(alpha = 0.55f))
     OrbPalette.SUCCESS -> listOf(NuaSuccess, NuaSuccess.copy(alpha = 0.55f))
     OrbPalette.CRITICAL -> listOf(NuaCritical, NuaCritical.copy(alpha = 0.55f))
-    OrbPalette.MUTED -> listOf(NuaOrange.copy(alpha = 0.5f), NeuralViolet.copy(alpha = 0.5f))
+    // "Muted Graphite treatment" for OFFLINE — NuaSurfaceElevated (Graphite, lightened
+    // one step) rather than a desaturated brand colour, so offline reads as inert
+    // surface, not as a dimmed version of NUA's active identity.
+    OrbPalette.MUTED -> listOf(NuaSurfaceElevated, NuaSurfaceElevated.copy(alpha = 0.5f))
 }

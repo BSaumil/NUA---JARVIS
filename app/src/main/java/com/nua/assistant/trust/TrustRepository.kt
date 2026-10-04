@@ -5,8 +5,12 @@ import com.nua.assistant.ai.FamiliarityTier
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.memory.ActionOutcomeDao
 import com.nua.assistant.memory.ActionOutcomeEntity
+import com.nua.assistant.memory.AutonomyContractDao
+import com.nua.assistant.memory.AutonomyContractEntity
 import com.nua.assistant.memory.AutonomyPreferenceDao
 import com.nua.assistant.memory.AutonomyPreferenceEntity
+import com.nua.assistant.memory.ShadowPredictionDao
+import com.nua.assistant.memory.ShadowPredictionEntity
 import com.nua.assistant.memory.TrustLedgerDao
 import com.nua.assistant.memory.TrustLedgerEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,6 +37,8 @@ class TrustRepository @Inject constructor(
     private val trustLedgerDao: TrustLedgerDao,
     private val actionOutcomeDao: ActionOutcomeDao,
     private val autonomyPreferenceDao: AutonomyPreferenceDao,
+    private val autonomyContractDao: AutonomyContractDao,
+    private val shadowPredictionDao: ShadowPredictionDao,
 ) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -64,6 +70,7 @@ class TrustRepository @Inject constructor(
             // approve grant for this action type immediately, rather than waiting for the
             // user to notice and revoke it by hand.
             revokeAutoApproveIfGranted(actionType)
+            suspendContractIfDrifting(actionType)
         }
     }
 
@@ -71,6 +78,17 @@ class TrustRepository @Inject constructor(
         val preference = autonomyPreferenceDao.get(actionType) ?: return
         if (preference.autoApproveEnabled) {
             autonomyPreferenceDao.upsert(preference.copy(autoApproveEnabled = false, expiresAt = null))
+        }
+    }
+
+    /** Contextual Autonomy Contracts' drift detection — see
+     *  trust/AutonomyContract.kt's contractShouldSuspend for the actual spike rule. */
+    private suspend fun suspendContractIfDrifting(actionType: String) {
+        val contract = autonomyContractDao.get(actionType) ?: return
+        if (!contract.active) return
+        val recent = actionOutcomeDao.mostRecentByActionType(actionType, limit = 3)
+        if (contractShouldSuspend(recent.map { it.outcomeState })) {
+            autonomyContractDao.suspendContract(actionType)
         }
     }
 
@@ -143,6 +161,91 @@ class TrustRepository @Inject constructor(
      *  isn't autonomy NUA currently has). */
     suspend fun activeAutonomyGrants(): List<AutonomyPreferenceEntity> =
         autonomyPreferenceDao.getAll().filter { isGrantActive(it.autoApproveEnabled, it.expiresAt, System.currentTimeMillis()) }
+
+    /** Issues (or replaces) the context-bounded contract for [actionType] — see
+     *  AutonomyContractEntity's own doc comment for what each dimension means. */
+    suspend fun createContract(
+        actionType: NuaActionType,
+        recipient: String? = null,
+        riskCeiling: AutonomyTier? = null,
+        maxPerWindow: Int? = null,
+        windowMillis: Long? = null,
+        durationMillis: Long = AUTONOMY_GRANT_DURATION_MILLIS,
+        shadowMode: Boolean = false,
+    ) {
+        autonomyContractDao.upsert(
+            AutonomyContractEntity(
+                actionType = actionType.name,
+                recipient = recipient,
+                riskCeiling = riskCeiling,
+                maxPerWindow = maxPerWindow,
+                windowMillis = windowMillis,
+                expiresAt = System.currentTimeMillis() + durationMillis,
+                shadowMode = shadowMode,
+            ),
+        )
+    }
+
+    suspend fun revokeContract(actionType: NuaActionType) = autonomyContractDao.suspendContract(actionType.name)
+
+    suspend fun allContracts(): List<AutonomyContractEntity> = autonomyContractDao.getAll()
+
+    /**
+     * The single decision point a contract contributes to autonomy — always computed for
+     * every proposal, never skipped, fail-closed ([ContractDecision.NoContract]/[ContractDecision.Deny]
+     * both mean "don't auto-approve via a contract"; the legacy grant is evaluated
+     * completely independently by [isAutoApproved] and can still separately permit the
+     * same action — see NuaViewModel.applyPendingEffect, the one centralized call site
+     * for both). A shadow-mode contract's real decision is still returned here in full —
+     * the caller, not this function, is responsible for never acting on it when
+     * [AutonomyContractEntity.shadowMode] is true (see [recordShadowPrediction]).
+     */
+    suspend fun contractDecisionFor(
+        actionType: NuaActionType,
+        recipient: String?,
+        now: Long = System.currentTimeMillis(),
+    ): Pair<AutonomyContractEntity?, ContractDecision> {
+        val contract = autonomyContractDao.get(actionType.name) ?: return null to ContractDecision.NoContract
+        val cap = contract.maxPerWindow
+        val window = contract.windowMillis
+        val recentCommittedCount = if (cap != null && window != null) {
+            actionOutcomeDao.recentByActionType(actionType.name, now - window).count { it.outcomeState.countsAsCommitted() }
+        } else {
+            0
+        }
+        return contract to evaluateContract(contract, actionType, recipient, now, recentCommittedCount)
+    }
+
+    /** Records what a shadow contract would have decided, without ever acting on it.
+     *  Returns the new row's id so the caller can later resolve it via
+     *  [resolveShadowPrediction] against what the user actually did with this exact
+     *  proposal — see NuaUiState.pendingShadowPredictionId. */
+    suspend fun recordShadowPrediction(
+        contract: AutonomyContractEntity,
+        actionType: NuaActionType,
+        recipient: String?,
+        decision: ContractDecision,
+    ): Long = shadowPredictionDao.insert(
+        ShadowPredictionEntity(
+            contractId = contract.id,
+            actionType = actionType.name,
+            recipient = recipient,
+            predictedPermit = decision is ContractDecision.Permit,
+            reason = when (decision) {
+                is ContractDecision.Permit -> "would auto-approve"
+                is ContractDecision.Deny -> decision.reason
+                ContractDecision.NoContract -> "no contract"
+            },
+        ),
+    )
+
+    /** Resolves a shadow prediction against what the user actually did with the proposal
+     *  it was recorded for — called from NuaViewModel's confirmPending-/dismissPending- methods. */
+    suspend fun resolveShadowPrediction(predictionId: Long, approved: Boolean) =
+        shadowPredictionDao.resolve(predictionId, if (approved) "APPROVED" else "REJECTED")
+
+    suspend fun recentResolvedShadowPredictions(limit: Int = 50): List<ShadowPredictionEntity> =
+        shadowPredictionDao.recentResolved(limit)
 
     /**
      * At the highest familiarity tier, NUA occasionally reports on itself unprompted — the

@@ -42,8 +42,26 @@ jobs:
       - name: Injection-boundary audit
         run: python3 tools/injection_boundary_audit.py
 
+      # Catches the Universal Action Fabric's single execution boundary silently eroding:
+      # a new call site invoking ActionAdapter.execute(...) directly instead of through
+      # WorkflowExecutor, which is the only place authorization is checked first.
+      # Self-tests first, same discipline as above.
+      - name: UAF boundary audit
+        run: python3 tools/uaf_boundary_audit.py
+
+      # testDebugUnitTest specifically, not the `test` aggregate task: this project has no
+      # debug/release-specific source sets (app/src/{debug,release} don't exist), so
+      # testReleaseUnitTest would compile and run the exact same tests against the exact
+      # same sources -- pure duplication, and tools/verify_tests_ran.py already only ever
+      # checked testDebugUnitTest's own report directory. Running both in one invocation is
+      # also what triggered a real defect: Room's exportSchema (added alongside this fix)
+      # writes app/schemas/.../20.json from kspDebugKotlin, and kspReleaseKotlin's own run
+      # in the same invocation read that file back mid-write and crashed with
+      # "IllegalStateException: Empty schema file" -- a genuine two-variant race on a
+      # shared, Gradle-untracked output path, not a flake. Scoping to one variant here
+      # removes the race rather than papering over it.
       - name: Run unit tests
-        run: ./gradlew test --stacktrace
+        run: ./gradlew testDebugUnitTest --stacktrace
 
       # A green "Run unit tests" step proves the task completed, not that it exercised
       # anything: Gradle reports BUILD SUCCESSFUL whether 263 tests ran or zero
@@ -66,22 +84,47 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+      # Signs the release build when the four RELEASE_* repository secrets exist (see
+      # keystore.properties.example and app/build.gradle.kts's signingConfigs block for
+      # how the build picks these up); skipped entirely — not failed — when they don't,
+      # so a fork or a repo that hasn't set up signing yet still builds an unsigned
+      # release APK exactly as before this step existed. The `secrets` context can't be
+      # used directly in a step's `if:` (GitHub Actions rejects the whole workflow with
+      # "Unrecognized named-value: 'secrets'" if it is) — routed through `env:` instead,
+      # which both `if:` and `run:` can read.
+      - name: Decode release keystore
+        if: ${{ env.HAS_RELEASE_SIGNING == 'true' }}
+        env:
+          HAS_RELEASE_SIGNING: ${{ secrets.RELEASE_STORE_BASE64 != '' }}
+          RELEASE_STORE_BASE64: ${{ secrets.RELEASE_STORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          echo "$RELEASE_STORE_BASE64" | base64 -d > "$RUNNER_TEMP/nua-release.keystore"
+          {
+            echo "storeFile=$RUNNER_TEMP/nua-release.keystore"
+            echo "storePassword=$RELEASE_STORE_PASSWORD"
+            echo "keyAlias=$RELEASE_KEY_ALIAS"
+            echo "keyPassword=$RELEASE_KEY_PASSWORD"
+          } > keystore.properties
+
       # isMinifyEnabled=true for release (app/build.gradle.kts), but nothing had ever
       # actually run R8 against this codebase before this step existed — CI only ever
       # built debug. R8 stripping/renaming a class Room, Hilt, or kotlinx.serialization
       # reach via reflection is exactly the failure mode that only shows up in a release
-      # build, at the worst possible time to discover it. Unsigned (no keystore secret
-      # is available here) — this verifies R8/resource shrinking completes cleanly, which
-      # is the release-specific risk; signing is a separate, standard step at actual
-      # publish time.
-      - name: Build release APK (unsigned, verifies R8/minification)
+      # build, at the worst possible time to discover it. Signed when the step above ran
+      # (real repository secrets present), unsigned otherwise — either way this verifies
+      # R8/resource shrinking completes cleanly, which is the release-specific risk this
+      # step exists to catch.
+      - name: Build release APK
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Upload release APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: nua-release-apk-unsigned
+          name: nua-release-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
@@ -91,4 +134,19 @@ jobs:
         with:
           name: unit-test-reports
           path: app/build/reports/tests/
+          if-no-files-found: ignore
+
+      # Room's KSP processor (room.schemaLocation, app/build.gradle.kts) writes a JSON
+      # snapshot of NuaDatabase's schema to app/schemas/ as a side effect of the builds
+      # above. This repository's own sandbox can't run Gradle locally, so CI is the only
+      # place that schema file can actually be generated -- uploaded here so it can be
+      # pulled down and committed as the real, non-fabricated baseline for the next
+      # Migration (docs/DATABASE_MIGRATION_POLICY.md), rather than hand-written from
+      # reading entity definitions.
+      - name: Upload Room schemas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas/
           if-no-files-found: ignore

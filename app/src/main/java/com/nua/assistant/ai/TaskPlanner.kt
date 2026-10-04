@@ -8,6 +8,7 @@ import javax.inject.Singleton
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+@Serializable
 data class SuggestedReminder(val title: String, val whenMillis: Long)
 
 data class PlannedStep(
@@ -50,9 +51,13 @@ private val PLANNER_SYSTEM_PROMPT = """
 /**
  * Gathers real weather/calendar context the same way MorningBriefing does, then asks
  * Claude to propose a short plan. [propose] never writes anything — it only returns a
- * plan for the UI to show the user. [confirmPlan] is the only path that creates
- * calendar reminders, and it must only be called after the user has explicitly
- * confirmed the plan in the UI, never automatically.
+ * plan for the UI to show the user; creating the plan's actual calendar reminders once
+ * the user confirms is
+ * [com.nua.assistant.automation.uaf.PlanConfirmationAdapter]'s job, reached only through
+ * [com.nua.assistant.automation.uaf.WorkflowExecutor] with a real
+ * [com.nua.assistant.automation.uaf.AuthorizationProof.UserConfirmed] — not a method on
+ * this class, so there's exactly one place in the codebase that turns a proposed plan
+ * into real calendar writes.
  */
 @Singleton
 class TaskPlanner @Inject constructor(
@@ -116,9 +121,4 @@ class TaskPlanner @Inject constructor(
             },
         )
     }
-
-    suspend fun confirmPlan(plan: TaskPlan): List<Result<Long>> =
-        plan.steps.mapNotNull { it.suggestedReminder }.map { reminder ->
-            calendarReader.createReminder(title = reminder.title, whenMillis = reminder.whenMillis)
-        }
 }

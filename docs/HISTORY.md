@@ -1539,6 +1539,1039 @@ constructs `ActionOutcomeEntity(...)` besides `TrustRepository`/`TrustScoreEngin
 ### Status
 CONFIRMED CI-green (run 34299768149, 15/15 steps including release-APK/R8).
 
+## September 27 — 5-Year Standalone Master Directive: repo audit + Universal Action Fabric core
+
+A new master directive arrived, restating the mission as a ten-feature, multi-phase
+program (Universal Action Fabric, Sovereign Model Mesh, Temporal World Model 2.0,
+Counterfactual Decision Simulator, Contextual Autonomy Contracts + Shadow Mode, NUA
+Recipes, Privacy Capsules/Data Egress Gateway, Presence Mesh, Flight Recorder, Guardian
+Lab), explicitly framed as a multi-year program and explicitly forbidding claiming a
+feature shipped on scaffolding alone. Its own stated order is Foundation (audit, UAF,
+Privacy Capsules, Flight Recorder, Guardian Lab) before Intelligence/Autonomy/Presence
+moats. This entry covers the audit and the first real slice of the first Foundation item.
+
+### Repository truth audit
+Re-verified the directive's own §1 baseline claims against real code rather than trusting
+them: the closed `NuaActionType` enum (`ai/IntentClassifier.kt`), the exhaustive
+`autonomyTierFor` `when` with no `else` (`trust/AutonomyTier.kt`), and `SkillSandbox`'s
+single enforcement point (`missingRequiredParameters`/`filterToDeclaredParameters`/
+timeout/exception containment, `automation/SkillSandbox.kt`) all match exactly what the
+directive and this project's own prior history already claim. No drift found — the
+baseline holds.
+
+### Investigation — Universal Action Fabric (Feature 1)
+The directive asks for a "universal, typed orchestration fabric" above the existing
+closed skill registry: machine-readable capability descriptors, adapter classes for
+different execution mechanisms, and a transactional multi-step workflow engine — with an
+explicit critical rule that no new adapter may become a second authorization path.
+Investigated what already exists rather than assuming a rewrite was needed:
+`automation/SkillManifest.kt`/`SkillSandbox.kt` already are a working single-enforcement-
+point sandbox; `automation/SkillCatalog.kt` already generates a user-facing capability
+list from the same closed Hilt-multibound skill map the router dispatches through. What
+doesn't exist: a machine-readable descriptor covering risk/side-effect/reversibility/
+idempotency/confirmation/adapter fields together, more than one execution mechanism, and
+any notion of a multi-step plan with dependencies, checkpoints, or compensation.
+
+### Implementation
+- `automation/uaf/CapabilityDescriptor.kt` — `CapabilityDescriptor` (action, purpose,
+  parameters, `riskTier`, permissions, `sideEffect`/`reversibility`/`idempotency`/
+  `confirmation` classification, timeout, preferred/fallback adapters) and the pure
+  `capabilityDescriptorFor(action, manifest)` that builds one. `riskTier` is read from the
+  existing `autonomyTierFor`, `permissions`/`parameters`/`timeoutMillis` from the skill's
+  own `SkillManifest` — nothing here is a second source of truth that could drift from
+  what `SkillSandbox` actually enforces. The side-effect/reversibility/idempotency/
+  confirmation classification is a genuinely new per-action judgment, hand-reviewed
+  against each action's real behavior with an exhaustive `when` (no `else`), the same
+  invariant `autonomyTierFor` already holds.
+- `automation/uaf/CapabilityRegistry.kt` — generates every descriptor from the same
+  closed `Map<NuaActionType, NuaSkill>` `NuaIntentRouter`/`SkillCatalog` already read —
+  a third reader of the one registry, not a second registry.
+- `automation/uaf/AuthorizationProof.kt` — `AuthorizationProof` (`NotRequired`/
+  `UserConfirmed`) and the pure `isAuthorizationSufficient(policy, proof)` — the fabric's
+  one authorization checkpoint. `CONFIRM_BEFORE_EXECUTE` accepts only a real
+  `UserConfirmed` proof; `NotRequired` is never sufficient for it, so a step can't
+  silently downgrade its own descriptor's policy by omission.
+- `automation/uaf/ActionAdapter.kt` — the `ActionAdapter` interface plus two real
+  implementations: `LocalNativeAdapter` (delegates to `SkillSandbox.execute` verbatim —
+  not a reimplementation of its enforcement, the same call `NuaIntentRouter.dispatch`
+  already makes, reached through a second entry point rather than a second policy) and
+  `NotificationRemoteInputAdapter` (sends a notification reply through the official
+  RemoteInput mechanism directly, the same API `NotificationReplySender` already wraps —
+  a genuinely distinct execution mechanism, not a rewrapped skill call). Five of the
+  seven `ExecutionAdapterType` members (`ANDROID_INTENT`, `APP_FUNCTIONS`, `MCP`,
+  `ACCESSIBILITY`, `EXTERNAL_API`) are declared but deliberately unbound this round — see
+  below.
+- `automation/uaf/ActionPlan.kt` — `PlanStep`/`ActionPlan` (a dependency DAG),
+  `StepOutcomeState` (7 states including `AWAITING_USER`/`AUTHORIZATION_REFUSED`/
+  `COMPENSATED`, extending this project's existing "truthful multi-state outcome"
+  philosophy rather than a boolean), `PlanRunState` (the whole checkpoint), and the pure
+  decision functions `topologicalOrder`/`nextRunnableStep`/`outcomeForFailedStep`/
+  `shouldStopPlanAfterFailure`/`shouldCompensate`/`isPlanComplete`/`isPlanAwaitingUser`.
+  `nextRunnableStep` recomputes eligibility from `PlanRunState` alone rather than any
+  in-memory loop position — that's what makes resume-after-process-death safe: there is
+  no separate resume path, only "run again from the last checkpoint."
+- `automation/uaf/WorkflowExecutor.kt` — runs a plan to completion or its next pause
+  point. Every step, including a compensation step, goes through the same
+  `isAuthorizationSufficient` check and the same `ActionAdapter` dispatch as any other.
+  `FailurePolicy.STOP` halts the whole plan; `SKIP` continues past independent steps but
+  never runs a step depending on a failed one (FAILED/AUTHORIZATION_REFUSED are not
+  dependency-satisfying states, so dependents are simply left unattempted rather than run
+  against a bad prerequisite); `COMPENSATE` runs the named compensation step once
+  (recorded as `COMPENSATED`, not `SUCCEEDED`, to distinguish it from a normal step) and
+  then halts; `ASK_USER` pauses the run in `AWAITING_USER` rather than failing it.
+- `automation/uaf/AdapterModule.kt` — Hilt multibinding for the two real adapters,
+  mirroring `SkillModule.kt`'s existing `ActionTypeKey`/`@IntoMap` pattern with a new
+  `AdapterTypeKey`.
+
+### Explicitly not attempted this round
+AppFunctions/MCP/Android-Intent/External-API adapter implementations — each needs either
+a real external integration point this codebase doesn't have yet (MCP, external APIs) or
+a version-gated platform API this pass didn't investigate deeply enough to wire safely
+(AppFunctions). The Accessibility adapter specifically was left unbound rather than
+wired to the existing `NuaAccessibilityService` skeleton (itself still unimplemented,
+per this project's own long-standing known gap) — wiring a last-resort adapter to a
+last-resort mechanism that doesn't exist yet would be exactly the speculative work this
+project's whole discipline argues against. No chat-triggered user-facing entry point
+into the workflow engine exists yet — this round is infrastructure, verified by tests,
+the same "writer/reader proven separately" precedent `WorldModelRepository` (P1.9)
+already set for this codebase. A genuinely useful multi-app example command (the
+directive's own "when I leave work, message Pooja..." illustration) needs geofencing +
+SMS + media control composed through a real UI trigger, which is the natural next slice,
+not part of this one.
+
+### Verification
+`ActionPlanTest` (13 cases: dependency ordering, cycle rejection, dependency
+satisfaction by SUCCEEDED/SKIPPED-but-not-FAILED, plan pausing while any step awaits the
+user, every `FailurePolicy` mapping, `shouldCompensate`'s two-condition requirement,
+additive checkpointing, completeness). `CapabilityDescriptorTest` (7 cases, including
+every current `NuaActionType` producing a descriptor whose `riskTier` never diverges from
+`autonomyTierFor`). `AuthorizationProofTest` (3 cases). `WorkflowExecutorTest` (11 cases
+against real `CapabilityRegistry`/fake adapters — the same "exercise the real coroutine
+orchestration, not just the pure functions it calls" discipline `SkillSandboxTest`
+already applies to `executeSandboxed`): a two-step dependency-ordered run; two different
+adapter types used in one plan; an unauthorized sensitive step never reaching an adapter;
+`STOP` halting a later independent step; `SKIP` running an independent step while leaving
+a dependent of the failed step unattempted; `ASK_USER` pausing and a resumed plan (fresh
+`PlanRunState`, same as a process-death restart would hand it) completing past it;
+resuming from a partially-completed checkpoint never re-running an already-succeeded
+step; `COMPENSATE` running its named step once and halting; a cyclic plan rejected before
+any step runs; a step naming an unregistered capability failing cleanly rather than
+crashing the run. Forward-reference and injection-boundary audits both clean.
+
+### Commit
+`2581cb6` — pushed to `claude/new-session-efg0ha`.
+
+### Status
+**CI correctly failed `2581cb6`** (run `36320791337`, `WorkflowExecutorTest > ASK_USER
+pauses the run...` at line 148) — a real defect, not a flaky test:
+`runOneStep`'s two early-return branches ("no capability registered," "authorization
+refused") hardcoded their `StepOutcomeState` (`FAILED`, `AUTHORIZATION_REFUSED`)
+regardless of the step's own `FailurePolicy`, so `outcomeForFailedStep` — the function
+that's supposed to be the *one* place a step's failure policy gets applied — was only
+ever actually consulted on the adapter-execution-failure path. A step declared
+`FailurePolicy.ASK_USER` therefore paused correctly when its *adapter* failed, but not
+when it was refused for missing authorization before ever reaching an adapter — exactly
+the case the test exercised (an `SMS_SEND` step with no proof). Fixed in the next
+commit: `outcomeForFailedStep` now takes the *natural* failure state as a parameter
+(`FAILED` or `AUTHORIZATION_REFUSED`) and overrides it to `AWAITING_USER` uniformly
+whenever the step's policy is `ASK_USER`, regardless of which of `runOneStep`'s three
+failure branches produced it. All 34 tests, including the one that caught this,
+hand-traced against the fixed logic before re-pushing (see the next commit's entry).
+Feature 1 (Universal Action Fabric) is SHIPPED_EXTERNAL_ACTIVATION_REQUIRED-equivalent
+for its core engine and two real adapters once the fix below is confirmed green — a
+genuinely functioning foundation, not yet the full seven-adapter surface or a
+user-facing entry point; both remain the next slice.
+
+## September 27 (continued) — Privacy Capsules / Data Egress Gateway (Feature 7)
+
+Second Foundation-phase item, per the directive's own Phase A ordering.
+
+### Investigation
+The directive asks for a single gateway all cloud-bound personal data passes through,
+gated by an explicit purpose-bound policy object, refusing calls with no valid policy.
+Investigated what already exists: `security/UntrustedContent.kt`'s `wrapUntrusted` is the
+*inbound* firewall (marks external text as data, not instructions, once it's already been
+decided to send it) and `documents/DocumentRedaction.kt` already pattern-redacts
+structured PII before document text reaches a prompt — real protections, but neither
+governs *whether* a given category of personal data is allowed to leave the device in the
+first place, which is what the directive actually asks for. The one place that decision
+already matters concretely: `ui/NuaViewModel.kt`'s `replyConversationally` builds the main
+chat's system prompt from `FactRelevance.rank(...)`'s output with **no policy check at
+all** — a fact the user explicitly marked `MemoryPrivacyLevel.SENSITIVE` (P1.10, August
+31) was exactly as eligible to reach Claude as any other fact, despite the user's own
+explicit sensitivity marking existing for over three weeks with nothing reading it at
+that boundary.
+
+### Implementation
+- `security/egress/PrivacyCapsule.kt` — `PrivacyCapsule` (purpose, recipient provider,
+  permitted `DataCategory` set, `DisclosureLevel`, network-egress flag, expiry) and the
+  pure `capsuleAuthorizes(capsule, category, now)`.
+- `security/egress/DataEgressGateway.kt` — `DataEgressGateway.filterFacts(capsule, facts,
+  ...)`, the single point personal facts are filtered before a prompt is assembled. A
+  `null` capsule is treated as the *strictest* policy, not "no policy": no
+  `SENSITIVE`-marked fact ever passes without an explicit capsule authorizing
+  `SENSITIVE_FACTS` at `DisclosureLevel.RAW` specifically — a capsule requesting
+  `REDACTED`/`DERIVED_ONLY` for facts is refused rather than silently upgraded to RAW,
+  since no per-fact redaction/derivation mechanism exists yet to actually honor that
+  request. `STANDARD`-marked facts pass unconditionally, matching
+  `MemoryPrivacyLevel`'s own existing meaning (P1.10: the user marks what's sensitive,
+  nothing auto-classifies). Returns an `EgressDecision` (category, provider, purpose,
+  requested/permitted counts) alongside the filtered list — not persisted anywhere yet,
+  but shaped for a future Flight Recorder entry to record without ever needing to
+  duplicate the fact content itself into a second store.
+- `ui/NuaViewModel.kt` — `replyConversationally` now filters `FactRelevance`'s ranked
+  output through `DataEgressGateway.filterFacts(capsule = null, ...)` before it reaches
+  `personalityEngine.systemPrompt` or `memoryDao.touchFactUsage`. Since no capsule is
+  issued anywhere yet, this is a concrete, immediate behavior change: a Sensitive-marked
+  fact that used to reach every chat prompt now never does, while every Standard fact's
+  behavior is unchanged.
+
+### Explicitly not attempted this round
+Retrofitting every other Claude-calling surface (document Q&A/summarization, vision
+description, intent classification, workers) through the gateway — each already has its
+own existing protection (the inbound firewall, document redaction) but isn't yet
+*capsule-gated*, and doing all of them in one pass risked exactly the "giant parallel
+scaffold across a huge blast radius, none of it load-bearing yet" shape the directive
+itself warns against. No capsule-issuing UI or flow exists — nothing in the app can
+currently grant a Sensitive-fact capsule even if a future feature wanted to ask for one;
+today's gateway is deliberately, permanently strict until that's built. Per-fact
+redaction/derivation (to actually honor a `REDACTED`/`DERIVED_ONLY` capsule) is not
+attempted — no such mechanism exists for arbitrary fact text today, only for the
+structured patterns `DocumentRedaction.kt` already matches. Ephemeral one-use access
+tokens are not attempted — `PrivacyCapsule.reusable` is declared but nothing branches on
+it yet. On-device encryption-at-rest hardening was investigated, not rebuilt:
+`security/EncryptionAudit.kt` already truthfully lists what's encrypted (API key, voice
+profile) versus what isn't (the rest of Room) — real, existing, and accurate; a stronger
+at-rest migration is a separately-scoped future slice, not bundled into this one.
+
+### Verification
+`PrivacyCapsuleTest` (6 cases: exact-category authorization, network-egress-required,
+null-never-expires, past/future/exactly-at-expiry boundary cases).
+`DataEgressGatewayTest` (6 cases: a null capsule blocks Sensitive but passes Standard, a
+correctly-scoped RAW capsule passes both, a REDACTED-disclosure capsule still refuses
+rather than silently upgrading, a capsule naming the wrong category refuses, an expired
+capsule refuses, an empty input produces a zero/zero decision). Forward-reference and
+injection-boundary audits both clean.
+
+### Commit
+`0c1f8dd`
+
+### Status
+`0c1f8dd`'s own CI run (`36320995263`) failed — inherited, not a defect in this commit's
+own code: it stacked on top of the still-broken `2581cb6` (see that entry's Status), so
+it carried the same `WorkflowExecutorTest` failure forward. Confirmed CI-green as part of
+the later `420f2ea` run (`36338965594`, 16/16 steps) once the fix landed in `9960d8c`.
+Feature 7 (Privacy Capsules / Data Egress Gateway) is a real, enforced policy engine with
+one genuine, currently-active integration (the main chat's fact context) — not yet the
+full-surface retrofit the directive's complete DoD describes; that remains the next
+slice.
+
+## September 27 (continued) — Verifiable Agent Runtime / Flight Recorder (Feature 9); fixes the ASK_USER defect CI caught in `2581cb6`
+
+Third Foundation-phase item, per the directive's own ordering. Also carries the fix for
+the real defect CI caught above.
+
+### Investigation
+The directive asks for full execution lineage — what ran, on what basis it was
+authorized, by which mechanism, with what outcome — reconstructable after the fact, with
+a tamper-evident record for high-risk actions. `TrustRepository`'s existing
+`ActionOutcomeEntity` audit trail already records action/tier/outcome/recipient per
+dispatch, but it's a flat table with no chain linking one record to the next, and no
+concept of "everything that happened in one run" versus isolated events. The one new
+orchestration surface this session that doesn't already have deep audit logging is
+`WorkflowExecutor` (this same round's Feature 1 slice) — `SkillSandbox`'s direct-dispatch
+path already writes to `TrustRepository` from `NuaIntentRouter`/`NuaViewModel`, but
+`WorkflowExecutor.run()` had no lineage of its own beyond the final `PlanRunState`.
+
+### Implementation
+- `memory/MemoryStore.kt` — `LineageRecordEntity` (additive, DB v17→18) + `LineageDao`
+  (`insert`/`mostRecent`/`forRun`/`all`). `hash`/`previousHash` form one global chain
+  across every row ever inserted, not scoped per run.
+- `trust/lineage/LineageChain.kt` — `LineageEntry` (the in-memory record shape) and two
+  pure functions: `nextLineageHash(previousHash, entry)` (SHA-256 over
+  `previousHash + every field of entry`, so altering, reordering, or deleting any past
+  row breaks every hash computed after it) and `verifyLineageChain(records)` (re-walks a
+  list recomputing and comparing every stored hash against its predecessor). Explicitly
+  documented as local, append-only tamper-*evidence*, never claimed as hardware-backed
+  immutability.
+- `trust/lineage/LineageRecorder.kt` — `LineageRecorder` interface +
+  `RoomLineageRecorder` (reads the chain tail, computes the new hash, appends). Interface
+  rather than a concrete class specifically so `WorkflowExecutorTest` can inject a no-op
+  fake without touching Room, the same reason `EmailRepository`/`SmartHomeRepository` are
+  interfaces with a swappable `@Binds` (`trust/lineage/LineageModule.kt`).
+- `automation/uaf/WorkflowExecutor.kt` — every step's execution (including a
+  compensation step) is now recorded as one `LineageEntry`: run id (the plan's own id),
+  step id, action, the adapter type actually used, the authorization proof's kind, the
+  outcome state, and the outcome's detail message — never the fact/document content
+  itself, so a lineage entry never duplicates whatever sensitive payload a step touched.
+
+### The bug this round found and fixed
+Writing the "recorded to the Flight Recorder with a matching outcome" test above
+required hand-tracing exactly what outcome state each of `runOneStep`'s three failure
+branches produces — and that's what surfaced the CI-caught defect described in the
+previous entry: `outcomeForFailedStep` was only consulted on the adapter-execution
+path, so `FailurePolicy.ASK_USER` never actually produced `AWAITING_USER` for an
+authorization refusal, only for an adapter that ran and failed. `ActionPlan.kt`'s
+`outcomeForFailedStep(step, naturalFailureState: StepOutcomeState = FAILED)` now takes
+the *natural* failure classification as a parameter — `FAILED` for an adapter failure or
+a missing capability/adapter registration, `AUTHORIZATION_REFUSED` for a refused
+authorization — and uniformly overrides it to `AWAITING_USER` when the step's policy is
+`ASK_USER`, regardless of which branch produced it. All three of `runOneStep`'s
+early-return branches now route through this one function instead of hardcoding a
+state.
+
+### Explicitly not attempted this round
+No UI surfaces lineage yet — no "why did NUA do this" screen exists, since `WorkflowExecutor`
+itself has no chat-triggered entry point yet either (see the Feature 1 entry above).
+Biometric requirement/outcome is not captured in lineage: `WorkflowExecutor` doesn't
+drive the biometric step-up flow at all yet (that remains `NuaViewModel`'s existing
+pending-confirm dialogs, untouched by this round), so there's genuinely nothing
+biometric-related to record on this path today — recorded honestly as absent, not
+fabricated. `RoomLineageRecorder.record()` is not wrapped in a transaction with its own
+read of the chain tail — two concurrent writers could each read the same tail and both
+append claiming the same `previousHash`, which `verifyLineageChain` would correctly
+flag as a broken chain rather than silently accept, but isn't prevented outright; named
+as a real, small limitation rather than hidden. Replay-in-simulation-mode and a
+tamper-evident chain *specifically scoped* to only high-risk actions (today every step
+is recorded, not just high-risk ones) are both deferred.
+
+### Verification
+`LineageChainTest` (9 cases: deterministic hashing, a changed previous hash changes the
+result, changing any single entry field changes the hash, `verifyLineageChain` accepts a
+correctly-chained sequence, rejects a tampered stored hash, rejects content altered
+after its hash was computed — the actual tamper case — rejects a chain with a record
+removed from the middle, an empty chain is trivially valid).
+`WorkflowExecutorTest` — the existing 10 cases plus 2 new ones (every step including a
+compensation step recorded with a matching outcome; a refused step recorded with its
+authorization kind) — all 12 hand-traced against the fixed `outcomeForFailedStep` logic
+line by line before this push, specifically including the exact `ASK_USER` +
+authorization-refusal scenario CI caught. Forward-reference and injection-boundary
+audits both clean.
+
+### Commit
+`9960d8c`
+
+### Status
+CONFIRMED CI-green (run `36338785059`, 15/15 steps — the "UAF boundary audit" step
+arrives in the next commit — including the fixed `WorkflowExecutorTest` suite and the DB
+v17→18 migration compiling cleanly). Feature 9 (Flight Recorder) has a real,
+tamper-evident chain and one real integration (every `WorkflowExecutor` step) — not yet
+a UI, not yet biometric capture (nothing to capture on this path today), not yet applied
+to `TrustRepository`'s older direct-dispatch audit trail; each is a named next slice.
+
+## September 27 (continued) — Guardian Lab baseline (Feature 10, part 1)
+
+Fifth and last Foundation-phase item — closes out Phase A per the directive's own
+ordering (Feature 1 → 7 → 9 → 10).
+
+### Investigation
+The directive names sixteen adversarial scenario classes for Guardian Lab. Checked each
+against what's genuinely real in this codebase today rather than writing tests against
+features that don't exist yet: recipe-compiler ambiguity (Feature 6, not built),
+autonomy-contract bypass (Feature 5, not built), and Presence Mesh device-revocation
+(Feature 8, not built) would all require fabricating the very subsystem under test —
+exactly the "no speculative architecture" rule this project holds itself to elsewhere.
+What's concretely testable today: prompt injection (already covered,
+`UntrustedContentTest`, 13 cases), duplicate/replay (`IdempotencyKeyTest`), malformed
+structured model output (`WhatNowParsingTest`/`DailyBriefingParsingTest`, both already
+return an honest null/`Unavailable` rather than silently "nothing needed"), and —
+genuinely new this round — permission escalation and side-effect-boundary bypass through
+the Universal Action Fabric specifically, since `WorkflowExecutor`/`ActionAdapter` are
+new code this session with no adversarial coverage of their own yet, only happy-path
+tests.
+
+### Implementation
+- `tools/uaf_boundary_audit.py` — a third static audit, same self-proving discipline as
+  `forward_ref_audit.py`/`injection_boundary_audit.py`: fails the build if any production
+  file other than `WorkflowExecutor.kt` calls `ActionAdapter.execute(descriptor, ...)`
+  directly. Answers the final report's own security-review question #1 ("Can any
+  side-effecting action bypass UAF?") with an enforced check, not an assertion. Wired
+  into CI as a new "UAF boundary audit" step, right after the injection-boundary audit.
+- `security/guardian/UafAdversarialTest.kt` (4 cases, each targeting a concrete
+  security-review question rather than a happy path): an undeclared/smuggled parameter
+  (a hallucinated classifier field, a fake `bcc`) never reaches a skill even when routed
+  through the new fabric — proves `SkillManifestTest`'s parameter-stripping guarantee
+  survives being reached via `WorkflowExecutor`, not just `NuaIntentRouter`; one plan
+  step's real `UserConfirmed` authorization proof never leaks into satisfying a *sibling*
+  sensitive step's own requirement; a step whose sanctioned adapter (e.g.
+  `NOTIFICATION_REMOTE_INPUT`) isn't registered fails closed rather than silently falling
+  back to a weaker-guarantee mechanism that happens to be available; repeating an
+  unauthorized plan across multiple independent runs never eventually succeeds "by
+  persistence."
+
+### Explicitly not attempted this round
+The remaining twelve adversarial classes the directive names: multilingual/code-
+switching, hallucinated actions (beyond parameter smuggling), permission escalation
+outside UAF specifically, autonomy-contract-bypass, context corruption, stale
+world-model facts, privacy-capsule overreach beyond what `DataEgressGatewayTest` already
+covers, recipe-compiler ambiguity, adversarial Unicode/encoding, long-conversation drift,
+and a CI-trended/machine-readable results dashboard. Several genuinely require a feature
+that doesn't exist yet (Recipes, Autonomy Contracts, Presence Mesh); the rest are real
+gaps, named explicitly rather than silently skipped, and are this feature's own
+remaining slice (task #22, Phase D) — extending coverage alongside each new feature as
+it ships, plus the Runtime Safety Sentinel, rather than attempting all sixteen classes
+against a codebase where most of the subsystems they'd test don't exist yet.
+
+### Verification
+`uaf_boundary_audit.py --selftest` passes (reconstructs a synthetic
+`QuickActionShortcut.kt` calling `.execute(...)` directly and confirms the detector
+flags it). All three static audits (forward-reference, injection-boundary, UAF-boundary)
+clean against real code. `UafAdversarialTest` (4 cases) hand-traced against the current
+`WorkflowExecutor`/`CapabilityDescriptor` logic before this push.
+
+### Commit
+`420f2ea`
+
+### Status
+CONFIRMED CI-green (run `36338965594`, 16/16 steps — the new "UAF boundary audit" step
+confirmed present and passing at position 9, alongside the two existing static audits).
+This closes Phase A (Foundation) of the 5-Year directive: Universal Action Fabric core,
+Privacy Capsules/Data Egress Gateway, Flight Recorder, and Guardian Lab baseline are all
+real, tested, CI-green, and pushed to the feature branch (not yet merged to `Main` — no
+merge requested this round). None claim their full
+directive-described DoD; each documents exactly what remains as its own named next
+slice. Phase B (Sovereign Model Mesh, Temporal World Model 2.0, Counterfactual Decision
+Simulator) is next, not yet started.
+
+## September 27 (continued) — Sovereign Model Mesh (Feature 2), Phase B begins
+
+First Intelligence-moat item of the 5-Year Standalone Master Directive.
+
+### Investigation
+`ai/ClaudeApiClient.kt`'s own doc comment already states "every capability in NUA that
+needs Claude... goes through this one client" — confirmed by reading it and grepping
+every call site (12 files: `PersonalityEngine`/`IntentClassifier`/`FactExtractor`/
+`TaskPlanner` in `ai/`, `MorningBriefing`, `WhatNowAdvisor`, `SelfDiagnosticsRepository`,
+`DocumentAnalyzer`, `DreamSynthesisWorker`, `GoalReviewWorker`,
+`MemoryConsolidationWorker`, `VisionAnalyzer`, `NuaViewModel`). Two model tiers already
+exist (`CLAUDE_MODEL_CONVERSATION`=Sonnet, `CLAUDE_MODEL_UTILITY`=Haiku,
+`ai/ClaudeModels.kt`), but which one a call uses is hardcoded per call site, not decided
+by any routing policy — exactly the gap `ROADMAP.md`'s own Phase 16 already names
+("Cost-aware model routing... formalized into explicit routing rules instead of
+hardcoded per-call-site choices"). More importantly: `NuaIntentRouter.route()` already
+*informally* implements the directive's exact `LOCAL_RULES -> CLOUD` chain today —
+`KeywordIntentMatcher.match()` (free, on-device, zero network) is tried first, and only
+a miss reaches `IntentClassifier.classify()` (a paid Claude call). This is real,
+already-shipped local-tier behavior — Feature 2's job this round is to formalize it as a
+reusable routing model, not invent a fabricated on-device model where none exists.
+
+### Implementation
+- `ai/mesh/TaskContract.kt` — `InferenceTaskType` (11 members, named per the directive;
+  only `INTENT_CLASSIFICATION` has a real multi-tier path this round), `PrivacySensitivity`,
+  `TaskContract` (task, sensitivity, `requiresOffline`, `requiresFrontierCapability` —
+  the last formalizing the existing Sonnet-vs-Haiku choice every call site already makes
+  explicitly today).
+- `ai/mesh/ModelProviderTier.kt` — the five-tier enum plus the pure
+  `fallbackOrder(contract, availableTiers)`: deterministic, fully unit-testable, the
+  actual "model fallback is deterministic and tested" DoD item.
+- `ai/mesh/ModelAvailabilityDetector.kt` — interface + `RealModelAvailabilityDetector`.
+  `LOCAL_RULES` is only ever reported available for `INTENT_CLASSIFICATION` — the one
+  task with a real deterministic local resolver (`KeywordIntentMatcher`); claiming it for
+  any other task would be fabricating a capability. `LOCAL_MODEL`/`PRIVATE_OS_MODEL`
+  always report unavailable — no on-device model ships with this app, stated honestly
+  rather than faked. Cloud tiers require both connectivity and a configured API key, the
+  same two checks `ClaudeApiClient`/`NuaViewModel` already make independently.
+- `ai/mesh/ModelMesh.kt` — `complete(contract, ...)` (provider-neutral single-turn
+  completion, resolving to `CloudCompletionProvider` on whichever cloud tier the contract
+  allows; returns an honest `ClaudeResult.Failure` — never attempts a network call — when
+  no tier is available) and `classifyIntent(utterance, classifyViaCloud)` (tries
+  `KeywordIntentMatcher` first, falls through to the caller-supplied cloud classifier only
+  on a local miss). `CloudCompletionProvider` wraps `ClaudeApiClient.complete` behind an
+  interface purely for JVM-testability — the same reason `LineageRecorder`/`ActionAdapter`
+  are interfaces rather than concrete classes.
+- `ai/IntentClassifier.kt` — migrated: now depends on `ModelMesh` instead of
+  `ClaudeApiClient` directly. Same prompt, same token budget, same model
+  (`requiresFrontierCapability` defaults false, so the Mesh resolves to
+  `CLOUD_FAST`/`CLAUDE_MODEL_UTILITY`, identical to what this call site always used) —
+  the one concrete "existing Claude call migrated behind a provider-neutral interface"
+  this round. `IntentClassifier`'s own prompt-building/JSON-parsing logic is completely
+  unchanged, proving "provider replacement requires no domain-layer rewrite." One real
+  behavior change: the Mesh checks connectivity/API-key *before* attempting the network
+  call (matching `NuaViewModel.replyConversationally`'s existing offline-check
+  convention), instead of always attempting and catching the resulting exception —
+  `classify()`'s only caller (`NuaIntentRouter.route()`) already treats a null result
+  identically regardless of cause, so this is a genuine no-regression improvement, not
+  just a refactor.
+- `ai/mesh/ModelMeshModule.kt` — Hilt bindings for both new interfaces.
+
+### The bug this round's own hand-trace found and fixed before pushing
+Writing `classifyIntent`'s test surfaced a real defect in the first draft: because
+`fallbackOrder` can name *both* `CLOUD_FAST` and `CLOUD_FRONTIER` as available, and
+`classifyIntent`'s single opaque `classifyViaCloud` lambda doesn't distinguish between
+them (intent classification only ever needs the cheap tier), a null cloud result (e.g. an
+unparseable reply) would have silently triggered a second, identical network call under
+the nominal `CLOUD_FRONTIER` tier — a real duplicate-side-effect defect, exactly the
+class of bug the Guardian Lab round's own adversarial tests exist to catch. Fixed with a
+one-shot guard (`cloudAttempted`) before this was ever pushed, with a dedicated test
+(`classifyIntent invokes the cloud path at most once...`) asserting it directly.
+
+### Explicitly not attempted this round
+`NuaIntentRouter` itself is **not** migrated to call `ModelMesh.classifyIntent` — it
+keeps its own, separately-tested (if implicitly, via `KeywordIntentMatcherTest`)
+keyword-then-classify sequence unchanged. It's the single most load-bearing, most
+security-audited dispatch path in the app (the subject of both
+`injection_boundary_audit.py` and this round's own `uaf_boundary_audit.py`-adjacent
+scrutiny); retrofitting it deserves its own dedicated, carefully-tested pass, not a
+bundle inside an infrastructure-building round. `classifyIntent` is real, tested,
+demonstrated infrastructure — not yet wired to a live caller, the same
+writer-then-reader-proven-separately precedent `WorldModelRepository` (P1.9) and this
+session's own Universal Action Fabric slice both already established. Every other Claude
+call site (`FactExtractor`, `TaskPlanner`, `MorningBriefing`, `WhatNowAdvisor`,
+`SelfDiagnosticsRepository`, `DocumentAnalyzer`, `DreamSynthesisWorker`,
+`GoalReviewWorker`, `MemoryConsolidationWorker`, `VisionAnalyzer`,
+`PersonalityEngine`/`NuaViewModel`'s main chat) is **not** migrated — each is a real,
+separately-scoped next slice. No on-device or OS-provided local model exists or is
+built this round — `LOCAL_MODEL`/`PRIVATE_OS_MODEL` remain honestly unavailable for
+every task; building one is a materially larger undertaking explicitly out of scope for
+one infrastructure slice, and this project's own "no fake local/private" discipline
+forbids claiming otherwise. `TaskContract.privacySensitivity` is declared and carried
+through but not yet enforced by any routing decision — informs, doesn't yet gate,
+matching the field's own doc comment.
+
+### Verification
+`ModelProviderTierTest` (8 cases: full priority order with everything available,
+availability filtering, `requiresOffline` excluding cloud tiers even when nominally
+available, `requiresOffline` with no on-device tier producing an empty order rather than
+falling back to network, `requiresFrontierCapability` skipping `CLOUD_FAST`, a utility
+task ordering `CLOUD_FAST` before `CLOUD_FRONTIER`, no tiers available never crashing,
+determinism). `ModelMeshTest` (8 cases against real `ModelMesh` with fakes: correct model
+per contract, no network attempt when nothing's available — both the general and the
+`requiresOffline`-specific case, `classifyIntent` resolving locally without ever touching
+the cloud path, falling through correctly on a local miss, the duplicate-cloud-call fix
+verified directly, a fully-unavailable request returning null without crashing).
+Forward-reference, injection-boundary, and UAF-boundary audits all clean.
+
+### The bug CI caught (test-authoring defect, not a production defect)
+CI failed on the first push (`9f34990`): `ModelMeshTest.kt`'s `classifyIntent resolves
+locally without ever invoking the cloud path when a keyword rule matches` asserted
+`OPEN_APP`/zero cloud calls for `"open spotify"`, but got neither. Root cause: the test's
+own `FakeAvailabilityDetector` was constructed with only
+`setOf(CLOUD_FAST, CLOUD_FRONTIER)` — never `LOCAL_RULES` — so inside `classifyIntent`,
+`availabilityDetector.isAvailable(LOCAL_RULES, INTENT_CLASSIFICATION)` returned `false`
+even though the real `RealModelAvailabilityDetector` correctly reports `LOCAL_RULES`
+available for that exact task. `fallbackOrder` therefore never offered `LOCAL_RULES` as a
+tier to try, so the test fell straight through to the cloud lambda (which the test itself
+had rigged to return `null`) — the local-keyword-resolution path the test's own name and
+docstring claim to exercise was silently never reached. `ModelMesh`, `IntentClassifier`,
+and `RealModelAvailabilityDetector` themselves were correct throughout; this was a
+test-file bug, not a production one. Fixed by adding `ModelProviderTier.LOCAL_RULES` to
+the `available` set in all three `classifyIntent`-exercising tests (the failing one, plus
+the "falls through to cloud on a local miss" and "cloud invoked at most once" tests, so
+each genuinely exercises "local tier available" the way its name claims rather than
+accidentally passing/failing for the wrong reason). Verified by hand-trace against
+`fallbackOrder`/`classifyIntent`'s actual logic before repushing — matches this round's
+own "hand-trace before pushing" discipline, the same one the duplicate-cloud-call defect
+above was caught by. Disclosed here rather than folded silently into the commit, the same
+as the Universal Action Fabric round's `ASK_USER` bug.
+
+### Commit
+`9f34990` (initial push, CI red — `ModelMeshTest` test-authoring bug above), fixed by
+`c0cbfe0` on `claude/new-session-efg0ha`. Confirmed CI-green at `c0cbfe0` job-level (all
+16 steps, run 36426368031): forward-reference, injection-boundary, and UAF-boundary audits
+all pass, `Run unit tests`/`Verify tests actually ran` both green, debug and release
+(R8-minified) APKs both build.
+
+### Status
+DONE. Feature 2 (Sovereign Model Mesh) has a real, tested, deterministic routing core and
+one genuinely migrated call site (`IntentClassifier`) — not yet the full-surface
+migration, a local/OS model, or `NuaIntentRouter` itself; each is a named next slice.
+
+## September 28 — Phase B closed early; moving to Phase C per direct instruction
+
+Once Feature 2 (Sovereign Model Mesh) above is CI-green, the user instructed "Move to
+Phase C" — an explicit, direct instruction to skip the two remaining Phase B items rather
+than build them now:
+- **Feature 3, Temporal World Model 2.0 + CommitmentGraph** (task #17) — not started, not
+  attempted this round. Deliberately deferred, not dropped.
+- **Feature 4, Counterfactual Decision Simulator** (task #18) — not started, not attempted
+  this round. Deliberately deferred, not dropped; the directive itself notes this feature
+  benefits from Feature 3 existing first, so building it out of order later would need its
+  own investigation pass regardless.
+
+Recorded here so the final report (task #23), if and when it's produced, states plainly
+that these two were skipped on direct user instruction — not silently left out, not
+forgotten, not claimed complete.
+
+## September 28 — Contextual Autonomy Contracts + Shadow Mode (Feature 5), Phase C
+
+First Autonomy-moat item of the 5-Year Standalone Master Directive.
+
+### Investigation
+Read the existing "Earned Autonomy" system end to end before designing anything new:
+`memory/MemoryStore.kt`'s `AutonomyPreferenceEntity` (one row per `NuaActionType`,
+`autoApproveEnabled` + `expiresAt`), `trust/AutonomyGrant.kt`'s pure
+`isGrantActive`/`AUTONOMY_GRANT_DURATION_MILLIS` (30 days, fixed), and
+`trust/TrustRepository.kt`'s `isAutoApproved`/`setAutoApprove`/`revokeAutoApproveIfGranted`
+(a single failure zero-tolerance-revokes the grant). Its one runtime enforcement point is
+`ui/PendingAction.kt`'s `pendingEffectFor` + `ui/NuaViewModel.kt`'s `applyPendingEffect` —
+already centralized, already fails closed, already the exact place an architecture review
+fixed a real auto-approve-bypasses-step-up defect (see `pendingEffectFor`'s own doc
+comment). The grant is scoped by `actionType` alone — no recipient, frequency, or risk
+dimension exists — confirming the directive's own framing: this is real, working, but
+unscoped autonomy, and Feature 5's job is to add real scoping on top of it, not replace
+its enforcement point.
+
+### Implementation
+- `trust/AutonomyContract.kt` — `ContractDecision` (`NoContract`/`Permit`/`Deny(reason)`),
+  pure `evaluateContract(contract, actionType, recipient, now, recentCommittedCountInWindow)`
+  (fails closed on every dimension: suspended, expired, wrong recipient, risk ceiling
+  exceeded by the action type's own fixed tier, frequency cap reached), and pure
+  `contractShouldSuspend(recentOutcomes, lookback=3, failureThreshold=2)` — drift
+  detection, deliberately less trigger-happy than the legacy grant's zero-tolerance
+  revoke-on-any-failure (a real design difference, not an oversight).
+- `memory/MemoryStore.kt` — `AutonomyContractEntity` (additive; recipient/riskCeiling/
+  maxPerWindow+windowMillis/expiresAt/shadowMode/active, one per actionType, same
+  granularity the legacy grant already uses) + `AutonomyContractDao`;
+  `ShadowPredictionEntity` (contractId/actionType/recipient/predictedPermit/reason/
+  actualOutcome, correlated to its proposal by id, not a time-window guess) +
+  `ShadowPredictionDao`. Two new `ActionOutcomeDao` queries (`recentByActionType` for the
+  frequency-cap count, `mostRecentByActionType` for drift detection's ordered lookback).
+  DB version 18→19.
+- `trust/TrustRepository.kt` — `createContract`/`revokeContract`/`allContracts`;
+  `contractDecisionFor(actionType, recipient, now)` — the single decision point a
+  contract contributes, always computed, fail-closed, wired alongside (not replacing)
+  `isAutoApproved`; `recordShadowPrediction`/`resolveShadowPrediction`/
+  `recentResolvedShadowPredictions`; `suspendContractIfDrifting`, hooked into
+  `recordOutcome`'s existing failure branch right next to `revokeAutoApproveIfGranted`.
+- `ui/PendingAction.kt` — pure `recipientFor(proposal)`: phone number for Sms, the source
+  notification's title for Reply, null for Plan (no single-recipient concept applies).
+- `ui/NuaViewModel.kt` — `NuaUiState.pendingShadowPredictionId` (new, nullable);
+  `applyPendingEffect` now computes both the legacy grant's vote and a live contract's
+  vote and ORs them (either alone is enough to auto-approve — "extend, don't replace"
+  during migration), while a shadow-mode contract's vote never contributes to
+  auto-approval no matter what it decides — it only records a prediction via
+  `recordShadowPrediction`, returning an id stored on `NuaUiState`. Every
+  `confirmPending*`/`dismissPending*` method now captures that id before clearing
+  pending state and resolves it (`approved = true`/`false`) against what the user
+  actually did — exact id correlation, not a time-window guess.
+  `pendingEffectFor` itself is completely unchanged: the security property
+  `PendingActionTest.kt` already enforces (auto-approval only skips the tap, never the
+  pending field a gated confirm depends on) is preserved by construction, not by new code
+  — contracts only ever feed the same `autoApproved` boolean the legacy grant already fed.
+
+### Explicitly not attempted this round
+Four of the directive's named contract dimensions are not implemented: **place/location**
+(no location subsystem feeds this decision point today), **data-category** (no such
+taxonomy exists in this codebase), **confidence-threshold** (`SmsProposed`/
+`ReplyProposed`/`PlanProposed` don't carry a confidence score through to
+`applyPendingEffect`; only `ClassifiedIntent` — upstream, at classification time — does),
+and **adapter-scope** (that's the Universal Action Fabric's `CapabilityDescriptor`
+concept, a genuinely separate dispatch path from the legacy `sendMessage`/
+`pendingEffectFor` flow this contract governs — Feature 1 and Feature 5 are not merged
+this round). Shadow Mode's feedback channel is accept/reject only — no "edit" outcome,
+because the UI has no edit-then-send flow for a pending proposal to observe in the first
+place. One active contract per actionType, matching the legacy grant's own granularity —
+several simultaneous per-recipient contracts for one action type is a named future
+extension. No Settings UI exists yet to create/view/revoke a contract or review shadow
+prediction accuracy by hand — `createContract`/`allContracts`/
+`recentResolvedShadowPredictions` are real, tested-by-construction infrastructure not yet
+surfaced to a screen, the same writer-then-reader-proven-separately precedent this
+session's Flight Recorder and Universal Action Fabric slices already established.
+
+### Verification
+`AutonomyContractTest` (14 cases): an unrestricted contract permits anything; suspended
+and expired contracts both deny (including the exact expiry-boundary instant, exclusive,
+matching the legacy grant's own `isGrantActive` boundary convention); a scoped contract
+denies a mismatched recipient and permits an exact match; a risk ceiling below the action
+type's fixed tier voids the contract, at or above permits it; a frequency cap at/above the
+recent count denies, under it permits; drift detection needs at least 3 recorded
+outcomes, trips at 2-of-3 failures, doesn't trip at 1-of-3, and never counts a failure
+outside its lookback window. `PendingActionTest` (+3 cases): `recipientFor` extracts the
+right identifier per proposal type. Forward-reference, injection-boundary, and
+UAF-boundary audits all clean. `TrustRepository`/`NuaViewModel` wiring itself is not
+directly unit tested — `TrustRepository` has never had direct JVM tests in this codebase
+(it constructs `SharedPreferences` from a real `Context`, and this project has no
+Robolectric — see `TrustUiControllerTest.kt`'s own doc comment on exactly this wall) —
+consistent with this session's established "pure core tested, impure wrapper hand-traced"
+precedent (`ModelMesh`'s `CloudCompletionProvider`, `LineageRecorder`, `ActionAdapter`).
+Hand-traced line by line before pushing: both auto-approval votes, the shadow-mode
+never-auto-approves guarantee, the exact-id prediction/resolution correlation, and that
+`pendingEffectFor`'s existing security property is untouched.
+
+### Commit
+`904a158` on `claude/new-session-efg0ha`. Confirmed CI-green job-level on the first push
+(all 16 steps, run 36428333124): forward-reference, injection-boundary, and
+UAF-boundary audits all pass, `Run unit tests`/`Verify tests actually ran` both green,
+debug and release (R8-minified) APKs both build.
+
+### Status
+DONE. Feature 5 (Contextual Autonomy Contracts + Shadow Mode) has a real, tested,
+deterministic decision core (recipient/risk-ceiling/frequency-cap scoping, drift-based
+auto-suspend, shadow-mode predict-without-acting) wired into the same centralized,
+fail-closed enforcement point the legacy grant already used — not yet a full dimension
+set, a creation/review UI, or merged with the Universal Action Fabric; each is a named
+next slice.
+
+## September 28 (continued) — NUA Recipes (Feature 6), Phase C
+
+Second Autonomy-moat item of the 5-Year Standalone Master Directive.
+
+### Investigation
+Read the Universal Action Fabric (Feature 1, this session's earlier Phase A work) end to
+end before designing anything: `automation/uaf/ActionPlan.kt`'s `PlanStep`/`ActionPlan`
+is already exactly the "typed IR" the directive asks a recipe compiler to produce —
+action, parameters, dependency graph, failure policy, authorization proof.
+`automation/uaf/CapabilityRegistry.kt` is already "resolve against the real registry" —
+generated from the same closed skill map the live router dispatches through, so an
+unregistered action simply has no descriptor. `automation/uaf/WorkflowExecutor.kt` is
+already the "deterministic runtime" — topological execution, one enforcement point
+(`isAuthorizationSufficient`) no adapter can bypass, full lineage recording to the Flight
+Recorder (Feature 9). Confirmed by grep that **nothing in production code calls
+`WorkflowExecutor.run` yet** — it exists, is tested (`WorkflowExecutorTest`), and has
+never had a real caller. This reframed the whole feature: NUA Recipes isn't a new
+automation engine, it's a natural-language compiler that targets the engine already
+built, and its first real production integration.
+
+### Implementation
+- `recipes/RecipeCompiler.kt` — pure `splitIntoClauses` (deterministic tokenization on
+  commas/semicolons/"and"/"then") and `compileRecipe(description, descriptorFor)`:
+  resolves each clause through the exact same `KeywordIntentMatcher` the live router's
+  local-rules tier already uses (real, tested, zero-network) rather than an LLM round
+  trip. A clause it can't resolve — or that resolves to an action with no registered
+  capability — is reported in `CompiledRecipe.unresolvedClauses` verbatim, never dropped
+  or guessed at. Pure `failurePolicyFor(descriptor)`: `ASK_USER` when the capability
+  requires confirmation, `SKIP` otherwise — a step needing a human is never quietly
+  skipped, and one step failing never silently blocks the rest of an otherwise-
+  independent recipe. No `AuthorizationProof` is ever assigned at compile time.
+- `recipes/RecipeSimulator.kt` — pure `simulateRecipe`: a zero-side-effect preview
+  (`WOULD_EXECUTE`/`WOULD_AWAIT_USER`/`UNRESOLVED` per step) that never touches
+  `WorkflowExecutor` or any `ActionAdapter` — there is no code path in it that can
+  perform a real side effect. Takes the caller's already-computed autonomy-grant answer
+  as a plain function rather than querying `TrustRepository` itself, keeping it free of
+  any database access.
+- `recipes/RecipeStepData.kt` — the persisted, flattened form of a `PlanStep`
+  (`toData()`/`toPlanStep()`). Deliberately not `PlanStep` itself: it carries an
+  `AuthorizationProof`, and a recipe must never persist authorization — restoring always
+  yields a fresh `AuthorizationProof.NotRequired`, resolved for real at every run. An
+  `actionName`/`failurePolicyName` that names no real enum constant returns null, never a
+  guess.
+- `memory/MemoryStore.kt` — `RecipeEntity` (name/description/stepsJson/
+  unresolvedClauseCount, additive) + `RecipeDao`; `RecipeRunEntity` (recipeId/startedAt/
+  completedAt/succeededSteps/failedSteps/awaitingUserSteps, additive) + `RecipeRunDao` —
+  the recipe-level health rollup on top of the Flight Recorder's own per-step lineage,
+  not a second copy of the same detail. DB version 19→20.
+- `recipes/RecipeRepository.kt` — `createRecipe` (compiles + persists, including
+  unresolved clauses); `simulate` (loads, resolves each distinct action's real
+  autonomy-grant answer once, calls `simulateRecipe`); `runRecipe` — the feature's core:
+  resolves each step's `AuthorizationProof` fresh from the real autonomy state (the exact
+  same legacy-grant-OR-live-contract rule `ui/NuaViewModel.kt`'s `applyPendingEffect`
+  already uses for the manual chat path — a recipe never gets a looser standard than a
+  live request), builds an `ActionPlan`, and hands it to the real `WorkflowExecutor` —
+  the fabric's own `isAuthorizationSufficient` check is what actually refuses an
+  unauthorized step, not a second copy of that rule here. Records a `RecipeRunEntity`
+  from the resulting `PlanRunState`.
+
+### Explicitly not attempted this round
+**Parsing is deterministic/keyword-only, not LLM-assisted** — a recipe can only compile
+clauses `KeywordIntentMatcher` already resolves (open/launch, media control, weather,
+notifications, email status, morning briefing); anything else is reported unresolved
+rather than guessed at by a model. LLM-assisted parsing for clauses a keyword split
+misses is a named next slice, the same "local rules first, cloud fallback" shape
+`ai/mesh/ModelMesh.kt`'s `classifyIntent` already formalizes for the main router. **No
+triggers/scheduling** — a recipe runs only when `runRecipe` is called directly; time-based
+or event-based firing (the directive's implied "every morning" framing) would need a
+WorkManager/AlarmManager integration not attempted this round. **No user-review or
+creation UI** — `createRecipe`/`simulate`/`runRecipe` are real, tested-by-construction
+infrastructure, not yet surfaced to a screen, the same writer-then-reader-proven-
+separately precedent this session's Flight Recorder, Universal Action Fabric, and
+Contextual Autonomy Contracts slices already established. **Steps are independent, not a
+dependency graph** — every compiled step has an empty `dependsOn`; ordering dependencies
+between recipe steps (e.g. "wait for X before Y") is real `PlanStep` capability already
+present in the fabric, just not exercised by this compiler yet.
+
+### Verification
+`RecipeCompilerTest` (10 cases): clause splitting (commas/semicolons/and/then, stray
+separators, single-clause input); a resolvable clause with no confirmation compiles to
+`SKIP`; `failurePolicyFor` assigns `ASK_USER` for confirmation-required capabilities
+(exercised directly, since `KeywordIntentMatcher` happens not to resolve any
+confirmation-required action today — noted honestly in the test itself, not hidden); an
+unresolvable clause is reported verbatim; a keyword-matched clause with no registered
+capability is reported unresolved, never fabricated; a mixed recipe resolves what it can
+and reports the rest in original order; step ids reflect original clause position so
+gaps from unresolved clauses stay visible; no authorization is ever assigned at compile
+time. `RecipeSimulatorTest` (6 cases): every `SimulatedStepStatus` branch, unresolved
+clauses passing through unchanged, purity. `RecipeStepDataTest` (5 cases): round-trip
+fidelity, authorization never carried over, null (never a guess) for an unrecognized
+action or failure policy name, empty-parameters round-trip. Forward-reference,
+injection-boundary, and UAF-boundary audits all clean — confirms `RecipeRepository`
+reaches `WorkflowExecutor.run` only, never `ActionAdapter.execute` directly.
+`RecipeRepository` itself is not directly unit tested — it depends on `TrustRepository`,
+which has never had direct JVM tests in this codebase (real `Context`/`SharedPreferences`,
+no Robolectric) — consistent with this session's established "pure core tested, impure
+wrapper hand-traced" precedent. Hand-traced line by line before pushing, including the
+`simulateRecipe`/suspend-boundary fix (a suspend autonomy check can't be passed directly
+into a plain, non-inline pure function's callback parameter — resolved into a plain set
+up front instead) caught during that trace, before ever running a build.
+
+### Commit
+`9f3aeda` on `claude/new-session-efg0ha`. Confirmed CI-green job-level on the first push
+(all 16 steps, run 36430388594): forward-reference, injection-boundary, and
+UAF-boundary audits all pass, `Run unit tests`/`Verify tests actually ran` both green,
+debug and release (R8-minified) APKs both build.
+
+### Status
+DONE. Feature 6 (NUA Recipes) has a real, deterministic, fully-tested compiler
+(parse → typed IR → registry resolution → zero-side-effect simulation) that targets the
+Universal Action Fabric's actual runtime rather than a new one — its first genuine
+production caller. Not yet LLM-assisted parsing, scheduling/triggers, step dependencies,
+or a review/creation UI; each is a named next slice.
+
+## September 28 (continued) — Presence Mesh (Feature 8) investigated, deliberately not
+## built this round
+
+Phase D's first item, per the standing 5-Year Standalone Master Directive's "finish
+everything" instruction (Phase C — Features 5 and 6 — is now done; this is the natural
+next item in phase order).
+
+### Investigation
+Before writing any code, investigated what this app already has to build "multi-device
+continuity" on — a full subagent pass across the repo, not an assumption. The findings
+were categorical, not partial:
+- The `:wear` module (`settings.gradle.kts`) is real and compiles, but is a static Tile
+  (`wear/src/main/java/com/nua/assistant/wear/NuaTileService.kt`) with no dynamic data —
+  its own code comment and `README.md`'s "Known gaps" section both already say plainly:
+  no Wearable Data Layer API (`DataClient`/`MessageClient`) is wired up, and it has never
+  been verified against a real Wear OS device or emulator. It's also marked
+  `android:standalone="true"` in its manifest — it installs independently, not as a true
+  phone companion.
+- Zero device-identity concept exists anywhere (`deviceId`, install UUID, `ANDROID_ID` —
+  grepped, no matches).
+- Zero cross-device transport of any kind exists — no Bluetooth, WebSocket, Firebase, or
+  Nearby Connections usage anywhere in `app/` or `wear/`. The repo's `backend/`/
+  `frontend/` directories are a separate, unrelated Emergent-platform build that
+  `README.md` itself states shares no code or docs with the Android app — not a backend
+  this app can route through.
+- Zero presence/last-active/handoff concept exists in Room (`memory/MemoryStore.kt`'s 20
+  entities) or any repository.
+- `state/NuaStateRepository.kt`/`NuaState.kt` (the Command Centre's model, `#8` from the
+  earlier phase) is a well-shaped, real, single-device state aggregator — but "single
+  device" is load-bearing in its own design; nothing about "which device" exists in it.
+- `ROADMAP.md` already names this exact gap as future work ("Multi-device presence
+  (`#28`)... building on the already-merged Wear and Auto surfaces") — filed, not started.
+
+### Decision: not attempted this round, and why that's the right call here (not just a
+### time-box)
+Every prerequisite for a real "presence mesh" — device identity, a transport, a way to
+verify two devices actually see each other — is completely absent, and this session has
+no way to add the one piece that would make it verifiable: there is no real Wear OS
+device or emulator pairing available in this environment (the `:wear` module's own
+existing, pre-session disclosure already says as much for its Tile alone). Building a
+local-only device-identity primitive and calling it "Presence Mesh" was considered and
+rejected: unlike Sovereign Model Mesh (which shipped a real, complete, *working* routing
+core even though only one tier had a real implementation — every migrated call site
+genuinely worked end to end) or NUA Recipes (whose compiler is real and complete even
+without a scheduling UI), presence's entire value proposition *is* the cross-device part
+— a lone device ID with no second device to compare against isn't a smaller honest
+version of multi-device continuity, it's a different, much less meaningful feature
+wearing its name. Shipping it under "Presence Mesh" would be exactly the
+"claim shipped-on-scaffolding" failure mode this directive's own engineering rules name
+explicitly, and there is no way to verify the one piece (a real transport) that would
+make it not that.
+
+### What a real first slice would need (named for whoever picks this up next)
+A genuine smallest-honest-slice would need, in order: (1) a decision on transport — the
+Wearable Data Layer API (`com.google.android.gms.play-services-wearable`) is the standard
+choice given the existing `:wear` module, but that's a new Play Services dependency in
+both `app/build.gradle.kts` and `wear/build.gradle.kts`, not a refactor of existing code;
+(2) a real paired Wear OS device or emulator to verify against, since `DataClient`/
+`MessageClient` behavior cannot be meaningfully unit-tested — the pure logic around it
+(message schemas, presence merge rules) can be, the transport itself can't; (3) only then
+does a device-identity primitive and a presence data model become worth building, because
+only then would they have something real to connect to. None of the three exist yet.
+
+### Status
+NOT ATTEMPTED. Investigated thoroughly; the gap is real, total, and — in this
+environment specifically — unverifiable, not merely large. Recorded here so the final
+report states this plainly rather than silently omitting Feature 8.
+
+## September 28 (continued) — Runtime Safety Sentinel + extended Guardian Lab coverage
+## (Feature 10 part 2), Phase D
+
+Second Presence-moat-phase item — moved to after Presence Mesh was investigated and
+found unbuildable this round, since this item has real substance to build on regardless
+(Features 5 and 6, both just shipped, plus the existing Guardian Lab baseline from Phase
+A). Closes two of the twelve adversarial classes the Guardian Lab baseline round
+explicitly deferred: "autonomy-contract-bypass" and "recipe-compiler ambiguity" — both
+were literally untestable before this session's own Features 5/6 existed to test
+against.
+
+### Implementation
+- **A real bug-reduction refactor first, not just new tests.** `applyPendingEffect`
+  (`ui/NuaViewModel.kt`) and `wouldAutoApprove` (`recipes/RecipeRepository.kt`) each
+  independently reimplemented the same "legacy grant OR live non-shadow contract Permit"
+  rule inline — two copies of a security-relevant decision that could silently drift
+  apart under a future edit to only one of them. Extracted to one pure, shared function:
+  `trust/AutonomyContract.kt`'s `finalAutoApproveDecision(legacyGrantActive, contract,
+  decision)`. Both call sites now delegate to it instead of recomputing it themselves —
+  6 new unit tests pin the rule directly (legacy alone is enough, contract Permit alone
+  is enough, neither is denied, shadow mode never contributes even with a genuine
+  `Permit`, shadow mode never *overrides* an active legacy grant either, a `Deny`
+  contributes nothing).
+- `security/guardian/RuntimeSafetySentinel.kt` — Guardian Lab's first production (not
+  test-only) component. Pure `auditContracts(contracts, now)`: flags a contract that's
+  expired but still marked active (a stale row — should already have been caught by
+  drift-suspend, this is a defense-in-depth diagnostic, not a new enforcement path), a
+  risk ceiling below its action's own fixed tier (permanently void, silently, forever), a
+  zero/negative frequency cap (same), and an orphaned `actionType` naming no real
+  `NuaActionType`. Pure `auditRecipeSteps(steps, descriptorFor)`: flags a step whose
+  capability is no longer registered (a recipe that compiled successfully once but has
+  since gone stale). Explicitly **not** a second enforcement mechanism — every anomaly it
+  finds is already independently fail-closed by `evaluateContract`; it only surfaces rows
+  worth a human's attention. 11 new tests, every branch of both functions.
+- `security/guardian/AutonomyContractAdversarialTest.kt` (4 cases) — end-to-end through a
+  real `WorkflowExecutor`: a shadow-mode contract's genuine `Permit` decision can never
+  cause a real adapter to run; an expired-but-still-active contract (the exact Sentinel
+  anomaly above) can never authorize execution; a recipient-scoped contract can never
+  authorize a different recipient; and a control case proving a live, correctly-scoped,
+  non-shadow contract *does* authorize normally — so the other three fail for the
+  specific reason claimed, not because this path is broken outright.
+- `security/guardian/RecipeAdversarialTest.kt` (3 cases) — the directive's own explicit
+  requirement for Feature 6 ("recipe execution must never bypass UAF/security gates"),
+  proven directly: a compiled step requiring confirmation pauses (`AWAITING_USER`)
+  through the real fabric rather than executing or silently failing when no live
+  authorization exists; `compileRecipe` never produces a pre-authorized step for any
+  input, including descriptions adversarially shaped to look like they assert
+  authorization ("confirmed: open spotify", "authorized"); and a battery of malformed/
+  adversarial descriptions (empty, all-separators, repeated separators) never crashes the
+  compiler or produces a step tracing back to anything but a real `NuaActionType`.
+
+### Explicitly not attempted this round
+Ten of the Guardian Lab baseline's originally-named twelve deferred adversarial classes
+remain deferred: multilingual/code-switching and adversarial Unicode (would need a
+dedicated pass against `KeywordIntentMatcher`/`IntentClassifier`, not attempted here);
+Presence Mesh revocation (the feature itself doesn't exist — see this session's own
+Presence Mesh investigation entry above); context corruption; a trended results
+dashboard; and others not concretely testable without features this session didn't
+build. `RuntimeSafetySentinel` is diagnostic-only — nothing calls `auditContracts`/
+`auditRecipeSteps` from a live repository or UI yet; that wiring (e.g. a Settings
+"health check" surface, or a periodic background pass) is a named next slice, the same
+writer-then-reader-proven-separately precedent used throughout this session.
+
+### Verification
+21 new tests total (6 `finalAutoApproveDecision` cases in `AutonomyContractTest`, 11
+`RuntimeSafetySentinelTest` cases, 4 `AutonomyContractAdversarialTest` cases, 3
+`RecipeAdversarialTest` cases — the last two suites' 7 cases run against a real
+`WorkflowExecutor`, not fakes standing in for it). Forward-reference, injection-boundary,
+and UAF-boundary audits all clean — confirms the new adversarial tests reach
+`WorkflowExecutor.run` only, the same sanctioned entry point every other caller in this
+codebase uses. Hand-traced every new adversarial case's expected outcome against
+`evaluateContract`/`finalAutoApproveDecision`/`isAuthorizationSufficient`'s actual logic
+line by line before pushing, the same discipline this session has used throughout.
+
+### The bug CI caught (test-file naming collision, not a logic defect)
+CI failed on the first push (`1d6c04f`): `:app:compileReleaseUnitTestKotlin` failed with
+`Redeclaration` errors in `AutonomyContractAdversarialTest.kt` and cascading
+`Cannot access '...it is private in file'`/`Unresolved reference 'lastParameters'` errors
+in the pre-existing `UafAdversarialTest.kt`. Root cause: both new test files declared
+their own top-level `private class RecordingSkill`/`private class NoOpLineageRecorder` —
+copying the exact fixture names `UafAdversarialTest.kt` (same package,
+`security/guardian`) already used. Kotlin's `private` visibility on a top-level
+*function or property* is genuinely file-scoped (compiled as a private static member of
+that file's facade class, so identical names across files never collide — the precedent
+this session relied on when reusing names like `CONTEXT`/`NOW` freely across test files).
+A top-level *class*, even `private`, is not: it still compiles to its own single
+`ClassName.class` in the package, so three files declaring the same class name in the
+same package is a real, direct collision — confirmed by hand-review of the actual
+compiler output once the full (not tail-truncated) job log was fetched. Fixed by
+renaming each new file's fixtures uniquely (`ContractRecordingSkill`/
+`ContractNoOpLineageRecorder` in `AutonomyContractAdversarialTest.kt`,
+`RecipeGuardianRecordingSkill`/`RecipeNoOpLineageRecorder` in `RecipeAdversarialTest.kt`),
+leaving `UafAdversarialTest.kt` untouched. No test logic changed; every case's expected
+outcome had already been hand-traced correctly against the real
+`evaluateContract`/`finalAutoApproveDecision`/`isAuthorizationSufficient` behavior before
+the first push — this was purely a naming problem the compiler caught, not a defect in
+what the tests actually assert.
+
+### Commit
+`1d6c04f` (initial push, CI red — the naming-collision compile error above), fixed by
+`8a8f632` on `claude/new-session-efg0ha`. Confirmed CI-green job-level at `8a8f632`
+(all 16 steps, run 36434471187): forward-reference, injection-boundary, and
+UAF-boundary audits all pass, `Run unit tests`/`Verify tests actually ran` both green,
+debug and release (R8-minified) APKs both build.
+
+### Status
+DONE. Feature 10 part 2 has a real, shared, tested autonomy-decision rule (replacing two
+independently-drifting copies), a new production diagnostic component
+(`RuntimeSafetySentinel`, not yet wired to a live caller), and adversarial proof that
+both Contextual Autonomy Contracts and NUA Recipes cannot bypass the Universal Action
+Fabric's authorization gate under several concrete attack framings. Ten of the original
+sixteen directive-named adversarial classes remain deferred, each requiring a feature or
+subsystem this session either didn't build or explicitly found unbuildable.
+
+## September 28 (continued) — final report published, 5-Year Standalone Master Directive
+## session closed
+
+`FINAL_5_YEAR_STANDALONE_IMPLEMENTATION_REPORT.md` (commit `0c36082`) synthesizes every
+entry above into one top-level account: outcome by phase, what shipped and why each slice
+was scoped the way it was, the two Phase B items skipped on direct user instruction, the
+one feature (Presence Mesh) investigated and found unbuildable in this environment, direct
+answers to the directive's own named security-review questions, the full commit ledger
+with CI status, and a prioritized next-steps list. Confirmed CI-green job-level at
+`0c36082` (all 16 steps, run 36437074630). No feature-level detail lives only in the
+report — every claim in it traces back to a dated entry in this file, written at the time
+that feature actually shipped, not reconstructed afterward. This is the last entry for
+this session's `/goal` scope; task #23 (final report) is closed.
+
+## September 30 — release signing infrastructure
+
+First deployment-readiness step, prompted by the user asking what's left to deploy NUA
+as an app. Investigation found `app/build.gradle.kts`'s `release` build type had no
+`signingConfig` at all — CI's own "release" build has always been deliberately unsigned
+(it exists only to verify R8/minification), and nothing prior to this ever needed a real
+signed build.
+
+Added a conditional signing setup: `app/build.gradle.kts` loads
+`storeFile`/`storePassword`/`keyAlias`/`keyPassword` from a local, gitignored
+`keystore.properties` if present, else from CI-injected Gradle properties
+(`RELEASE_STORE_FILE`/etc., set by `.github/workflows/android-build.yml` from four new
+repository secrets), else neither — a release build with none of these still succeeds
+unsigned, exactly as before. `.github/workflows/android-build.yml` gained a "Decode
+release keystore" step that decodes a base64 keystore secret and writes
+`keystore.properties` before the release build runs, skipped (not failed) when the
+secrets don't exist. A release keystore (`nua-release.keystore`, alias `nua-release`,
+10,000-day validity) was generated and handed directly to the repository owner —
+alongside its passwords and setup instructions — to add as the four repository secrets;
+this session never had and does not retain a copy.
+
+Two real CI-caught defects along the way, both fixed forward and disclosed here rather
+than hidden:
+1. **`secrets` context used directly in a step's `if:`** — the first push after adding
+   the signing step failed at workflow-parse time with zero jobs scheduled (not a job
+   failure; GitHub rejected the whole workflow before running anything, which a
+   push-triggered run's API response didn't surface clearly — a manual
+   `workflow_dispatch` attempt did: `"Unrecognized named-value: 'secrets'"`). GitHub
+   Actions doesn't allow the `secrets` context inside a step's `if:`, only in
+   `env:`/`with:`/`run:`. Fixed by computing the check into an `env:` var
+   (`HAS_RELEASE_SIGNING`) first, which `if:` can read. A heredoc whose closing `EOF` was
+   indented to match the YAML block (invalid — bash requires an unindented terminator
+   for a plain `<<EOF`) was replaced with a plain `{ echo ...; } > file` block in the
+   same fix.
+2. **`java.util.Properties()` referenced inline at script top level didn't resolve** —
+   the next push failed inside `:app:compileReleaseUnitTestKotlin`/normal compilation
+   with `Unresolved reference: util` / `Unresolved reference: load` at the signing
+   block's `java.util.Properties()`/`.load(it)` calls. An inline fully-qualified
+   `java.util.X` reference at a `.gradle.kts` script's top level doesn't reliably resolve
+   in this Gradle Kotlin DSL compilation context. Fixed by switching to the standard,
+   well-established idiom instead — `import java.util.Properties` /
+   `import java.io.FileInputStream` at the top of the file, then a plain `Properties()`
+   — the exact boilerplate used across essentially every real Android project's
+   keystore-based signing config, rather than a bespoke inline version.
+
+### Commit
+`2d5dad6` on `claude/new-session-efg0ha`. Confirmed CI-green job-level (all 17 steps,
+run 36655037460): "Decode release keystore" correctly shows `skipped` (no secrets yet),
+"Build release APK" succeeds unsigned, exactly as designed until the repository owner
+adds the four secrets.
+
+### Status
+Signing infrastructure is real and CI-verified, but the release APK is still unsigned
+in this repository's CI until the repository owner adds the four `RELEASE_*` secrets —
+a step only they can do (this session cannot create repository secrets). Play Store
+submission itself — developer account, privacy policy, Data Safety form, and
+specifically the `SEND_SMS` permission's Play policy requirement that an app be a
+registered default SMS/Assistant handler — is deliberately paused until the user has
+tested a sideloaded build on their own device first, per their own explicit direction.
+
 ## What this history is for
 
 Two failures repeat in the record above, and both became process, not just fixes:

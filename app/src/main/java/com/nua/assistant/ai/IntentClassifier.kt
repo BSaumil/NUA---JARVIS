@@ -1,5 +1,9 @@
 package com.nua.assistant.ai
 
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.voice.NuaLanguage
 import java.text.SimpleDateFormat
@@ -98,7 +102,7 @@ private val CLASSIFIER_DATE_FORMAT = SimpleDateFormat("EEEE, MMMM d, yyyy 'at' h
  */
 @Singleton
 class IntentClassifier @Inject constructor(
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
     private val json: Json,
 ) {
 
@@ -108,10 +112,17 @@ class IntentClassifier @Inject constructor(
      */
     suspend fun classify(utterance: UserUtterance): ClassifiedIntent? {
         val system = "$CLASSIFIER_SYSTEM_PROMPT\n\nCURRENT_TIME: ${CLASSIFIER_DATE_FORMAT.format(Date())}"
-        val result = claudeApiClient.complete(
+        // Routed through the Sovereign Model Mesh (ai/mesh/ModelMesh.kt) instead of
+        // ClaudeApiClient directly -- same model/prompt/tokens as before
+        // (requiresFrontierCapability defaults false, so the Mesh resolves this to
+        // CLOUD_FAST/CLAUDE_MODEL_UTILITY exactly as this call always used), but the
+        // Mesh now owns the online/API-key preflight instead of always attempting the
+        // network call first.
+        val contract = TaskContract(task = InferenceTaskType.INTENT_CLASSIFICATION, privacySensitivity = PrivacySensitivity.MEDIUM)
+        val result = modelMesh.complete(
+            contract = contract,
             userPrompt = utterance.text,
             system = system,
-            model = CLAUDE_MODEL_UTILITY,
             maxTokens = 256,
         )
 

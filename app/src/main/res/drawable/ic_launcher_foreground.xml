@@ -1,11 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Placeholder glyph ("N"); see README "known gaps" — no real launcher icon yet. -->
+<!-- NUA Sovereign "N" mark: two interlocking strokes meeting at an intelligence node.
+     Left stroke (Burgundy): Human / intent / identity / ownership.
+     Diagonal + right stroke, as one continuous bent stroke (Violet): Intelligence /
+     reasoning / memory / execution; it reasons (the diagonal), then executes (the
+     vertical it bends into).
+     The small Warm Ivory circle where they meet, centred exactly on the 108x108 canvas,
+     is the intelligence node.
+     Geometry is kept inside a 42x42 box centred on the canvas (corners ~30dp from
+     centre, comfortably within the ~33dp adaptive-icon safe-zone radius so it isn't
+     clipped by a circular or squircle launcher mask) and to simple rectilinear plus one
+     diagonal shapes so it stays legible at favicon/app-icon scale (16-24px); see
+     docs/BRAND_NUA_SOVEREIGN.md. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Human / identity stroke -->
     <path
-        android:fillColor="#6FE3C9"
-        android:pathData="M34,34 L44,34 L74,74 L74,34 L84,34 L84,84 L74,84 L44,44 L44,84 L34,84 Z" />
+        android:fillColor="#6B1738"
+        android:pathData="M33,33 L43,33 L43,75 L33,75 Z" />
+    <!-- Intelligence stroke: diagonal bending into the right vertical -->
+    <path
+        android:fillColor="#8B5CF6"
+        android:pathData="M43,33 L65,62 L65,33 L75,33 L75,75 L65,75 L43,46 Z" />
+    <!-- Intelligence node, exactly at canvas centre, where the two strokes meet -->
+    <path
+        android:fillColor="#F6F0E5"
+        android:pathData="M54,54 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
 </vector>

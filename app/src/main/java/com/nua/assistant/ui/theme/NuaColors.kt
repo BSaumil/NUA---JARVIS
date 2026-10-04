@@ -5,28 +5,31 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 // ---------------------------------------------------------------------------------------
-// Brand. These three are deliberately NOT equal partners: orange is NUA's identity and
-// carries it everywhere, violet marks intelligence, pink marks an exceptional/active
-// state. Reaching for violet or pink as a general-purpose accent flattens that hierarchy
-// and is the fastest way to make NUA look like every other purple AI app.
+// Brand — NUA Sovereign (docs/BRAND_NUA_SOVEREIGN.md). These three are deliberately NOT
+// equal partners: Burgundy is NUA's identity and carries it everywhere, Violet marks
+// intelligence (listening/thinking/reasoning/processing/acting specifically, not a
+// generic accent), Deep Wine extends the brand gradient for genuinely exceptional/active
+// states. Burgundy and Deep Wine are both *filled-surface* colours — see NuaPalette.kt's
+// own doc comment for the contrast math behind that — never a foreground/text colour
+// directly against NuaObsidian/NuaGraphite.
 // ---------------------------------------------------------------------------------------
 
-/** NUA Orange — identity. Intelligence, energy, human warmth. */
-val NuaOrange = Color(NuaPalette.ORANGE)
+/** NUA Burgundy — identity. Calm, powerful, premium. A filled-surface colour; see NuaPalette.kt. */
+val NuaBurgundy = Color(NuaPalette.BURGUNDY)
 
-/** Neural Violet — intelligence. Accent only. */
+/** Intelligence Violet — reserved for listening/thinking/reasoning/processing/acting. Accent only. */
 val NeuralViolet = Color(NuaPalette.VIOLET)
 
-/** Future Pink — exceptional / active state. Accent only, used most sparingly of the three. */
-val FuturePink = Color(NuaPalette.PINK)
+/** Deep Wine — deep premium surfaces/gradients; the exceptional/active gradient stop. Filled-surface only. */
+val NuaDeepWine = Color(NuaPalette.DEEP_WINE)
 
 // ---------------------------------------------------------------------------------------
 // Dark surfaces. Dark isn't a variant here, it's the design — see NuaTheme's doc comment.
 // ---------------------------------------------------------------------------------------
 
-val NuaBackground = Color(NuaPalette.BACKGROUND)
-val NuaSurface = Color(NuaPalette.SURFACE)
-val NuaSurfaceElevated = Color(NuaPalette.SURFACE_ELEVATED)
+val NuaBackground = Color(NuaPalette.OBSIDIAN)
+val NuaSurface = Color(NuaPalette.GRAPHITE)
+val NuaSurfaceElevated = Color(NuaPalette.GRAPHITE_ELEVATED)
 
 val NuaTextPrimary = Color(NuaPalette.TEXT_PRIMARY)
 val NuaTextSecondary = Color(NuaPalette.TEXT_SECONDARY)
@@ -49,9 +52,9 @@ val NuaBorder = NuaTextPrimary.copy(alpha = 0.08f)
  */
 @Immutable
 data class NuaColors(
-    val brandIdentity: Color = NuaOrange,
+    val brandIdentity: Color = NuaBurgundy,
     val brandIntelligence: Color = NeuralViolet,
-    val brandExceptional: Color = FuturePink,
+    val brandExceptional: Color = NuaDeepWine,
     val background: Color = NuaBackground,
     val surface: Color = NuaSurface,
     val surfaceElevated: Color = NuaSurfaceElevated,

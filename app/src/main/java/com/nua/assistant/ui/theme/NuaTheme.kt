@@ -8,20 +8,26 @@ import androidx.compose.runtime.CompositionLocalProvider
 /**
  * Maps NUA's tokens onto Material3's slots so ordinary Material components (Card, Button,
  * AlertDialog, TopAppBar) inherit the palette without every call site reaching for
- * [LocalNuaColors]. The brand hierarchy is preserved in the mapping: orange is `primary`
- * because it carries NUA's identity, violet is `secondary` (intelligence), pink is
+ * [LocalNuaColors]. The brand hierarchy is preserved in the mapping: Burgundy is `primary`
+ * because it carries NUA's identity, violet is `secondary` (intelligence), Deep Wine is
  * `tertiary` (exceptional/active).
  *
- * `onPrimary`/`onSecondary`/`onTertiary` are the near-black background rather than white:
- * all three brand colours are bright enough that dark text on them is the legible choice.
+ * `onPrimary`/`onTertiary` are light ([NuaTextPrimary], Warm Ivory) rather than dark —
+ * **the opposite of the prior Orange-based mapping**. Burgundy and Deep Wine are both
+ * dark colours (confirmed by `NuaPalette.kt`'s own contrast-ratio doc comment: well under
+ * 1.7 against every dark surface, nowhere near legible as a foreground), so light text is
+ * the only legible choice on a filled surface painted with either. `onSecondary` stays
+ * dark ([NuaBackground]): Violet is bright enough that dark text on it remains the
+ * legible choice, exactly as before. `NuaPaletteTest.kt` asserts this split directly
+ * rather than assuming the three brand colours behave the same way.
  */
 private val NuaDarkColorScheme = darkColorScheme(
-    primary = NuaOrange,
-    onPrimary = NuaBackground,
+    primary = NuaBurgundy,
+    onPrimary = NuaTextPrimary,
     secondary = NeuralViolet,
     onSecondary = NuaBackground,
-    tertiary = FuturePink,
-    onTertiary = NuaBackground,
+    tertiary = NuaDeepWine,
+    onTertiary = NuaTextPrimary,
     background = NuaBackground,
     onBackground = NuaTextPrimary,
     surface = NuaSurface,

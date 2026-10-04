@@ -3,6 +3,7 @@ package com.nua.assistant.di
 import android.content.Context
 import androidx.room.Room
 import com.nua.assistant.memory.ActionOutcomeDao
+import com.nua.assistant.memory.AutonomyContractDao
 import com.nua.assistant.memory.AutonomyPreferenceDao
 import com.nua.assistant.memory.DecisionDao
 import com.nua.assistant.memory.DocumentDao
@@ -14,6 +15,10 @@ import com.nua.assistant.memory.NuaDatabase
 import com.nua.assistant.memory.TrustLedgerDao
 import com.nua.assistant.memory.UsageDao
 import com.nua.assistant.memory.VisionMonitorDao
+import com.nua.assistant.memory.LineageDao
+import com.nua.assistant.memory.RecipeDao
+import com.nua.assistant.memory.RecipeRunDao
+import com.nua.assistant.memory.ShadowPredictionDao
 import com.nua.assistant.memory.WorldRelationshipDao
 import dagger.Module
 import dagger.Provides
@@ -35,8 +40,12 @@ object AppModule {
     @Singleton
     fun provideNuaDatabase(@ApplicationContext context: Context): NuaDatabase =
         Room.databaseBuilder(context, NuaDatabase::class.java, DATABASE_NAME)
-            // No migration path exists yet (pre-release) — destructive is fine until
-            // there's a real installed base to preserve across schema changes.
+            // Versions 1-20 were pre-release dev churn with no exported schema history
+            // and no real installed base to preserve -- destructive is the documented,
+            // intentional policy for that range (docs/DATABASE_MIGRATION_POLICY.md).
+            // The policy changes at 21: once a personal-test build is on a real device
+            // with real data, the next version bump must ship an addMigrations(...) entry
+            // here instead of relying on this fallback.
             .fallbackToDestructiveMigration()
             .build()
 
@@ -75,6 +84,21 @@ object AppModule {
 
     @Provides
     fun provideWorldRelationshipDao(database: NuaDatabase): WorldRelationshipDao = database.worldRelationshipDao()
+
+    @Provides
+    fun provideLineageDao(database: NuaDatabase): LineageDao = database.lineageDao()
+
+    @Provides
+    fun provideAutonomyContractDao(database: NuaDatabase): AutonomyContractDao = database.autonomyContractDao()
+
+    @Provides
+    fun provideShadowPredictionDao(database: NuaDatabase): ShadowPredictionDao = database.shadowPredictionDao()
+
+    @Provides
+    fun provideRecipeDao(database: NuaDatabase): RecipeDao = database.recipeDao()
+
+    @Provides
+    fun provideRecipeRunDao(database: NuaDatabase): RecipeRunDao = database.recipeRunDao()
 
     @Provides
     @Singleton

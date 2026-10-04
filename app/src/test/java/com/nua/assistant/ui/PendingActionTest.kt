@@ -83,4 +83,23 @@ class PendingActionTest {
             assertEquals(pendingEffectFor(proposal, false), pendingEffectFor(proposal, false))
         }
     }
+
+    // -----------------------------------------------------------------------------------
+    // recipientFor -- the Contextual Autonomy Contracts (Feature 5) recipient dimension.
+    // -----------------------------------------------------------------------------------
+
+    @Test
+    fun `recipientFor extracts the phone number for an Sms proposal`() {
+        assertEquals("+15551234567", recipientFor(PendingProposal.Sms(SMS)))
+    }
+
+    @Test
+    fun `recipientFor extracts the notification title for a Reply proposal`() {
+        assertEquals("Alex", recipientFor(PendingProposal.Reply(REPLY)))
+    }
+
+    @Test
+    fun `recipientFor is null for a Plan proposal -- no single recipient concept applies`() {
+        assertNull(recipientFor(PendingProposal.Plan(PLAN)))
+    }
 }

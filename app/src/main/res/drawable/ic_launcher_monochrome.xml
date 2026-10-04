@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 13+ themed/monochrome icon: the same Sovereign N silhouette as
+     ic_launcher_foreground.xml, as a single tone; the OS applies its own tint (e.g.
+     Material You) over this shape, so no brand colour is encoded here. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M33,33 L43,33 L43,75 L33,75 Z M43,33 L65,62 L65,33 L75,33 L75,75 L65,75 L43,46 Z M54,54 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+</vector>

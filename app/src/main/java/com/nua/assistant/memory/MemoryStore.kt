@@ -175,6 +175,17 @@ interface ActionOutcomeDao {
 
     @Query("SELECT * FROM action_outcomes WHERE recipient = :recipient AND actionType = :actionType AND timestamp >= :sinceMillis ORDER BY timestamp DESC")
     suspend fun recentByRecipient(recipient: String, actionType: String, sinceMillis: Long): List<ActionOutcomeEntity>
+
+    /** All outcomes for [actionType] since [sinceMillis], regardless of recipient — the
+     *  Contextual Autonomy Contracts frequency-cap query (trust/AutonomyContract.kt). */
+    @Query("SELECT * FROM action_outcomes WHERE actionType = :actionType AND timestamp >= :sinceMillis ORDER BY timestamp DESC")
+    suspend fun recentByActionType(actionType: String, sinceMillis: Long): List<ActionOutcomeEntity>
+
+    /** The [limit] most recent outcomes for [actionType], newest first, regardless of
+     *  recipient or time — the drift-detection input for
+     *  trust/AutonomyContract.kt's contractShouldSuspend. */
+    @Query("SELECT * FROM action_outcomes WHERE actionType = :actionType ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun mostRecentByActionType(actionType: String, limit: Int): List<ActionOutcomeEntity>
 }
 
 /**
@@ -210,6 +221,160 @@ interface AutonomyPreferenceDao {
 
     @Query("UPDATE autonomy_preferences SET autoApproveEnabled = :enabled WHERE actionType = :actionType")
     suspend fun setAutoApprove(actionType: String, enabled: Boolean)
+}
+
+/**
+ * A context-bounded autonomy grant — Feature 5 (Contextual Autonomy Contracts) of the
+ * 5-Year Standalone Master Directive. Extends, rather than replaces,
+ * [AutonomyPreferenceEntity]'s unscoped 30-day grant: a contract additionally scopes by
+ * recipient, caps frequency, and declares a risk ceiling, and can auto-suspend itself on
+ * a failure spike (see trust/AutonomyContract.kt's contractShouldSuspend). One active
+ * contract per actionType — the same granularity the legacy grant already uses; several
+ * simultaneous per-recipient contracts for one action type is a named future extension,
+ * not attempted this round. See trust/TrustRepository.kt's contractDecisionFor for how
+ * this is evaluated, and trust/AutonomyContract.kt for why each dimension is here.
+ */
+@Entity(tableName = "autonomy_contracts", indices = [Index(value = ["actionType"], unique = true)])
+data class AutonomyContractEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val actionType: String,
+    /** Null = any recipient. Set = this contract only ever permits this exact recipient
+     *  (a phone number for SMS_SEND, a notification title for REPLY_TO_NOTIFICATION). */
+    val recipient: String? = null,
+    /** Null = no explicit ceiling (the action type's own fixed tier always applies, since
+     *  every actionType this contract can govern already has one — see
+     *  trust/AutonomyTier.kt's autonomyTierFor). Set = void the contract the moment the
+     *  action type's fixed tier exceeds it. */
+    val riskCeiling: AutonomyTier? = null,
+    /** Null = no frequency cap. Both this and [windowMillis] must be set together for a
+     *  cap to apply — see trust/AutonomyContract.kt's evaluateContract. */
+    val maxPerWindow: Int? = null,
+    val windowMillis: Long? = null,
+    val expiresAt: Long,
+    /** Predict-but-don't-execute — see trust/TrustRepository.kt's contractDecisionFor and
+     *  recordShadowPrediction. A shadow contract's decision is still fully computed every
+     *  time; it's just never acted on. */
+    val shadowMode: Boolean = false,
+    /** Cleared to false by drift detection (contractShouldSuspend) on a failure spike, or
+     *  by explicit user revocation — never re-activated automatically. */
+    val active: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface AutonomyContractDao {
+    @Query("SELECT * FROM autonomy_contracts WHERE actionType = :actionType LIMIT 1")
+    suspend fun get(actionType: String): AutonomyContractEntity?
+
+    @Query("SELECT * FROM autonomy_contracts")
+    suspend fun getAll(): List<AutonomyContractEntity>
+
+    @Query("SELECT * FROM autonomy_contracts")
+    fun observeAll(): Flow<List<AutonomyContractEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AutonomyContractEntity)
+
+    @Query("UPDATE autonomy_contracts SET active = 0 WHERE actionType = :actionType")
+    suspend fun suspendContract(actionType: String)
+}
+
+/**
+ * One shadow-mode prediction: what a contract would have decided, recorded without ever
+ * acting on it, then resolved against what the user actually did with the same proposal
+ * — the accuracy signal a shadow contract needs before anyone trusts it enough to go
+ * live. Correlated to its proposal by id (see NuaViewModel's pendingShadowPredictionId),
+ * not by a time-window guess.
+ */
+@Entity(tableName = "shadow_predictions")
+data class ShadowPredictionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val contractId: Long,
+    val actionType: String,
+    val recipient: String? = null,
+    val predictedPermit: Boolean,
+    val reason: String,
+    /** Null until confirmPending-/dismissPending- resolves it — "APPROVED" or "REJECTED".
+     *  No "EDITED" outcome exists yet: the UI has no edit-then-send flow for a pending
+     *  proposal to observe, so that feedback channel the directive names is deferred. */
+    val actualOutcome: String? = null,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface ShadowPredictionDao {
+    @Insert
+    suspend fun insert(entity: ShadowPredictionEntity): Long
+
+    @Query("UPDATE shadow_predictions SET actualOutcome = :outcome WHERE id = :id")
+    suspend fun resolve(id: Long, outcome: String)
+
+    @Query("SELECT * FROM shadow_predictions WHERE actualOutcome IS NOT NULL ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recentResolved(limit: Int): List<ShadowPredictionEntity>
+}
+
+/**
+ * NUA Recipes (Feature 6) — a natural-language automation description compiled once into
+ * a typed, inspectable plan and persisted for repeat manual runs. [stepsJson] holds the
+ * compiled steps as a JSON-encoded `List<`[com.nua.assistant.recipes.RecipeStepData]`>`
+ * (see recipes/RecipeStepData.kt for why steps, not `PlanStep`, are what's persisted —
+ * authorization is never carried over between runs). [description] is kept verbatim
+ * alongside the compiled result so re-compiling after a `KeywordIntentMatcher` change (or
+ * a future smarter parser) is always possible without asking the user to retype it.
+ */
+@Entity(tableName = "recipes")
+data class RecipeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val description: String,
+    val stepsJson: String,
+    /** How many clauses of [description] KeywordIntentMatcher couldn't resolve at compile
+     *  time — surfaced so a recipe with gaps is never presented as fully understood. */
+    val unresolvedClauseCount: Int = 0,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface RecipeDao {
+    @Insert
+    suspend fun insert(entity: RecipeEntity): Long
+
+    @Query("SELECT * FROM recipes WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): RecipeEntity?
+
+    @Query("SELECT * FROM recipes ORDER BY createdAt DESC")
+    suspend fun getAll(): List<RecipeEntity>
+
+    @Query("SELECT * FROM recipes ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<RecipeEntity>>
+
+    @Query("DELETE FROM recipes WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
+/** One completed run of a recipe — the audit/health record the directive names, built
+ *  from the [com.nua.assistant.automation.uaf.PlanRunState] WorkflowExecutor.run returns.
+ *  Every step it covers is *also* recorded individually to the Flight Recorder's lineage
+ *  chain (Feature 9) by WorkflowExecutor itself — this is the recipe-level rollup on top
+ *  of that, not a second copy of the same per-step detail. */
+@Entity(tableName = "recipe_runs")
+data class RecipeRunEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val recipeId: Long,
+    val startedAt: Long,
+    val completedAt: Long,
+    val succeededSteps: Int,
+    val failedSteps: Int,
+    val awaitingUserSteps: Int,
+)
+
+@Dao
+interface RecipeRunDao {
+    @Insert
+    suspend fun insert(entity: RecipeRunEntity)
+
+    @Query("SELECT * FROM recipe_runs WHERE recipeId = :recipeId ORDER BY startedAt DESC LIMIT :limit")
+    suspend fun recentForRecipe(recipeId: Long, limit: Int): List<RecipeRunEntity>
 }
 
 /** A durable goal the user has set — see goals/GoalRepository.kt. */
@@ -442,6 +607,44 @@ interface WorldRelationshipDao {
     suspend fun updateConfidence(id: Long, confidence: Float)
 }
 
+/**
+ * One entry in the Flight Recorder's append-only execution lineage — see
+ * `trust/lineage/LineageRecorder.kt`. [hash]/[previousHash] form a single global chain
+ * across every row ever inserted (not scoped per [runId]); altering or deleting any past
+ * row breaks every hash computed after it, detectably — a local, append-only tamper-
+ * evidence mechanism, not hardware-backed immutability (never represented as more than
+ * that; see `trust/lineage/LineageChain.kt`'s own doc comment).
+ */
+@Entity(tableName = "lineage_records")
+data class LineageRecordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val runId: String,
+    val stepId: String,
+    val action: String,
+    val adapterType: String,
+    val authorizationKind: String,
+    val outcomeState: String,
+    val detail: String?,
+    val hash: String,
+    val previousHash: String?,
+    val timestampMillis: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface LineageDao {
+    @Insert
+    suspend fun insert(entity: LineageRecordEntity)
+
+    @Query("SELECT * FROM lineage_records ORDER BY id DESC LIMIT 1")
+    suspend fun mostRecent(): LineageRecordEntity?
+
+    @Query("SELECT * FROM lineage_records WHERE runId = :runId ORDER BY id ASC")
+    suspend fun forRun(runId: String): List<LineageRecordEntity>
+
+    @Query("SELECT * FROM lineage_records ORDER BY id ASC")
+    suspend fun all(): List<LineageRecordEntity>
+}
+
 @Dao
 interface MemoryDao {
 
@@ -548,9 +751,15 @@ interface MemoryDao {
         TrustLedgerEntity::class, ActionOutcomeEntity::class, AutonomyPreferenceEntity::class,
         GoalEntity::class, GoalObservationEntity::class, DreamEntity::class, DecisionEntity::class,
         VisionMonitorEntity::class, DocumentEntity::class, WorldRelationshipEntity::class,
+        LineageRecordEntity::class, AutonomyContractEntity::class, ShadowPredictionEntity::class,
+        RecipeEntity::class, RecipeRunEntity::class,
     ],
-    version = 17,
-    exportSchema = false,
+    version = 20,
+    // Exported to app/schemas/ -- see docs/DATABASE_MIGRATION_POLICY.md. This is the
+    // baseline every future version bump's Migration (and MigrationTestHelper test) is
+    // written and verified against; versions 1-20 themselves were never exported and
+    // have no recoverable schema history, which is exactly why 21 is the line.
+    exportSchema = true,
 )
 abstract class NuaDatabase : RoomDatabase() {
     abstract fun memoryDao(): MemoryDao
@@ -565,4 +774,9 @@ abstract class NuaDatabase : RoomDatabase() {
     abstract fun visionMonitorDao(): VisionMonitorDao
     abstract fun documentDao(): DocumentDao
     abstract fun worldRelationshipDao(): WorldRelationshipDao
+    abstract fun lineageDao(): LineageDao
+    abstract fun autonomyContractDao(): AutonomyContractDao
+    abstract fun shadowPredictionDao(): ShadowPredictionDao
+    abstract fun recipeDao(): RecipeDao
+    abstract fun recipeRunDao(): RecipeRunDao
 }
