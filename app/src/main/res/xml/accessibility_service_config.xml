@@ -2,11 +2,11 @@
 <!-- Narrowed for the one real Tier 2 action implemented so far
      (NuaAccessibilityService.performSystemNavigation, directive item 14):
      performGlobalAction needs none of canRetrieveWindowContent, canPerformGestures, or
-     flagRequestFilterKeyEvents -- those are for reading screen content, dispatching
-     touch gestures, and intercepting key events respectively, none of which this action
-     does. typeWindowStateChanged is the minimal non-empty event type the platform
-     accepts; onAccessibilityEvent itself remains a no-op. Broaden this again, per
-     action, only once a future Tier 2 action genuinely needs more. -->
+     flagRequestFilterKeyEvents (those are for reading screen content, dispatching touch
+     gestures, and intercepting key events respectively, none of which this action does).
+     typeWindowStateChanged is the minimal non-empty event type the platform accepts;
+     onAccessibilityEvent itself remains a no-op. Broaden this again, per action, only
+     once a future Tier 2 action genuinely needs more. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
