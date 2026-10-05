@@ -19,9 +19,11 @@ enum class DisclosureLevel { RAW, REDACTED, DERIVED_ONLY }
  *
  * [recipientProvider] and [purpose] exist so a future Flight Recorder entry can record
  * *what* left the device, *why*, and *to whom* without needing to inspect the payload
- * itself — see the directive's Feature 9. Today only [DataEgressGateway.presetForChat]
- * constructs one; nothing user-facing issues a capsule yet (see this feature's own
- * "explicitly not attempted" note in docs/HISTORY.md).
+ * itself — see the directive's Feature 9. No user-facing flow issues a
+ * [SENSITIVE_FACTS][DataCategory.SENSITIVE_FACTS]-authorizing capsule yet — chat always
+ * calls [DataEgressGateway.filterFacts] with `capsule = null`, the strictest policy, by
+ * design, since nothing user-facing exists yet to make that authorization meaningfully
+ * the user's own informed choice rather than a hardcoded "yes."
  */
 data class PrivacyCapsule(
     val purpose: String,

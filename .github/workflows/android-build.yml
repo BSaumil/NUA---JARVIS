@@ -49,6 +49,13 @@ jobs:
       - name: UAF boundary audit
         run: python3 tools/uaf_boundary_audit.py
 
+      # Catches the Privacy Capsules / Data Egress Gateway silently eroding: a new call
+      # site sending a photo (describeImage) or the live conversation history
+      # (streamMessage) straight to Claude with no DataEgressGateway.recordEgress(...)
+      # call anywhere in the file. Self-tests first, same discipline as above.
+      - name: Egress boundary audit
+        run: python3 tools/egress_boundary_audit.py
+
       # testDebugUnitTest specifically, not the `test` aggregate task: this project has no
       # debug/release-specific source sets (app/src/{debug,release} don't exist), so
       # testReleaseUnitTest would compile and run the exact same tests against the exact

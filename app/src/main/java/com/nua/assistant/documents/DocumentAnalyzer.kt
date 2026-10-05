@@ -9,6 +9,8 @@ import com.nua.assistant.ai.mesh.PrivacySensitivity
 import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.security.FIREWALL_SYSTEM_DIRECTIVE
 import com.nua.assistant.security.UntrustedSource
+import com.nua.assistant.security.egress.DataCategory
+import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.security.wrapUntrusted
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -76,6 +78,7 @@ class DocumentAnalyzer @Inject constructor(
         // (see ModelMesh.kt's own doc comment on scope) -- image description is a real,
         // separately-scoped next slice, not bundled into this round's text-completion
         // migration.
+        DataEgressGateway.recordEgress(DataCategory.DOCUMENT_CONTENT, itemCount = 1, purpose = "document transcription")
         val result = claudeApiClient.describeImage(
             imageBase64 = imageBase64,
             mediaType = mediaType,
@@ -86,6 +89,7 @@ class DocumentAnalyzer @Inject constructor(
     }
 
     suspend fun summarize(text: String): DocumentSummary {
+        DataEgressGateway.recordEgress(DataCategory.DOCUMENT_CONTENT, itemCount = 1, purpose = "document summarization")
         val contract = TaskContract(task = InferenceTaskType.SUMMARIZATION, privacySensitivity = PrivacySensitivity.HIGH)
         val result = modelMesh.complete(
             contract = contract,
@@ -105,6 +109,7 @@ class DocumentAnalyzer @Inject constructor(
     }
 
     suspend fun answer(documents: List<Pair<String, String>>, question: String): String {
+        DataEgressGateway.recordEgress(DataCategory.DOCUMENT_CONTENT, itemCount = documents.size, purpose = "document Q&A")
         val context = documents.joinToString("\n\n") { (name, text) ->
             val redacted = redactSensitivePatterns(text.take(MAX_CONTEXT_CHARS))
             wrapUntrusted("=== $name ===\n$redacted", UntrustedSource.DOCUMENT)

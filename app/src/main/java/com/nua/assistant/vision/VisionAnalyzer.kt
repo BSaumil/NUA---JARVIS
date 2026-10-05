@@ -5,6 +5,8 @@ import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.extractJsonPayload
 import com.nua.assistant.security.FIREWALL_SYSTEM_DIRECTIVE
 import com.nua.assistant.security.UntrustedSource
+import com.nua.assistant.security.egress.DataCategory
+import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.security.wrapUntrusted
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -55,6 +57,7 @@ class VisionAnalyzer @Inject constructor(
 ) {
 
     suspend fun analyze(imageBase64: String, mediaType: String): VisionAnalysis? {
+        DataEgressGateway.recordEgress(DataCategory.VISION_CONTENT, itemCount = 1, purpose = "vision analysis")
         val result = claudeApiClient.describeImage(
             imageBase64 = imageBase64,
             mediaType = mediaType,
@@ -69,6 +72,7 @@ class VisionAnalyzer @Inject constructor(
     }
 
     suspend fun compareAgainstBaseline(imageBase64: String, mediaType: String, baselineDescription: String): String? {
+        DataEgressGateway.recordEgress(DataCategory.VISION_CONTENT, itemCount = 1, purpose = "vision monitor comparison")
         val result = claudeApiClient.describeImage(
             imageBase64 = imageBase64,
             mediaType = mediaType,

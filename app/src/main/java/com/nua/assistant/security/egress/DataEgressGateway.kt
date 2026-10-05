@@ -29,15 +29,26 @@ data class EgressDecision(
  * [DisclosureLevel.RAW] — the same fail-closed-on-ambiguity discipline this codebase
  * already applies to trust/autonomy state (see `trust/AutonomyGrant.kt`).
  *
- * Scope of this slice, stated honestly: [filterFacts] is wired into the one real call site
- * that assembles the main chat prompt's fact context
- * (`ui/NuaViewModel.kt`'s `replyConversationally`) — the highest-value existing egress
- * point, since [UserFactEntity.privacyLevel] is the one content classification this
- * codebase already has. Document/vision/conversation-history egress are not yet routed
- * through this gateway; each has its own existing protection today
- * (`security/UntrustedContent.kt`'s inbound firewall, `documents/DocumentRedaction.kt`'s
- * pattern-matched PII redaction) but neither is *capsule-gated* yet. Retrofitting every
- * remaining Claude call site is named as this feature's next slice, not claimed done here.
+ * Scope, stated honestly, as of the personal-test deployment directive's Privacy
+ * Capsules completion pass: [filterFacts] remains the only *filtering* decision this
+ * gateway makes, because [UserFactEntity.privacyLevel] is the only per-item sensitivity
+ * classification this codebase has — there's no analogous per-document or per-photo
+ * marker to filter on (`memory/DocumentEntity` carries no privacy level at all), and
+ * inventing one is a UI feature, not a wiring change. [recordEgress] is the other half:
+ * every remaining cloud-bound personal-data flow (a document's text for summarization/
+ * Q&A, a photo for vision analysis, the conversation history sent with every chat turn)
+ * now passes through this one gateway and produces a real [EgressDecision] for it,
+ * where before each simply reached [com.nua.assistant.ai.ClaudeApiClient] or
+ * [com.nua.assistant.ai.mesh.ModelMesh] directly with no decision point at all. Today
+ * that decision is unconditionally "permitted" for [DataCategory.DOCUMENT_CONTENT],
+ * [DataCategory.VISION_CONTENT], and [DataCategory.CONVERSATION_HISTORY] — sending the
+ * document/photo/conversation to the model *is* what those features do, the same way a
+ * capsule can't sensibly withhold [DataCategory.SENSITIVE_FACTS] "for chat in general"
+ * — but it is no longer a silent, un-auditable bypass: `tools/egress_boundary_audit.py`
+ * statically proves every such call site calls through here first, and the resulting
+ * [EgressDecision] is exactly what a future Flight Recorder lineage entry or a future
+ * per-document sensitivity toggle would need to act on, without re-plumbing the call
+ * site again.
  */
 object DataEgressGateway {
 
@@ -73,4 +84,29 @@ object DataEgressGateway {
         )
         return permitted to decision
     }
+
+    /**
+     * Records the egress decision for a category with no per-item filter to apply —
+     * [DataCategory.DOCUMENT_CONTENT], [DataCategory.VISION_CONTENT], and
+     * [DataCategory.CONVERSATION_HISTORY] today. Unlike [filterFacts], this never
+     * withholds anything: sending the document/photo/conversation to the model is the
+     * feature itself, not an optional disclosure a capsule could sensibly refuse while
+     * the feature still works. What this buys over not calling it at all is that the
+     * decision is no longer implicit — every one of these calls now produces a real,
+     * inspectable [EgressDecision] a Flight Recorder lineage entry (or a future
+     * per-item sensitivity control) can act on, and `tools/egress_boundary_audit.py`
+     * can statically verify every such call site actually calls through here first.
+     */
+    fun recordEgress(
+        category: DataCategory,
+        itemCount: Int,
+        provider: String = "anthropic-claude",
+        purpose: String,
+    ): EgressDecision = EgressDecision(
+        category = category,
+        provider = provider,
+        purpose = purpose,
+        itemCountRequested = itemCount,
+        itemCountPermitted = itemCount,
+    )
 }

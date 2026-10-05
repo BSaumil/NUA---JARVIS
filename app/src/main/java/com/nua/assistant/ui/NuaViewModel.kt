@@ -9,6 +9,7 @@ import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.ClaudeStreamEvent
 import com.nua.assistant.ai.FactExtractor
 import com.nua.assistant.ai.FactRelevance
+import com.nua.assistant.security.egress.DataCategory
 import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.PersonalityEngine
@@ -594,6 +595,11 @@ class NuaViewModel @Inject constructor(
         val history = memoryDao.getRecentMessages(CONVERSATION_HISTORY_LIMIT).asReversed().map {
             ClaudeMessage(role = if (it.role == MessageRole.USER) "user" else "assistant", content = it.content)
         }
+        // Data Egress Gateway: the conversation history itself is cloud-bound personal
+        // data too, not just the extracted facts above -- recorded, not filtered, since
+        // sending it is what a chat turn is (see DataEgressGateway.recordEgress's doc
+        // comment for why this category has no per-item filter to apply).
+        DataEgressGateway.recordEgress(DataCategory.CONVERSATION_HISTORY, history.size, purpose = "conversational reply")
         val toneDirective = VoiceProsody.directiveFor(lastVoiceTone ?: VoiceTone.NEUTRAL)
         lastVoiceTone = null
         val system = personalityEngine.systemPrompt(relevantFacts, turnCount, _pinnedLanguage.value, toneDirective)

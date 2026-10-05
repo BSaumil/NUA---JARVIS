@@ -77,4 +77,29 @@ class DataEgressGatewayTest {
         assertEquals(0, decision.itemCountRequested)
         assertTrue(decision.fullyPermitted)
     }
+
+    @Test
+    fun `recordEgress always fully permits -- there is no per-item filter for document, vision, or conversation-history content`() {
+        for (category in listOf(DataCategory.DOCUMENT_CONTENT, DataCategory.VISION_CONTENT, DataCategory.CONVERSATION_HISTORY)) {
+            val decision = DataEgressGateway.recordEgress(category, itemCount = 3, purpose = "test")
+            assertEquals(category, decision.category)
+            assertEquals(3, decision.itemCountRequested)
+            assertEquals(3, decision.itemCountPermitted)
+            assertTrue(decision.fullyPermitted)
+        }
+    }
+
+    @Test
+    fun `recordEgress with zero items still produces a fully-permitted decision, not a refusal`() {
+        val decision = DataEgressGateway.recordEgress(DataCategory.VISION_CONTENT, itemCount = 0, purpose = "test")
+        assertEquals(0, decision.itemCountRequested)
+        assertEquals(0, decision.itemCountPermitted)
+        assertTrue(decision.fullyPermitted)
+    }
+
+    @Test
+    fun `recordEgress defaults to the anthropic-claude provider, same as filterFacts`() {
+        val decision = DataEgressGateway.recordEgress(DataCategory.DOCUMENT_CONTENT, itemCount = 1, purpose = "test")
+        assertEquals("anthropic-claude", decision.provider)
+    }
 }
