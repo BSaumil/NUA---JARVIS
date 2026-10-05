@@ -100,7 +100,14 @@ those versions to lose), but it must not be what silently handles 20→21.
   still 20.
 - `fallbackToDestructiveMigration()` remains in `AppModule.kt`, now with a
   comment pointing back to this document and the version-21 rule.
-- Robolectric is not yet wired into this project (tracked separately); until
-  it is, a real `MigrationTestHelper` test for a future migration will need
-  either that work landing first or an instrumented test run on real
-  hardware/an emulator, which this development environment does not have.
+- Robolectric is now wired into this project (directive item 13,
+  `app/build.gradle.kts`'s `org.robolectric:robolectric` testImplementation
+  + `testOptions.unitTests.isIncludeAndroidResources`), with a first real
+  test proving it actually works end to end:
+  `app/src/test/java/com/nua/assistant/memory/DecisionDaoRobolectricTest.kt`
+  round-trips `DecisionDao` through a real (Robolectric-shadowed) in-memory
+  SQLite database — exactly the kind of Android-framework-shaped test a
+  `MigrationTestHelper` test also needs, now confirmed to run in this CI
+  environment rather than only hypothetically available. The next real
+  schema bump (version 21) can write and verify its `Migration` against
+  this same infrastructure, no further prerequisite work needed.

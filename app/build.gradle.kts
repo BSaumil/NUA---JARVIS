@@ -94,6 +94,16 @@ android {
         buildConfig = true
     }
 
+    // Robolectric (directive item 13) needs this to resolve resources/the manifest when
+    // a unit test touches anything Android-framework-shaped -- e.g. the Room-on-
+    // Robolectric DAO test this enables. Unit tests that stay pure JVM (the other 400+)
+    // are unaffected either way.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -178,6 +188,13 @@ dependencies {
     // in-flight request against a real local socket — same publisher/version as the
     // production okhttp dependency, no new transitive risk.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    // Robolectric (directive item 13) -- real Android-framework-shaped unit tests (Room
+    // on a shadowed SQLite, in this first slice) without a connected device/emulator.
+    // The prerequisite docs/DATABASE_MIGRATION_POLICY.md's version-21 rule names for a
+    // real MigrationTestHelper test, once a migration actually needs writing.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }
