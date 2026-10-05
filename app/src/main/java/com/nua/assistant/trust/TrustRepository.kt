@@ -17,6 +17,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
 
 private const val PREFS_NAME = "nua_trust_prefs"
 private const val KEY_LAST_SELF_REPORT_AT = "last_self_report_at"
@@ -189,6 +190,10 @@ class TrustRepository @Inject constructor(
     suspend fun revokeContract(actionType: NuaActionType) = autonomyContractDao.suspendContract(actionType.name)
 
     suspend fun allContracts(): List<AutonomyContractEntity> = autonomyContractDao.getAll()
+
+    /** Live view of every contract, for a settings screen to observe directly rather than
+     *  re-polling [allContracts]. */
+    fun observeContracts(): Flow<List<AutonomyContractEntity>> = autonomyContractDao.observeAll()
 
     /**
      * The single decision point a contract contributes to autonomy — always computed for

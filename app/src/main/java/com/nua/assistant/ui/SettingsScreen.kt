@@ -68,11 +68,14 @@ import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.goals.GoalType
 import com.nua.assistant.memory.ActionOutcomeEntity
+import com.nua.assistant.memory.AutonomyContractEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.DiagnosticStatus
 import com.nua.assistant.security.BiometricGate
 import com.nua.assistant.security.encryptionAuditEntries
+import com.nua.assistant.security.guardian.SafetyAnomaly
+import com.nua.assistant.trust.ShadowAccuracy
 import com.nua.assistant.trust.badgeLabel
 import com.nua.assistant.trust.countsAsFailure
 import com.nua.assistant.trust.daysUntilExpiry
@@ -117,6 +120,11 @@ fun SettingsScreen(
     onEnableAutoApprove: (NuaActionType) -> Unit,
     activeAutonomyGrants: List<AutonomyPreferenceEntity>,
     onDisableAutoApprove: (NuaActionType) -> Unit,
+    autonomyContracts: List<AutonomyContractEntity>,
+    contractAnomalies: List<SafetyAnomaly>,
+    shadowAccuracyByActionType: Map<String, ShadowAccuracy>,
+    onCreateShadowContract: (NuaActionType) -> Unit,
+    onRevokeContract: (NuaActionType) -> Unit,
     goals: List<GoalEntity>,
     goalObservations: List<GoalObservationEntity>,
     onAddGoal: (text: String, type: GoalType) -> Unit,
@@ -175,6 +183,15 @@ fun SettingsScreen(
                     onEnableAutoApprove,
                     activeAutonomyGrants,
                     onDisableAutoApprove,
+                    onCreateShadowContract,
+                )
+            }
+            item {
+                AutonomyContractsCard(
+                    contracts = autonomyContracts,
+                    anomalies = contractAnomalies,
+                    shadowAccuracyByActionType = shadowAccuracyByActionType,
+                    onRevokeContract = onRevokeContract,
                 )
             }
             item { AuditTrailCard(actionOutcomes) }
@@ -589,6 +606,7 @@ private fun TrustCard(
     onEnableAutoApprove: (NuaActionType) -> Unit,
     activeAutonomyGrants: List<AutonomyPreferenceEntity>,
     onDisableAutoApprove: (NuaActionType) -> Unit,
+    onCreateShadowContract: (NuaActionType) -> Unit,
 ) {
     Card {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -618,6 +636,7 @@ private fun TrustCard(
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f),
                             )
+                            TextButton(onClick = { onCreateShadowContract(actionType) }) { Text("Try shadowed") }
                             TextButton(onClick = { onEnableAutoApprove(actionType) }) { Text("Always allow") }
                         }
                     }
@@ -652,6 +671,78 @@ private fun TrustCard(
                 Text("Recently", style = MaterialTheme.typography.labelMedium)
                 trustLedger.take(5).forEach { entry ->
                     Text("• ${entry.description}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Contextual Autonomy Contracts (Feature 5) + Shadow Mode + the Runtime Safety Sentinel,
+ * made visible — the backend (TrustRepository.createContract/revokeContract/
+ * observeContracts, trust/AutonomyContract.kt's evaluateContract, security/guardian/
+ * RuntimeSafetySentinel.kt's auditContracts) existed with zero UI consuming it until now.
+ * Creating a contract with recipient/risk-ceiling/frequency scoping is deliberately not
+ * exposed here yet — the only creation path is [TrustCard]'s "Try shadowed" offer next to
+ * an autonomy suggestion, which issues an unscoped shadow contract; a full scoping form is
+ * future work, not silently dropped.
+ */
+@Composable
+private fun AutonomyContractsCard(
+    contracts: List<AutonomyContractEntity>,
+    anomalies: List<SafetyAnomaly>,
+    shadowAccuracyByActionType: Map<String, ShadowAccuracy>,
+    onRevokeContract: (NuaActionType) -> Unit,
+) {
+    if (contracts.isEmpty()) return
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Autonomy contracts", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Narrower than a blanket \"always allow\" — scoped autonomy with its own expiry. " +
+                    "A shadowed contract predicts what it would decide without ever acting on it.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            contracts.forEach { contract ->
+                val actionType = runCatching { NuaActionType.valueOf(contract.actionType) }.getOrNull()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (actionType != null) displayActionType(actionType) else contract.actionType,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        val status = buildString {
+                            append(if (contract.active) "active" else "suspended")
+                            if (contract.shadowMode) append(" · shadow")
+                            contract.riskCeiling?.let { append(" · up to ${it.label}") }
+                            if (contract.maxPerWindow != null) append(" · max ${contract.maxPerWindow}/window")
+                        }
+                        Text(status, style = MaterialTheme.typography.labelSmall)
+                        if (contract.shadowMode) {
+                            val accuracy = shadowAccuracyByActionType[contract.actionType]
+                            val accuracyText = when {
+                                accuracy == null || accuracy.totalResolved == 0 -> "No resolved predictions yet."
+                                else -> {
+                                    val rate = ((accuracy.accuracyRate ?: 0.0) * 100).toInt()
+                                    "$rate% accurate over ${accuracy.totalResolved} (${accuracy.falsePositives} would've wrongly auto-approved)"
+                                }
+                            }
+                            Text(accuracyText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    if (actionType != null && contract.active) {
+                        TextButton(onClick = { onRevokeContract(actionType) }) { Text("Revoke") }
+                    }
+                }
+            }
+
+            if (anomalies.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Sentinel flagged", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                anomalies.forEach { anomaly ->
+                    Text("• ${anomaly.subject}: ${anomaly.description}", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

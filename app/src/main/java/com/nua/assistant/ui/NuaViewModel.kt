@@ -85,12 +85,17 @@ import com.nua.assistant.recipes.RecipeRepository
 import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
+import com.nua.assistant.memory.AutonomyContractEntity
+import com.nua.assistant.security.guardian.SafetyAnomaly
+import com.nua.assistant.security.guardian.auditContracts
 import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.AutonomyTier
+import com.nua.assistant.trust.ShadowAccuracy
 import com.nua.assistant.trust.finalAutoApproveDecision
 import com.nua.assistant.trust.TrustRepository
 import com.nua.assistant.trust.idempotencyKeyFor
 import com.nua.assistant.trust.sameDayWindowStart
+import com.nua.assistant.trust.shadowAccuracyFor
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.memory.TrustLedgerEntity
@@ -258,6 +263,25 @@ class NuaViewModel @Inject constructor(
 
     private val _actionOutcomes = MutableStateFlow<List<ActionOutcomeEntity>>(emptyList())
     val actionOutcomes: StateFlow<List<ActionOutcomeEntity>> = _actionOutcomes.asStateFlow()
+
+    /** Every Contextual Autonomy Contract, live and suspended alike — backs the Settings
+     *  screen's Autonomy Contracts card. See TrustRepository.observeContracts. */
+    val autonomyContracts: StateFlow<List<AutonomyContractEntity>> = trustRepository.observeContracts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Runtime Safety Sentinel's read-only audit of the live contracts above — never a
+     *  second enforcement mechanism, just anomalies worth a human's attention (see
+     *  security/guardian/RuntimeSafetySentinel.kt's own doc comment). Recomputed whenever
+     *  the contract list changes, since it's pure and cheap. */
+    val contractAnomalies: StateFlow<List<SafetyAnomaly>> = autonomyContracts
+        .map { contracts -> auditContracts(contracts, System.currentTimeMillis()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** actionType.name -> shadow accuracy, refreshed by [refreshTrust] rather than kept
+     *  continuously live -- ShadowPredictionDao exposes no observeAll, matching how
+     *  [actionOutcomes] above is also a point-in-time snapshot, not a Flow. */
+    private val _shadowAccuracyByActionType = MutableStateFlow<Map<String, ShadowAccuracy>>(emptyMap())
+    val shadowAccuracyByActionType: StateFlow<Map<String, ShadowAccuracy>> = _shadowAccuracyByActionType.asStateFlow()
 
     val notificationSummary: StateFlow<NotificationSummary> = notificationRepository.notifications
         .map { notificationRepository.summary() }
@@ -1281,11 +1305,27 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch {
             trustUiController.refresh()
             _actionOutcomes.value = trustRepository.recentOutcomes()
+            _shadowAccuracyByActionType.value = trustRepository.recentResolvedShadowPredictions()
+                .groupBy { it.actionType }
+                .mapValues { (_, predictions) -> shadowAccuracyFor(predictions) }
         }
     }
 
     fun enableAutoApprove(actionType: NuaActionType) {
         viewModelScope.launch { trustUiController.enableAutoApprove(actionType) }
+    }
+
+    /** Issues a shadow-mode Contextual Autonomy Contract for [actionType] — predicts what
+     *  it would decide without ever acting on it, so the accuracy it earns (surfaced via
+     *  [shadowAccuracyByActionType]) is the evidence a person needs before trusting it
+     *  enough to go live. Offered from the same autonomy-suggestion row [enableAutoApprove]
+     *  is, as the narrower, reversible alternative to the legacy unscoped grant. */
+    fun createShadowContract(actionType: NuaActionType) {
+        viewModelScope.launch { trustRepository.createContract(actionType, shadowMode = true) }
+    }
+
+    fun revokeContract(actionType: NuaActionType) {
+        viewModelScope.launch { trustRepository.revokeContract(actionType) }
     }
 
     fun disableAutoApprove(actionType: NuaActionType) {

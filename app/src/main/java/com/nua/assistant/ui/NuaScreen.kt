@@ -91,6 +91,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val recipeStatus by viewModel.recipeStatus.collectAsState()
     val autonomySuggestions by viewModel.autonomySuggestions.collectAsState()
     val activeAutonomyGrants by viewModel.activeAutonomyGrants.collectAsState()
+    val autonomyContracts by viewModel.autonomyContracts.collectAsState()
+    val contractAnomalies by viewModel.contractAnomalies.collectAsState()
+    val shadowAccuracyByActionType by viewModel.shadowAccuracyByActionType.collectAsState()
     val goals by viewModel.goals.collectAsState()
     val goalObservations by viewModel.goalObservations.collectAsState()
     val dreams by viewModel.dreams.collectAsState()
@@ -248,6 +251,11 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onEnableAutoApprove = viewModel::enableAutoApprove,
                     activeAutonomyGrants = activeAutonomyGrants,
                     onDisableAutoApprove = viewModel::disableAutoApprove,
+                    autonomyContracts = autonomyContracts,
+                    contractAnomalies = contractAnomalies,
+                    shadowAccuracyByActionType = shadowAccuracyByActionType,
+                    onCreateShadowContract = viewModel::createShadowContract,
+                    onRevokeContract = viewModel::revokeContract,
                     goals = goals,
                     goalObservations = goalObservations,
                     onAddGoal = viewModel::addGoal,
