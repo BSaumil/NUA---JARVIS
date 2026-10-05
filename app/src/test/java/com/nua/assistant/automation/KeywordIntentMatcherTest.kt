@@ -54,6 +54,28 @@ class KeywordIntentMatcherTest {
     }
 
     @Test
+    fun `go home matches SYSTEM_NAVIGATION home, never shadowed by the earlier go back branch`() {
+        val result = KeywordIntentMatcher.match("go home please")
+        assertEquals(NuaActionType.SYSTEM_NAVIGATION, result?.action)
+        assertEquals(NAV_COMMAND_HOME, result?.parameters?.get("command"))
+    }
+
+    @Test
+    fun `recent apps matches SYSTEM_NAVIGATION recents`() {
+        val result = KeywordIntentMatcher.match("show me recent apps")
+        assertEquals(NuaActionType.SYSTEM_NAVIGATION, result?.action)
+        assertEquals(NAV_COMMAND_RECENTS, result?.parameters?.get("command"))
+    }
+
+    @Test
+    fun `go back still matches MEDIA_CONTROL previous, not SYSTEM_NAVIGATION -- the earlier branch wins`() {
+        // Regression guard: SYSTEM_NAVIGATION's own "back" command deliberately claims
+        // no keyword, specifically so this existing behavior can never be shadowed.
+        val result = KeywordIntentMatcher.match("go back a track")
+        assertEquals(NuaActionType.MEDIA_CONTROL, result?.action)
+    }
+
+    @Test
     fun `weather mention matches GET_WEATHER`() {
         assertEquals(NuaActionType.GET_WEATHER, KeywordIntentMatcher.match("what's the weather like")?.action)
     }

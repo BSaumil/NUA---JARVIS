@@ -59,5 +59,6 @@ fun displayNameFor(action: NuaActionType): String = when (action) {
     NuaActionType.EMAIL -> "Check your email"
     NuaActionType.SMS_SEND -> "Send a text"
     NuaActionType.CALENDAR_INVITE -> "Create a calendar event"
+    NuaActionType.SYSTEM_NAVIGATION -> "Navigate your device (home/back/recents)"
     NuaActionType.CHAT -> "Talk with you"
 }

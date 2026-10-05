@@ -125,6 +125,7 @@ private fun classificationFor(action: NuaActionType): Classification = when (act
     NuaActionType.OPEN_APP,
     NuaActionType.PLAY_MEDIA,
     NuaActionType.MEDIA_CONTROL,
+    NuaActionType.SYSTEM_NAVIGATION,
     ->
         Classification(SideEffectClass.LOCAL_STATE_ONLY, Reversibility.REVERSIBLE, IdempotencyPolicy.SAFE_TO_REPEAT, ConfirmationPolicy.NONE_REQUIRED)
 
@@ -157,5 +158,6 @@ private fun purposeFor(action: NuaActionType): String = when (action) {
     NuaActionType.EMAIL -> "Check inbox status."
     NuaActionType.SMS_SEND -> "Send a text message to a resolved contact."
     NuaActionType.CALENDAR_INVITE -> "Create a calendar event, optionally inviting an attendee."
+    NuaActionType.SYSTEM_NAVIGATION -> "Perform a device navigation gesture (home/back/recents) via Accessibility -- no official API exists for this."
     NuaActionType.CHAT -> "Fall through to a normal conversational reply."
 }

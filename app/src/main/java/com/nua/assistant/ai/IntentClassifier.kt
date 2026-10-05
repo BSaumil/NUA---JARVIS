@@ -28,6 +28,9 @@ enum class NuaActionType {
     EMAIL,
     SMS_SEND,
     CALENDAR_INVITE,
+    /** A device-level navigation gesture (home/back/recents) with no official API —
+     *  Tier 2's first real action, performed via [com.nua.assistant.automation.NuaAccessibilityService]. */
+    SYSTEM_NAVIGATION,
     /** No concrete action fits — fall through to a normal conversational reply. */
     CHAT,
 }
@@ -79,6 +82,9 @@ private val CLASSIFIER_SYSTEM_PROMPT = """
       "<name or email, if one was mentioned — omit the key entirely if not>",
       "offsetHours": "<number of hours from right now the event should start, e.g. 26.5
       for tomorrow at a similar time — compute this using CURRENT_TIME below>"}.
+    - SYSTEM_NAVIGATION: user wants a device-level navigation gesture ("go home", "go
+      back", "show recent apps"). Only resolves if NUA's Accessibility service is
+      enabled; otherwise it fails harmlessly. parameters: {"command": "home|back|recents"}
     - CHAT: nothing above fits, or the request is purely conversational — this includes
       mood/vibe statements with no obvious action ("I'm bored", "I had a rough day")
       unless they clearly imply one of the actions above (e.g. "I'm bored" alone is

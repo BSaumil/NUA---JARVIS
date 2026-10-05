@@ -76,4 +76,9 @@ abstract class SkillModule {
     @IntoMap
     @ActionTypeKey(NuaActionType.CALENDAR_INVITE)
     abstract fun bindCalendarInviteSkill(impl: CalendarInviteSkill): NuaSkill
+
+    @Binds
+    @IntoMap
+    @ActionTypeKey(NuaActionType.SYSTEM_NAVIGATION)
+    abstract fun bindSystemNavigationSkill(impl: SystemNavigationSkill): NuaSkill
 }

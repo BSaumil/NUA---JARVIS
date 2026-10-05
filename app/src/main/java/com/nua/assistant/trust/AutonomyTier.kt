@@ -47,6 +47,7 @@ fun autonomyTierFor(action: NuaActionType): AutonomyTier = when (action) {
     NuaActionType.OPEN_APP,
     NuaActionType.PLAY_MEDIA,
     NuaActionType.MEDIA_CONTROL,
+    NuaActionType.SYSTEM_NAVIGATION,
     -> AutonomyTier.T1
 
     NuaActionType.SMART_HOME,

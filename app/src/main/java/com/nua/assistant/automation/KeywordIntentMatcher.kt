@@ -21,6 +21,14 @@ object KeywordIntentMatcher {
                 ClassifiedIntent(NuaActionType.MEDIA_CONTROL, 1.0, mapOf("command" to "next"))
             "previous song" in lower || "last track" in lower || "go back" in lower ->
                 ClassifiedIntent(NuaActionType.MEDIA_CONTROL, 1.0, mapOf("command" to "previous"))
+            // "go back" is deliberately NOT claimed here -- the previous-track branch
+            // above already matches it for MEDIA_CONTROL, and that existing behavior
+            // takes priority; SYSTEM_NAVIGATION's back gesture is only reachable via
+            // IntentClassifier's cloud fallback (e.g. "go back to the home screen" or an
+            // explicit "press back"), never through a colliding keyword here.
+            "go home" in lower -> ClassifiedIntent(NuaActionType.SYSTEM_NAVIGATION, 1.0, mapOf("command" to NAV_COMMAND_HOME))
+            "recent apps" in lower || "show recents" in lower ->
+                ClassifiedIntent(NuaActionType.SYSTEM_NAVIGATION, 1.0, mapOf("command" to NAV_COMMAND_RECENTS))
             "weather" in lower -> ClassifiedIntent(NuaActionType.GET_WEATHER, 1.0)
             "notification" in lower -> ClassifiedIntent(NuaActionType.READ_NOTIFICATIONS, 1.0)
             "email" in lower && ("check" in lower || "any new" in lower || "inbox" in lower) -> ClassifiedIntent(NuaActionType.EMAIL, 1.0)

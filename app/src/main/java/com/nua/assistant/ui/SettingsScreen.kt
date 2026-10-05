@@ -64,6 +64,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.ai.UsageSummary
+import com.nua.assistant.automation.NAV_COMMAND_HOME
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.goals.GoalType
@@ -1369,6 +1370,11 @@ private fun Tier2StatusCard() {
             )
             TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
                 Text(if (enabled) "Manage in Android Settings" else "Open Android Settings")
+            }
+            if (enabled) {
+                TextButton(onClick = { NuaAccessibilityService.performSystemNavigation(NAV_COMMAND_HOME) }) {
+                    Text("Test: go home")
+                }
             }
         }
     }

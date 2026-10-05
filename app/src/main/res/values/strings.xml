@@ -3,7 +3,7 @@
     <string name="app_name">NUA</string>
     <string name="notification_listener_label">NUA notification digest</string>
     <string name="accessibility_service_label">NUA automation (Tier 2, opt-in)</string>
-    <string name="accessibility_service_description">Lets NUA tap through app UI for actions with no official API. Off by default; every action is confirmed individually before it runs.</string>
+    <string name="accessibility_service_description">Lets NUA perform actions with no official API (currently: device navigation — home/back/recents). Off by default. Low-risk actions like these run immediately; anything riskier would ask first.</string>
     <string name="foreground_service_channel_name">NUA wake-word listening</string>
     <string name="foreground_service_notification_text_prefix">Listening for:</string>
     <string name="foreground_service_notification_text_idle">Wake-word listening is off — no phrases available</string>
