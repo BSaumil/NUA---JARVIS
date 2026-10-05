@@ -79,6 +79,7 @@ import com.nua.assistant.trust.ShadowAccuracy
 import com.nua.assistant.trust.badgeLabel
 import com.nua.assistant.trust.countsAsFailure
 import com.nua.assistant.trust.daysUntilExpiry
+import com.nua.assistant.decisions.counterfactualIneligibilityReasonFor
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
@@ -135,6 +136,9 @@ fun SettingsScreen(
     onAddDecision: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordDecisionOutcome: (id: Long, outcome: String) -> Unit,
     onRemoveDecision: (Long) -> Unit,
+    counterfactualResults: Map<Long, String>,
+    counterfactualLoadingIds: Set<Long>,
+    onRunCounterfactual: (DecisionEntity) -> Unit,
     visionMonitors: List<VisionMonitorEntity>,
     onRecheckVisionMonitor: (monitorId: Long, uri: Uri) -> Unit,
     onRemoveVisionMonitor: (Long) -> Unit,
@@ -197,7 +201,17 @@ fun SettingsScreen(
             item { AuditTrailCard(actionOutcomes) }
             item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
             item { DreamsCard(dreams, dreamConnections) }
-            item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
+            item {
+                DecisionsCard(
+                    decisions,
+                    onAddDecision,
+                    onRecordDecisionOutcome,
+                    onRemoveDecision,
+                    counterfactualResults,
+                    counterfactualLoadingIds,
+                    onRunCounterfactual,
+                )
+            }
             item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
             item { DiagnosticsCard(diagnostics, testingApiConnection, onRefreshDiagnostics, onTestApiConnection) }
             item { SecurityCard() }
@@ -933,6 +947,9 @@ private fun DecisionsCard(
     onAdd: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordOutcome: (id: Long, outcome: String) -> Unit,
     onRemove: (Long) -> Unit,
+    counterfactualResults: Map<Long, String>,
+    counterfactualLoadingIds: Set<Long>,
+    onRunCounterfactual: (DecisionEntity) -> Unit,
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var outcomeTargetId by remember { mutableStateOf<Long?>(null) }
@@ -974,6 +991,22 @@ private fun DecisionsCard(
                                 )
                             } else {
                                 TextButton(onClick = { outcomeTargetId = decision.id }) { Text("Record outcome") }
+                            }
+                            if (counterfactualIneligibilityReasonFor(decision) == null) {
+                                val speculation = counterfactualResults[decision.id]
+                                if (speculation != null) {
+                                    Text(
+                                        "What if: $speculation",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { onRunCounterfactual(decision) },
+                                    enabled = decision.id !in counterfactualLoadingIds,
+                                ) {
+                                    Text(if (decision.id in counterfactualLoadingIds) "Thinking…" else "What if?")
+                                }
                             }
                         }
                         IconButton(onClick = { onRemove(decision.id) }) {

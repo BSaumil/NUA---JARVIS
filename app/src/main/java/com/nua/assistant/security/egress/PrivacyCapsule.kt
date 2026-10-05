@@ -7,6 +7,7 @@ enum class DataCategory {
     DOCUMENT_CONTENT,
     VISION_CONTENT,
     CONVERSATION_HISTORY,
+    DECISION_CONTENT,
 }
 
 /** How much of a permitted category may actually leave the device. */

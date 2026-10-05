@@ -29,6 +29,8 @@ import com.nua.assistant.briefing.BriefingScheduler
 import com.nua.assistant.context.WhatNowAdvisor
 import com.nua.assistant.context.WhatNowResult
 import com.nua.assistant.context.chatSummary
+import com.nua.assistant.decisions.CounterfactualResult
+import com.nua.assistant.decisions.CounterfactualSimulator
 import com.nua.assistant.decisions.DecisionRepository
 import com.nua.assistant.diagnostics.DiagnosticCategory
 import com.nua.assistant.diagnostics.DiagnosticCheck
@@ -191,6 +193,7 @@ class NuaViewModel @Inject constructor(
     private val whatNowAdvisor: WhatNowAdvisor,
     private val dreamRepository: DreamRepository,
     private val decisionRepository: DecisionRepository,
+    private val counterfactualSimulator: CounterfactualSimulator,
     private val privacyRepository: PrivacyRepository,
     private val worldModelRepository: WorldModelRepository,
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
@@ -495,6 +498,32 @@ class NuaViewModel @Inject constructor(
 
     fun removeDecision(id: Long) {
         viewModelScope.launch { decisionRepository.delete(id) }
+    }
+
+    /** decisionId -> its last counterfactual result (speculation text, or an ineligible/
+     *  failure reason) -- a one-off per decision, same "point-in-time snapshot" shape as
+     *  [recipeStatus], not a persisted record: re-running overwrites the prior text. */
+    private val _counterfactualResults = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val counterfactualResults: StateFlow<Map<Long, String>> = _counterfactualResults.asStateFlow()
+
+    private val _counterfactualLoadingIds = MutableStateFlow<Set<Long>>(emptySet())
+    val counterfactualLoadingIds: StateFlow<Set<Long>> = _counterfactualLoadingIds.asStateFlow()
+
+    /** Runs the Counterfactual Decision Simulator (Feature 4) against a real past
+     *  decision -- see CounterfactualSimulator's own doc comment for why this is the
+     *  real data to simulate against today rather than the not-yet-persisted Temporal
+     *  World Model / CommitmentGraph. */
+    fun runCounterfactual(decision: DecisionEntity) {
+        viewModelScope.launch {
+            _counterfactualLoadingIds.update { it + decision.id }
+            val result = counterfactualSimulator.simulate(decision)
+            val text = when (result) {
+                is CounterfactualResult.Speculation -> result.text
+                is CounterfactualResult.Ineligible -> result.reason
+            }
+            _counterfactualResults.update { it + (decision.id to text) }
+            _counterfactualLoadingIds.update { it - decision.id }
+        }
     }
 
     /** A fresh export text built from whatever's currently loaded — cheap, pure, no need

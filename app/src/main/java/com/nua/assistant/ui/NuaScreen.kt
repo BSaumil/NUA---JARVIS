@@ -99,6 +99,8 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val dreams by viewModel.dreams.collectAsState()
     val dreamConnections by viewModel.dreamConnections.collectAsState()
     val decisions by viewModel.decisions.collectAsState()
+    val counterfactualResults by viewModel.counterfactualResults.collectAsState()
+    val counterfactualLoadingIds by viewModel.counterfactualLoadingIds.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
     val secondBrainQuery by viewModel.secondBrainQuery.collectAsState()
     val secondBrainResults by viewModel.secondBrainResults.collectAsState()
@@ -266,6 +268,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onAddDecision = viewModel::addDecision,
                     onRecordDecisionOutcome = viewModel::recordDecisionOutcome,
                     onRemoveDecision = viewModel::removeDecision,
+                    counterfactualResults = counterfactualResults,
+                    counterfactualLoadingIds = counterfactualLoadingIds,
+                    onRunCounterfactual = viewModel::runCounterfactual,
                     visionMonitors = visionMonitors,
                     onRecheckVisionMonitor = viewModel::recheckVisionMonitor,
                     onRemoveVisionMonitor = viewModel::removeVisionMonitor,

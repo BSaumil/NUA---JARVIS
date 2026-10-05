@@ -41,8 +41,9 @@ data class EgressDecision(
  * where before each simply reached [com.nua.assistant.ai.ClaudeApiClient] or
  * [com.nua.assistant.ai.mesh.ModelMesh] directly with no decision point at all. Today
  * that decision is unconditionally "permitted" for [DataCategory.DOCUMENT_CONTENT],
- * [DataCategory.VISION_CONTENT], and [DataCategory.CONVERSATION_HISTORY] — sending the
- * document/photo/conversation to the model *is* what those features do, the same way a
+ * [DataCategory.VISION_CONTENT], [DataCategory.CONVERSATION_HISTORY], and (as of the
+ * Counterfactual Decision Simulator, Feature 4) [DataCategory.DECISION_CONTENT] — sending
+ * the document/photo/conversation/decision to the model *is* what those features do, the same way a
  * capsule can't sensibly withhold [DataCategory.SENSITIVE_FACTS] "for chat in general"
  * — but it is no longer a silent, un-auditable bypass: `tools/egress_boundary_audit.py`
  * statically proves every such call site calls through here first, and the resulting
