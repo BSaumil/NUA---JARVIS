@@ -62,7 +62,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.nua.assistant.ai.DirectnessLevel
+import com.nua.assistant.ai.HumorLevel
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.ai.PersonalityAxes
 import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.automation.NAV_COMMAND_HOME
 import com.nua.assistant.automation.NuaAccessibilityService
@@ -105,6 +108,8 @@ fun SettingsScreen(
     onSetFactPrivacyLevel: (id: Long, level: MemoryPrivacyLevel) -> Unit,
     pinnedLanguage: NuaLanguage?,
     onLanguageSelected: (NuaLanguage?) -> Unit,
+    personalityAxes: PersonalityAxes,
+    onPersonalityAxesChanged: (PersonalityAxes) -> Unit,
     briefingSchedule: BriefingSchedule,
     onBriefingScheduleChanged: (BriefingSchedule) -> Unit,
     voiceEnrolled: Boolean,
@@ -175,6 +180,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { LanguageCard(pinnedLanguage, onLanguageSelected) }
+            item { PersonalityCard(personalityAxes, onPersonalityAxesChanged) }
             item { BriefingScheduleCard(briefingSchedule, onBriefingScheduleChanged) }
             item { WakeWordsCard() }
             item { VoiceIdCard(voiceEnrolled, enrollmentProgress, onRecordEnrollmentClip, onResetVoiceEnrollment) }
@@ -377,6 +383,43 @@ private fun FactRow(fact: UserFactEntity, onTap: () -> Unit, onForget: () -> Uni
             }
             IconButton(onClick = onForget) {
                 Icon(Icons.Filled.Delete, contentDescription = "Forget this")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PersonalityCard(axes: PersonalityAxes, onAxesChanged: (PersonalityAxes) -> Unit) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Personality", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Nudges NUA's own voice without replacing it. Default is default for a reason — " +
+                    "only move these if you actually want less/more of something.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Humor", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                HumorLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = axes.humor == level,
+                        onClick = { onAxesChanged(axes.copy(humor = level)) },
+                        label = { Text(level.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Directness", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DirectnessLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = axes.directness == level,
+                        onClick = { onAxesChanged(axes.copy(directness = level)) },
+                        label = { Text(level.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                    )
+                }
             }
         }
     }

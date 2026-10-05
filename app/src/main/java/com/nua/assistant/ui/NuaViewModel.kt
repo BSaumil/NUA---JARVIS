@@ -12,7 +12,9 @@ import com.nua.assistant.ai.FactRelevance
 import com.nua.assistant.security.egress.DataCategory
 import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.ai.PersonalityAxes
 import com.nua.assistant.ai.PersonalityEngine
+import com.nua.assistant.ai.PersonalityPreferenceStore
 import com.nua.assistant.ai.SecondBrainResult
 import com.nua.assistant.ai.SecondBrainSearch
 import com.nua.assistant.ai.SuggestedReminder
@@ -173,6 +175,7 @@ class NuaViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val smsSender: SmsSender,
     private val languagePreferenceStore: LanguagePreferenceStore,
+    private val personalityPreferenceStore: PersonalityPreferenceStore,
     private val briefingScheduleStore: BriefingScheduleStore,
     private val briefingScheduler: BriefingScheduler,
     private val ownerEnrollment: OwnerEnrollment,
@@ -211,6 +214,12 @@ class NuaViewModel @Inject constructor(
 
     private val _pinnedLanguage = MutableStateFlow(languagePreferenceStore.getPinnedLanguage())
     val pinnedLanguage: StateFlow<NuaLanguage?> = _pinnedLanguage.asStateFlow()
+
+    /** Voice-first depth (directive item 17): the user's own persisted personality
+     *  dials, distinct from the automatic familiarity tier and per-utterance prosody
+     *  tone -- see ai/PersonalityAxes.kt. */
+    private val _personalityAxes = MutableStateFlow(personalityPreferenceStore.getAxes())
+    val personalityAxes: StateFlow<PersonalityAxes> = _personalityAxes.asStateFlow()
 
     private val _briefingSchedule = MutableStateFlow(briefingScheduleStore.get())
     val briefingSchedule: StateFlow<BriefingSchedule> = _briefingSchedule.asStateFlow()
@@ -605,6 +614,11 @@ class NuaViewModel @Inject constructor(
      * head" vs. a plain one for "hey nua"), not required for wake-word detection itself.
      */
     fun onWakeWordDetected(wakePhraseId: String? = null) {
+        // Barge-in (directive item 17): the wake word always interrupts whatever NUA
+        // is currently saying, the same way it does on every other voice assistant --
+        // without this, saying it mid-reply started a second SpeechRecognizer session
+        // while TextToSpeech kept talking over it instead of yielding the floor.
+        voiceManager.stopSpeaking()
         voiceSessionActive = true
         voiceFollowUpCount = 0
         listenForVoiceTurn()
@@ -725,8 +739,14 @@ class NuaViewModel @Inject constructor(
         DataEgressGateway.recordEgress(DataCategory.CONVERSATION_HISTORY, history.size, purpose = "conversational reply")
         val toneDirective = VoiceProsody.directiveFor(lastVoiceTone ?: VoiceTone.NEUTRAL)
         lastVoiceTone = null
-        val system = personalityEngine.systemPrompt(relevantFacts, turnCount, _pinnedLanguage.value, toneDirective)
-        val language = _pinnedLanguage.value ?: NuaLanguage.ENGLISH
+        val system = personalityEngine.systemPrompt(relevantFacts, turnCount, _pinnedLanguage.value, toneDirective, _personalityAxes.value)
+        val pinnedLanguage = _pinnedLanguage.value
+        val language = pinnedLanguage ?: NuaLanguage.ENGLISH
+        // Code-switching (directive item 17): with nothing pinned, speak each chunk of
+        // Claude's own reply in whichever language its script actually signals, rather
+        // than a fixed language for the whole reply -- see NuaLanguage.scriptDetectedLanguage's
+        // own doc comment for exactly what this can and can't disambiguate.
+        fun languageFor(text: String): NuaLanguage = pinnedLanguage ?: NuaLanguage.scriptDetectedLanguage(text) ?: NuaLanguage.ENGLISH
 
         val fullText = StringBuilder()
         var spokenUpTo = 0
@@ -744,7 +764,7 @@ class NuaViewModel @Inject constructor(
                         val toSpeak = fullText.substring(spokenUpTo, boundary).trim()
                         spokenUpTo = boundary
                         if (toSpeak.isNotEmpty()) {
-                            voiceManager.speak(toSpeak, language, flush = !hasSpokenAnything)
+                            voiceManager.speak(toSpeak, languageFor(toSpeak), flush = !hasSpokenAnything)
                             hasSpokenAnything = true
                         }
                     }
@@ -752,7 +772,7 @@ class NuaViewModel @Inject constructor(
 
                 is ClaudeStreamEvent.Done -> {
                     val remaining = fullText.substring(spokenUpTo).trim()
-                    if (remaining.isNotEmpty()) voiceManager.speak(remaining, language, flush = !hasSpokenAnything)
+                    if (remaining.isNotEmpty()) voiceManager.speak(remaining, languageFor(remaining), flush = !hasSpokenAnything)
                     voiceManager.markReplyComplete()
                 }
 
@@ -781,7 +801,7 @@ class NuaViewModel @Inject constructor(
     private suspend fun respond(text: String, extractFacts: Boolean, sourceUserMessage: String? = null) {
         memoryDao.insertMessage(MessageEntity(role = MessageRole.ASSISTANT, content = text))
         _uiState.update { it.copy(isProcessing = false, messages = it.messages + ChatMessage(MessageRole.ASSISTANT, text)) }
-        voiceManager.speak(text, _pinnedLanguage.value ?: NuaLanguage.ENGLISH)
+        voiceManager.speak(text, _pinnedLanguage.value ?: NuaLanguage.scriptDetectedLanguage(text) ?: NuaLanguage.ENGLISH)
         voiceManager.markReplyComplete()
 
         if (extractFacts && sourceUserMessage != null) {
@@ -1150,6 +1170,11 @@ class NuaViewModel @Inject constructor(
     fun setPinnedLanguage(language: NuaLanguage?) {
         languagePreferenceStore.setPinnedLanguage(language)
         _pinnedLanguage.value = language
+    }
+
+    fun setPersonalityAxes(axes: PersonalityAxes) {
+        personalityPreferenceStore.setAxes(axes)
+        _personalityAxes.value = axes
     }
 
     fun setBriefingSchedule(schedule: BriefingSchedule) {

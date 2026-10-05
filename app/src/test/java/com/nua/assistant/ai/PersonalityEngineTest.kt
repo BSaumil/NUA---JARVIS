@@ -2,6 +2,7 @@ package com.nua.assistant.ai
 
 import com.nua.assistant.memory.UserFactEntity
 import com.nua.assistant.voice.NuaLanguage
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -56,5 +57,19 @@ class PersonalityEngineTest {
     fun `a pinned language adds an explicit override instruction`() {
         val prompt = engine.systemPrompt(pinnedLanguage = NuaLanguage.GUJARATI)
         assertTrue(prompt.contains("preferred language to Gujarati"))
+    }
+
+    @Test
+    fun `default personality axes add nothing extra to the prompt`() {
+        val withDefault = engine.systemPrompt(personalityAxes = PersonalityAxes())
+        val withoutParam = engine.systemPrompt()
+        assertEquals(withoutParam, withDefault)
+    }
+
+    @Test
+    fun `a non-default personality axis's directive text appears verbatim in the assembled prompt`() {
+        val axes = PersonalityAxes(humor = HumorLevel.HIGH)
+        val prompt = engine.systemPrompt(personalityAxes = axes)
+        assertTrue(prompt.contains(axesDirective(axes)!!))
     }
 }

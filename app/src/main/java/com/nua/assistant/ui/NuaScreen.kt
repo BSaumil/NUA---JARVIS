@@ -79,6 +79,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val facts by viewModel.facts.collectAsState()
     val pinnedLanguage by viewModel.pinnedLanguage.collectAsState()
+    val personalityAxes by viewModel.personalityAxes.collectAsState()
     val briefingSchedule by viewModel.briefingSchedule.collectAsState()
     val voiceEnrolled by viewModel.voiceEnrolled.collectAsState()
     val enrollmentProgress by viewModel.enrollmentProgress.collectAsState()
@@ -236,6 +237,8 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onSetFactPrivacyLevel = viewModel::setFactPrivacyLevel,
                     pinnedLanguage = pinnedLanguage,
                     onLanguageSelected = viewModel::setPinnedLanguage,
+                    personalityAxes = personalityAxes,
+                    onPersonalityAxesChanged = viewModel::setPersonalityAxes,
                     briefingSchedule = briefingSchedule,
                     onBriefingScheduleChanged = viewModel::setBriefingSchedule,
                     voiceEnrolled = voiceEnrolled,
