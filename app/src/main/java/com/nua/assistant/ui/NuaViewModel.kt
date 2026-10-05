@@ -58,6 +58,7 @@ import com.nua.assistant.memory.GeofenceDao
 import com.nua.assistant.memory.GeofenceEntity
 import com.nua.assistant.memory.GoalEntity
 import com.nua.assistant.memory.GoalObservationEntity
+import com.nua.assistant.memory.RecipeEntity
 import com.nua.assistant.memory.MemoryDao
 import com.nua.assistant.memory.MemoryPrivacyLevel
 import com.nua.assistant.memory.MessageEntity
@@ -79,6 +80,8 @@ import com.nua.assistant.automation.uaf.WorkflowExecutor
 import com.nua.assistant.automation.uaf.encodePlanReminders
 import com.nua.assistant.privacy.PrivacyRepository
 import com.nua.assistant.privacy.buildDataExport
+import com.nua.assistant.recipes.CompiledRecipe
+import com.nua.assistant.recipes.RecipeRepository
 import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
@@ -189,6 +192,7 @@ class NuaViewModel @Inject constructor(
     private val nuaStateRepository: NuaStateRepository,
     private val skillCatalog: SkillCatalog,
     private val workflowExecutor: WorkflowExecutor,
+    private val recipeRepository: RecipeRepository,
     private val json: Json,
 ) : ViewModel() {
 
@@ -273,6 +277,67 @@ class NuaViewModel @Inject constructor(
 
     val dreams: StateFlow<List<DreamEntity>> = dreamRepository.observeRecent()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Every saved recipe, newest first — backs the Act screen's Recipes section. */
+    val recipes: StateFlow<List<RecipeEntity>> = recipeRepository.observeRecipes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Set after createRecipe/runRecipeNow/deleteRecipe/editRecipe complete, for the UI to
+     *  show as a one-off status line; cleared by [dismissRecipeStatus]. Not persisted and
+     *  not the Trust Ledger record itself -- recordRun inside RecipeRepository already
+     *  writes the real audit row; this is just "what to tell the person who just tapped
+     *  the button," the same separation `respond()` already draws for chat. */
+    private val _recipeStatus = MutableStateFlow<String?>(null)
+    val recipeStatus: StateFlow<String?> = _recipeStatus.asStateFlow()
+
+    fun createRecipe(name: String, description: String) {
+        viewModelScope.launch {
+            val created = recipeRepository.createRecipe(name, description)
+            _recipeStatus.value = recipeCompileStatusMessage(created.compiled)
+        }
+    }
+
+    fun editRecipe(recipeId: Long, name: String, newDescription: String) {
+        viewModelScope.launch {
+            val compiled = recipeRepository.editRecipe(recipeId, name, newDescription)
+            _recipeStatus.value = compiled?.let(::recipeCompileStatusMessage) ?: "Couldn't find that recipe to edit."
+        }
+    }
+
+    fun deleteRecipe(id: Long) {
+        viewModelScope.launch {
+            recipeRepository.deleteRecipe(id)
+            _recipeStatus.value = "Recipe deleted."
+        }
+    }
+
+    /** Runs a recipe immediately, through the real Universal Action Fabric
+     *  (RecipeRepository.runRecipe -> WorkflowExecutor) -- not a preview, a real recipe
+     *  run with real side effects for whatever steps are authorized right now. */
+    fun runRecipeNow(recipeId: Long, recipeName: String) {
+        viewModelScope.launch {
+            val context = AdapterExecutionContext(originalUtterance = recipeName, pinnedLanguage = _pinnedLanguage.value)
+            val result = recipeRepository.runRecipe(recipeId, context)
+            _recipeStatus.value = if (result == null) {
+                "Couldn't find that recipe to run."
+            } else {
+                val succeeded = result.outcomes.values.count { it.state == StepOutcomeState.SUCCEEDED }
+                val awaiting = result.outcomes.values.count { it.state == StepOutcomeState.AWAITING_USER }
+                val failed = result.outcomes.values.count { it.state == StepOutcomeState.FAILED || it.state == StepOutcomeState.AUTHORIZATION_REFUSED }
+                buildString {
+                    append("Ran \"$recipeName\" — ")
+                    append("$succeeded step${if (succeeded == 1) "" else "s"} succeeded")
+                    if (awaiting > 0) append(", $awaiting awaiting your confirmation")
+                    if (failed > 0) append(", $failed failed")
+                    append(".")
+                }
+            }
+        }
+    }
+
+    fun dismissRecipeStatus() {
+        _recipeStatus.value = null
+    }
 
     /** dreamId -> what it connected (resolved summaries, e.g. a fact's value or a goal's
      *  text) — World Model read-side resolution, the first real reader of the

@@ -1,5 +1,6 @@
 package com.nua.assistant.ui
 
+import com.nua.assistant.recipes.CompiledRecipe
 import com.nua.assistant.trust.ActionOutcomeState
 import com.nua.assistant.trust.threadProvenanceNote
 
@@ -54,5 +55,20 @@ fun planConfirmationMessage(results: List<Result<Long>>): String {
         results.size -> "Done — I've added reminders for that."
         0 -> "That plan's reminders didn't save — nothing was added."
         else -> "Added $succeeded of ${results.size} reminders — the rest didn't save."
+    }
+}
+
+/** What createRecipe/editRecipe report right after compiling — a saved recipe is always
+ *  reported exactly as understood, same honesty standard RecipeCompiler.kt's own doc
+ *  comment holds the compiler itself to. */
+fun recipeCompileStatusMessage(compiled: CompiledRecipe): String {
+    val stepCount = compiled.steps.size
+    val unresolvedCount = compiled.unresolvedClauses.size
+    return when {
+        unresolvedCount == 0 && stepCount == 0 -> "Saved, but nothing in that description resolved to an action yet."
+        unresolvedCount == 0 -> "Saved — understood all $stepCount step${if (stepCount == 1) "" else "s"}."
+        stepCount == 0 -> "Saved, but NUA didn't understand any of it: ${compiled.unresolvedClauses.joinToString("; ") { it.text }}"
+        else -> "Saved — understood $stepCount step${if (stepCount == 1) "" else "s"}, but not: " +
+            compiled.unresolvedClauses.joinToString("; ") { it.text }
     }
 }

@@ -87,6 +87,8 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val trustScore by viewModel.trustScore.collectAsState()
     val trustLedger by viewModel.trustLedger.collectAsState()
     val actionOutcomes by viewModel.actionOutcomes.collectAsState()
+    val recipes by viewModel.recipes.collectAsState()
+    val recipeStatus by viewModel.recipeStatus.collectAsState()
     val autonomySuggestions by viewModel.autonomySuggestions.collectAsState()
     val activeAutonomyGrants by viewModel.activeAutonomyGrants.collectAsState()
     val goals by viewModel.goals.collectAsState()
@@ -212,6 +214,13 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     skills = skills,
                     pendingTasks = state?.pendingTasks.orEmpty(),
                     recentActions = actionOutcomes,
+                    recipes = recipes,
+                    recipeStatus = recipeStatus,
+                    onCreateRecipe = viewModel::createRecipe,
+                    onEditRecipe = viewModel::editRecipe,
+                    onDeleteRecipe = viewModel::deleteRecipe,
+                    onRunRecipeNow = viewModel::runRecipeNow,
+                    onDismissRecipeStatus = viewModel::dismissRecipeStatus,
                 )
 
                 NuaDestination.YOU -> SettingsScreen(

@@ -115,7 +115,7 @@ class RecipeCompilerTest {
     }
 
     @Test
-    fun `a clause introduced by then depends on the previous step; and and commas stay independent`() = runTest {
+    fun `a clause introduced by then depends on the previous step -- and and commas stay independent`() = runTest {
         val compiled = compileRecipe("check the weather then open spotify", ::registryLookup)
         assertEquals(2, compiled.steps.size)
         assertEquals(emptyList<String>(), compiled.steps[0].dependsOn)
