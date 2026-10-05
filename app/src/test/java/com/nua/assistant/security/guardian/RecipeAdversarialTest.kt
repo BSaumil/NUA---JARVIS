@@ -125,6 +125,74 @@ class RecipeAdversarialTest {
         }
     }
 
+    @Test
+    fun `a then-dependent step can never execute while its prerequisite is still awaiting user confirmation`() = runTest {
+        // Guardian Lab expansion: RecipeCompiler.kt's dependsOn DAG (added this round, on
+        // top of the Feature 6 baseline) is a real promise, not just metadata the real
+        // fabric ignores -- proven against the exact registry-derived descriptors
+        // RecipeRepository actually uses (CapabilityRegistry::forAction), not a hand-built
+        // test descriptor, so classificationFor's real CONFIRM_BEFORE_EXECUTE for SMS_SEND
+        // is what triggers the pause.
+        val smsSkill = RecipeGuardianRecordingSkill(SkillManifest())
+        val openSkill = RecipeGuardianRecordingSkill(SkillManifest())
+        val registry = CapabilityRegistry(mapOf(NuaActionType.SMS_SEND to smsSkill, NuaActionType.OPEN_APP to openSkill))
+        var openAdapterCalled = false
+        val local = object : ActionAdapter {
+            override val type = ExecutionAdapterType.LOCAL_NATIVE
+            override suspend fun execute(descriptor: CapabilityDescriptor, parameters: Map<String, String>, context: AdapterExecutionContext): NuaRouteResult {
+                if (descriptor.action == NuaActionType.OPEN_APP) openAdapterCalled = true
+                return NuaRouteResult.ActionTaken("ran")
+            }
+        }
+        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), RecipeNoOpLineageRecorder())
+
+        val compiled = compileRecipe(
+            description = "text mom then open spotify",
+            descriptorFor = registry::forAction,
+            llmFallback = { utterance -> if ("text" in utterance.text) ClassifiedIntent(NuaActionType.SMS_SEND, 0.9, mapOf("to" to "mom")) else null },
+        )
+        assertEquals(2, compiled.steps.size)
+        assertEquals(listOf("step-0"), compiled.steps[1].dependsOn)
+
+        val plan = ActionPlan("adversarial-recipe-dag-pause", compiled.steps)
+        val state = executor.run(plan, CONTEXT)
+
+        assertEquals(StepOutcomeState.AWAITING_USER, state.outcomes["step-0"]?.state)
+        assertTrue("a dependent step must never run while its prerequisite awaits the user, even though the dependent itself needs no confirmation", !openAdapterCalled)
+        assertEquals("the dependent step must be left unattempted, never silently resolved as satisfied", null, state.outcomes["step-1"])
+    }
+
+    @Test
+    fun `a then-dependent step stays unresolved, never silently satisfied, when its prerequisite fails under SKIP`() = runTest {
+        val weatherSkill = RecipeGuardianRecordingSkill(SkillManifest())
+        val openSkill = RecipeGuardianRecordingSkill(SkillManifest())
+        val registry = CapabilityRegistry(mapOf(NuaActionType.GET_WEATHER to weatherSkill, NuaActionType.OPEN_APP to openSkill))
+        var openAdapterCalled = false
+        val local = object : ActionAdapter {
+            override val type = ExecutionAdapterType.LOCAL_NATIVE
+            override suspend fun execute(descriptor: CapabilityDescriptor, parameters: Map<String, String>, context: AdapterExecutionContext): NuaRouteResult {
+                if (descriptor.action == NuaActionType.OPEN_APP) openAdapterCalled = true
+                // GET_WEATHER's own real classification is NONE_REQUIRED/SKIP -- this
+                // adapter deliberately fails it outright, so SKIP keeps the plan running
+                // for anything independent, while this step's own dependent must not
+                // mistake "the plan kept going" for "the dependency was satisfied."
+                return NuaRouteResult.ActionTaken("weather lookup failed", succeeded = false)
+            }
+        }
+        val executor = WorkflowExecutor(registry, mapOf(ExecutionAdapterType.LOCAL_NATIVE to local), RecipeNoOpLineageRecorder())
+
+        val compiled = compileRecipe(description = "check the weather then open spotify", descriptorFor = registry::forAction)
+        assertEquals(2, compiled.steps.size)
+        assertEquals(listOf("step-0"), compiled.steps[1].dependsOn)
+
+        val plan = ActionPlan("adversarial-recipe-dag-skip", compiled.steps)
+        val state = executor.run(plan, CONTEXT)
+
+        assertEquals(StepOutcomeState.FAILED, state.outcomes["step-0"]?.state)
+        assertTrue("a dependent step must never run once its prerequisite failed, even under SKIP", !openAdapterCalled)
+        assertEquals("a dependent step on a failed prerequisite must stay unattempted forever, not silently resolved", null, state.outcomes["step-1"])
+    }
+
     private fun descriptorFor(action: NuaActionType): CapabilityDescriptor? = when (action) {
         NuaActionType.OPEN_APP, NuaActionType.GET_WEATHER ->
             CapabilityDescriptor(
