@@ -1,8 +1,10 @@
 package com.nua.assistant.briefing
 
-import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
-import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.context.ContextEngine
 import com.nua.assistant.context.ContextSnapshot
 import com.nua.assistant.context.describe
@@ -46,7 +48,7 @@ private val BRIEFING_SYSTEM_PROMPT = """
 class MorningBriefing @Inject constructor(
     private val contextEngine: ContextEngine,
     private val memoryDao: MemoryDao,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
 ) {
 
     suspend fun generate(triggerUtterance: String? = null, pinnedLanguage: NuaLanguage? = null): DailyBriefing {
@@ -66,10 +68,11 @@ class MorningBriefing @Inject constructor(
             if (pinnedLanguage != null) appendLine(NuaLanguage.pinnedDirective(pinnedLanguage))
         }
 
-        val result = claudeApiClient.complete(
+        val contract = TaskContract(task = InferenceTaskType.SUMMARIZATION, privacySensitivity = PrivacySensitivity.MEDIUM, requiresFrontierCapability = true)
+        val result = modelMesh.complete(
+            contract = contract,
             userPrompt = prompt,
             system = system,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 400,
         )
 

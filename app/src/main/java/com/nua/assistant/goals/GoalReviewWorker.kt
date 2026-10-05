@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.nua.assistant.ai.CLAUDE_MODEL_UTILITY
-import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.WorkerOutcome
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.ai.outcomeForWorkerRun
 import com.nua.assistant.context.ContextEngine
 import com.nua.assistant.context.describe
@@ -35,7 +37,7 @@ class GoalReviewWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val goalRepository: GoalRepository,
     private val contextEngine: ContextEngine,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -49,10 +51,11 @@ class GoalReviewWorker @AssistedInject constructor(
 
         activeGoals.forEach { goal ->
             val prompt = "Goal: ${goal.text}\n\nCurrent situation:\n$situation"
-            val result = claudeApiClient.complete(
+            val contract = TaskContract(task = InferenceTaskType.REASONING, privacySensitivity = PrivacySensitivity.HIGH)
+            val result = modelMesh.complete(
+                contract = contract,
                 userPrompt = prompt,
                 system = GOAL_REVIEW_SYSTEM_PROMPT,
-                model = CLAUDE_MODEL_UTILITY,
                 maxTokens = 200,
             )
             if (result !is ClaudeResult.Success) {

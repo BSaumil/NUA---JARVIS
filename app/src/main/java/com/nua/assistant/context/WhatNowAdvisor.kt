@@ -1,8 +1,10 @@
 package com.nua.assistant.context
 
-import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
-import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,7 +34,7 @@ private val WHAT_NOW_SYSTEM_PROMPT = """
 @Singleton
 class WhatNowAdvisor @Inject constructor(
     private val contextEngine: ContextEngine,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
 ) {
     suspend fun recommend(pinnedLanguage: NuaLanguage? = null): WhatNowResult {
         val snapshot = contextEngine.currentSnapshot()
@@ -46,10 +48,11 @@ class WhatNowAdvisor @Inject constructor(
             if (pinnedLanguage != null) appendLine(NuaLanguage.pinnedDirective(pinnedLanguage))
         }
 
-        val result = claudeApiClient.complete(
+        val contract = TaskContract(task = InferenceTaskType.REASONING, privacySensitivity = PrivacySensitivity.MEDIUM, requiresFrontierCapability = true)
+        val result = modelMesh.complete(
+            contract = contract,
             userPrompt = prompt,
             system = system,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 250,
         )
 

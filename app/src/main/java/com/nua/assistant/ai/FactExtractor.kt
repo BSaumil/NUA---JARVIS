@@ -1,5 +1,9 @@
 package com.nua.assistant.ai
 
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -50,7 +54,7 @@ private val EXTRACTION_SYSTEM_PROMPT = """
  */
 @Singleton
 class FactExtractor @Inject constructor(
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
     private val json: Json,
 ) {
 
@@ -75,10 +79,11 @@ class FactExtractor @Inject constructor(
 
     suspend fun extractFacts(userMessage: String, assistantReply: String): List<ExtractedFact> {
         val exchange = "User: $userMessage\nNUA: $assistantReply"
-        val result = claudeApiClient.complete(
+        val contract = TaskContract(task = InferenceTaskType.ENTITY_EXTRACTION, privacySensitivity = PrivacySensitivity.HIGH)
+        val result = modelMesh.complete(
+            contract = contract,
             userPrompt = exchange,
             system = EXTRACTION_SYSTEM_PROMPT,
-            model = CLAUDE_MODEL_UTILITY,
             maxTokens = 400,
         )
 

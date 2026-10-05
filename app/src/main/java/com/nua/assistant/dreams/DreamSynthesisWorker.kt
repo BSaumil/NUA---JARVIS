@@ -4,11 +4,13 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
-import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.WorkerOutcome
 import com.nua.assistant.ai.extractJsonPayload
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.ai.outcomeForWorkerRun
 import com.nua.assistant.context.ContextEngine
 import com.nua.assistant.context.describe
@@ -69,7 +71,7 @@ class DreamSynthesisWorker @AssistedInject constructor(
     private val trustRepository: TrustRepository,
     private val contextEngine: ContextEngine,
     private val dreamRepository: DreamRepository,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
     private val json: Json,
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -106,10 +108,11 @@ class DreamSynthesisWorker @AssistedInject constructor(
             )
         }
 
-        val result = claudeApiClient.complete(
+        val contract = TaskContract(task = InferenceTaskType.LONG_CONTEXT_SYNTHESIS, privacySensitivity = PrivacySensitivity.HIGH, requiresFrontierCapability = true)
+        val result = modelMesh.complete(
+            contract = contract,
             userPrompt = prompt,
             system = DREAM_SYSTEM_PROMPT,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 250,
         )
 

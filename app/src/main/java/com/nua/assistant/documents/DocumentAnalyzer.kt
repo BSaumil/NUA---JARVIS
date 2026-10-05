@@ -1,9 +1,12 @@
 package com.nua.assistant.documents
 
-import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
 import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.extractJsonPayload
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.security.FIREWALL_SYSTEM_DIRECTIVE
 import com.nua.assistant.security.UntrustedSource
 import com.nua.assistant.security.wrapUntrusted
@@ -64,10 +67,15 @@ private val ANSWER_SYSTEM_PROMPT = """
 @Singleton
 class DocumentAnalyzer @Inject constructor(
     private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
     private val json: Json,
 ) {
 
     suspend fun transcribePage(imageBase64: String, mediaType: String): String {
+        // Still the raw ClaudeApiClient: ModelMesh has no vision-capable completion yet
+        // (see ModelMesh.kt's own doc comment on scope) -- image description is a real,
+        // separately-scoped next slice, not bundled into this round's text-completion
+        // migration.
         val result = claudeApiClient.describeImage(
             imageBase64 = imageBase64,
             mediaType = mediaType,
@@ -78,7 +86,9 @@ class DocumentAnalyzer @Inject constructor(
     }
 
     suspend fun summarize(text: String): DocumentSummary {
-        val result = claudeApiClient.complete(
+        val contract = TaskContract(task = InferenceTaskType.SUMMARIZATION, privacySensitivity = PrivacySensitivity.HIGH)
+        val result = modelMesh.complete(
+            contract = contract,
             userPrompt = wrapUntrusted(redactSensitivePatterns(text.take(MAX_CONTEXT_CHARS)), UntrustedSource.DOCUMENT),
             system = SUMMARY_SYSTEM_PROMPT,
             maxTokens = 500,
@@ -101,10 +111,11 @@ class DocumentAnalyzer @Inject constructor(
         }
         // The question comes first and is never wrapped, so it's unambiguous which part
         // of the prompt is the user's actual instruction versus document data to read.
-        val result = claudeApiClient.complete(
+        val contract = TaskContract(task = InferenceTaskType.DOCUMENT_QA, privacySensitivity = PrivacySensitivity.HIGH, requiresFrontierCapability = true)
+        val result = modelMesh.complete(
+            contract = contract,
             userPrompt = "Question: $question\n\n$context",
             system = ANSWER_SYSTEM_PROMPT,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 600,
         )
         return (result as? ClaudeResult.Success)?.text ?: "Couldn't get an answer right now."

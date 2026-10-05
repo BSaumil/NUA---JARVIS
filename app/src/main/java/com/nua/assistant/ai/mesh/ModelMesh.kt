@@ -33,20 +33,46 @@ class ClaudeApiCloudCompletionProvider @Inject constructor(
  * (Feature 2). Domain callers ask for a [TaskContract]'s worth of work; the Mesh decides
  * *how* to satisfy it via [fallbackOrder], trying each available tier in priority order
  * until one produces a usable result. Callers never construct a
- * [com.nua.assistant.ai.ClaudeApiClient] request directly once migrated — see
- * [com.nua.assistant.ai.IntentClassifier], this round's one migrated call site.
+ * [com.nua.assistant.ai.ClaudeApiClient] request directly once migrated.
  *
- * Scope of this slice, stated honestly: only [InferenceTaskType.INTENT_CLASSIFICATION]
- * has a genuine multi-tier path ([classifyIntent], local rules then cloud). [complete]
- * is provider-neutral in interface but, today, can only ever resolve to a cloud call —
+ * Scope, stated honestly, as of the personal-test deployment directive's Model Mesh
+ * completion pass: only [InferenceTaskType.INTENT_CLASSIFICATION] has a genuine
+ * multi-tier path ([classifyIntent], local rules then cloud). [complete] is
+ * provider-neutral in interface but, today, can only ever resolve to a cloud call —
  * [ModelProviderTier.LOCAL_MODEL]/[ModelProviderTier.PRIVATE_OS_MODEL] have no real
- * implementation yet (see [RealModelAvailabilityDetector]). Every other Claude call site
- * in this codebase (fact extraction, planning, briefings, document/vision analysis,
- * workers) is *not* migrated this round — each is a real, separately-scoped next slice,
- * not bundled into one large rewrite. Usage/cost tracking is not duplicated here:
- * [complete] delegates to [ClaudeApiClient.complete], which already calls
- * `UsageTracker.record` on every successful response — the Settings cost dashboard
- * already reads real routed usage without this class needing its own accounting.
+ * implementation yet (see [RealModelAvailabilityDetector]).
+ *
+ * Migrated onto [complete] this pass: [com.nua.assistant.ai.IntentClassifier],
+ * [com.nua.assistant.ai.FactExtractor], [com.nua.assistant.ai.TaskPlanner],
+ * [com.nua.assistant.goals.GoalReviewWorker], [com.nua.assistant.dreams.DreamSynthesisWorker],
+ * [com.nua.assistant.briefing.MorningBriefing], [com.nua.assistant.diagnostics.SelfDiagnosticsRepository],
+ * [com.nua.assistant.context.WhatNowAdvisor],
+ * [com.nua.assistant.documents.DocumentAnalyzer] (its text-only `summarize`/`answer`
+ * calls), and [com.nua.assistant.memory.MemoryConsolidationWorker] — every call site in
+ * this codebase whose request shape was a single prompt string in, text out.
+ *
+ * Deliberately **not** migrated, each for a real structural reason rather than being
+ * overlooked:
+ * - [com.nua.assistant.documents.DocumentAnalyzer.transcribePage] and
+ *   [com.nua.assistant.vision.VisionAnalyzer] call
+ *   [com.nua.assistant.ai.ClaudeApiClient.describeImage] — [complete]'s signature has no
+ *   way to carry an image, and [CloudCompletionProvider] has no vision method. Giving the
+ *   Mesh real vision routing is a genuine next slice (there's already an
+ *   [InferenceTaskType.VISION] task type reserved for it), not something to bolt onto
+ *   this interface as an afterthought.
+ * - `NuaViewModel`'s main chat turn calls
+ *   [com.nua.assistant.ai.ClaudeApiClient.streamMessage] — multi-turn history, streamed
+ *   [com.nua.assistant.ai.ClaudeStreamEvent]s for live token-by-token UI updates, neither
+ *   of which [complete] supports. This is the single highest-traffic call site in the
+ *   app and the one most sensitive to a subtle behavioral regression (no Robolectric/
+ *   instrumented coverage yet to catch a UI-level streaming defect) — migrating it needs
+ *   its own `ModelMesh.stream(...)` capability built and verified on its own, not rushed
+ *   in alongside nine other call sites.
+ *
+ * Usage/cost tracking is not duplicated here: [complete] delegates to
+ * [ClaudeApiClient.complete], which already calls `UsageTracker.record` on every
+ * successful response — the Settings cost dashboard already reads real routed usage
+ * without this class needing its own accounting.
  */
 @Singleton
 class ModelMesh @Inject constructor(

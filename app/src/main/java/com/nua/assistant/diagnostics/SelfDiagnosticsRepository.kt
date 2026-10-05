@@ -5,8 +5,11 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
-import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.email.EmailRepository
 import com.nua.assistant.email.EmailResult
@@ -32,7 +35,7 @@ class SelfDiagnosticsRepository @Inject constructor(
     private val secureKeyRepository: SecureKeyRepository,
     private val ownerVerifier: OwnerVerifier,
     private val emailRepository: EmailRepository,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
 ) {
 
     suspend fun runChecks(): List<DiagnosticCheck> = evaluateDiagnostics(gatherInputs())
@@ -42,7 +45,8 @@ class SelfDiagnosticsRepository @Inject constructor(
         if (!secureKeyRepository.hasApiKey()) {
             return DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.NOT_CONFIGURED, "No Claude API key set — add one in Settings to enable NUA.")
         }
-        return when (val result = claudeApiClient.complete(userPrompt = "Reply with the single word: ok", maxTokens = 8)) {
+        val contract = TaskContract(task = InferenceTaskType.REASONING, privacySensitivity = PrivacySensitivity.LOW)
+        return when (val result = modelMesh.complete(contract = contract, userPrompt = "Reply with the single word: ok", maxTokens = 8)) {
             is ClaudeResult.Success -> DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.OK, "Connection verified — Claude responded successfully.")
             is ClaudeResult.Failure -> DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.ERROR, "Connection failed: ${result.message}")
         }

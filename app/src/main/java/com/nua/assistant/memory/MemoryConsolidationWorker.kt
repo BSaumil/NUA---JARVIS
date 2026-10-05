@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.nua.assistant.ai.CLAUDE_MODEL_UTILITY
-import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.WorkerOutcome
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.ai.outcomeForWorkerRun
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -34,7 +36,7 @@ class MemoryConsolidationWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
     private val memoryDao: MemoryDao,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -44,10 +46,11 @@ class MemoryConsolidationWorker @AssistedInject constructor(
         if (batch.isEmpty()) return Result.success()
 
         val transcript = batch.joinToString("\n") { "${it.role}: ${it.content}" }
-        val result = claudeApiClient.complete(
+        val contract = TaskContract(task = InferenceTaskType.SUMMARIZATION, privacySensitivity = PrivacySensitivity.HIGH)
+        val result = modelMesh.complete(
+            contract = contract,
             userPrompt = transcript,
             system = CONSOLIDATION_SYSTEM_PROMPT,
-            model = CLAUDE_MODEL_UTILITY,
             maxTokens = 300,
         )
 
