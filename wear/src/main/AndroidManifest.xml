@@ -16,8 +16,10 @@
             android:value="true" />
 
         <!-- Tier 1: the official Wear Tiles API. Shows a status line on the watch
-             face's tile carousel; not yet wired to live data from the phone app (no
-             Data Layer / Wearable Data API connection exists) — see README. -->
+             face's tile carousel, now reading the phone app's presence via the real
+             Wearable Data Layer API (docs/PRESENCE_MESH_RFC.md); unverified against a
+             real paired device or emulator, neither of which exists in this
+             development environment — see README's Known gaps. -->
         <service
             android:name=".NuaTileService"
             android:exported="true"

@@ -40,4 +40,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     // ListenableFuture + Futures.immediateFuture, used by the async TileService callbacks.
     implementation("com.google.guava:guava:33.0.0-android")
+
+    // Presence Mesh's real transport, watch side -- reads the phone's published
+    // presence DataItem (see docs/PRESENCE_MESH_RFC.md and app/build.gradle.kts's own
+    // copy of this dependency).
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
 }

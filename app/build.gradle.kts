@@ -182,6 +182,11 @@ dependencies {
     // Android Auto entry point (car/NuaCarAppService.kt)
     implementation("androidx.car.app:app:1.4.0")
 
+    // Presence Mesh's real transport (presence/WearableDataClientPresenceTransport.kt) --
+    // see docs/PRESENCE_MESH_RFC.md. Same artifact wear/build.gradle.kts adds for the
+    // watch side's own DataClient read.
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     // Verifies executeCancellably (ai/CancellableHttpCall.kt) actually cancels an

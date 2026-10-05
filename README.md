@@ -578,9 +578,13 @@ needs to change, including the multi-keyword detection code in `NuaForegroundSer
   emulator, a Wear OS device, or the Wear emulator — CI only confirms they compile.
   `HostValidator.ALLOW_ALL_HOSTS_VALIDATOR` and `IOT` as the declared category are both
   things to revisit before any real Play Store submission.
-- The Wear tile has no connection to the phone app's data (calendar, weather,
-  notifications) — it's static text. Wiring that up needs the Wearable Data Layer API
-  (`DataClient`/`MessageClient`), which isn't built yet.
+- The Wear tile now reads the phone app's presence via the real Wearable Data Layer API
+  (`presence/` package, `docs/PRESENCE_MESH_RFC.md`) instead of only ever showing static
+  text — but that round trip has never been verified against a real paired Wear OS
+  device or emulator, neither of which exists in this development environment; CI only
+  confirms both modules compile against the real `DataClient`/`PutDataMapRequest` API.
+  Calendar/weather/notification data isn't pushed to the tile yet — presence (is the
+  phone active) is the one signal wired up this round.
 - Geofencing needs `ACCESS_BACKGROUND_LOCATION`, which Google Play gates behind a
   separate declaration form before a build using it can be published — filing that is
   out of scope for this repo's current pre-release state.

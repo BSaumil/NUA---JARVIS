@@ -83,6 +83,7 @@ import com.nua.assistant.automation.uaf.encodePlanReminders
 import com.nua.assistant.privacy.PrivacyRepository
 import com.nua.assistant.privacy.buildDataExport
 import com.nua.assistant.recipes.CompiledRecipe
+import com.nua.assistant.presence.PresenceRepository
 import com.nua.assistant.recipes.RecipeRepository
 import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.timeline.TimelineBuilder
@@ -201,6 +202,7 @@ class NuaViewModel @Inject constructor(
     private val skillCatalog: SkillCatalog,
     private val workflowExecutor: WorkflowExecutor,
     private val recipeRepository: RecipeRepository,
+    private val presenceRepository: PresenceRepository,
     private val json: Json,
 ) : ViewModel() {
 
@@ -559,6 +561,9 @@ class NuaViewModel @Inject constructor(
         viewModelScope.launch { geofenceManager.registerAll() }
         viewModelScope.launch { maybeShowSelfReport() }
         viewModelScope.launch { maybeShowDream() }
+        // Presence Mesh's one real event this round: the phone app being opened --
+        // see presence/PresenceRepository.kt and docs/PRESENCE_MESH_RFC.md.
+        viewModelScope.launch { presenceRepository.publishSelf() }
     }
 
     /**
