@@ -19,6 +19,7 @@ data class RecipeStepData(
     val actionName: String,
     val parameters: Map<String, String> = emptyMap(),
     val failurePolicyName: String,
+    val dependsOn: List<String> = emptyList(),
 )
 
 /** Pure: the at-rest form of a compiled step. */
@@ -27,6 +28,7 @@ fun PlanStep.toData(): RecipeStepData = RecipeStepData(
     actionName = action.name,
     parameters = parameters,
     failurePolicyName = failurePolicy.name,
+    dependsOn = dependsOn,
 )
 
 /**
@@ -40,5 +42,5 @@ fun PlanStep.toData(): RecipeStepData = RecipeStepData(
 fun RecipeStepData.toPlanStep(): PlanStep? {
     val action = runCatching { NuaActionType.valueOf(actionName) }.getOrNull() ?: return null
     val failurePolicy = runCatching { FailurePolicy.valueOf(failurePolicyName) }.getOrNull() ?: return null
-    return PlanStep(id = id, action = action, parameters = parameters, failurePolicy = failurePolicy)
+    return PlanStep(id = id, action = action, parameters = parameters, dependsOn = dependsOn, failurePolicy = failurePolicy)
 }

@@ -10,6 +10,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.Update
 import com.nua.assistant.documents.DocumentType
 import com.nua.assistant.dreams.DreamCategory
 import com.nua.assistant.goals.GoalType
@@ -347,6 +348,9 @@ interface RecipeDao {
 
     @Query("SELECT * FROM recipes ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<RecipeEntity>>
+
+    @Update
+    suspend fun update(entity: RecipeEntity)
 
     @Query("DELETE FROM recipes WHERE id = :id")
     suspend fun deleteById(id: Long)

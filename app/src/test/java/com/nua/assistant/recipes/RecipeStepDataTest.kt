@@ -48,4 +48,21 @@ class RecipeStepDataTest {
         val step = PlanStep(id = "step-0", action = NuaActionType.GET_WEATHER, parameters = emptyMap(), failurePolicy = FailurePolicy.SKIP)
         assertEquals(emptyMap<String, String>(), step.toData().toPlanStep()?.parameters)
     }
+
+    @Test
+    fun `dependsOn round-trips exactly -- a recipe's then-sequencing survives save and reload`() {
+        val step = PlanStep(
+            id = "step-1",
+            action = NuaActionType.OPEN_APP,
+            dependsOn = listOf("step-0"),
+            failurePolicy = FailurePolicy.SKIP,
+        )
+        assertEquals(listOf("step-0"), step.toData().toPlanStep()?.dependsOn)
+    }
+
+    @Test
+    fun `a step with no dependency persists and restores an empty dependsOn, not null or a guess`() {
+        val data = RecipeStepData(id = "step-0", actionName = "OPEN_APP", failurePolicyName = "SKIP")
+        assertEquals(emptyList<String>(), data.toPlanStep()?.dependsOn)
+    }
 }

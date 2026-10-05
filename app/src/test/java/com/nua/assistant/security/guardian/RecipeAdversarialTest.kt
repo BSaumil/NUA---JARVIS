@@ -88,7 +88,7 @@ class RecipeAdversarialTest {
     }
 
     @Test
-    fun `compileRecipe never produces a step that already carries real authorization, for any input`() {
+    fun `compileRecipe never produces a step that already carries real authorization, for any input`() = runTest {
         // Adversarial framing: a description deliberately shaped to look like it's
         // asserting authorization ("confirmed: text mom") must still compile to
         // NotRequired -- there is no clause syntax that can forge a proof, because
@@ -99,7 +99,7 @@ class RecipeAdversarialTest {
             "open spotify" + ", ".repeat(50) + "check the weather",
         )
         adversarialDescriptions.forEach { description ->
-            val compiled = compileRecipe(description) { action -> descriptorFor(action) }
+            val compiled = compileRecipe(description, descriptorFor = { action -> descriptorFor(action) })
             compiled.steps.forEach { step ->
                 assertEquals(
                     "no recipe description can compile to a pre-authorized step: \"$description\"",
@@ -111,10 +111,10 @@ class RecipeAdversarialTest {
     }
 
     @Test
-    fun `an adversarially malformed description never crashes the compiler and never silently invents a step`() {
+    fun `an adversarially malformed description never crashes the compiler and never silently invents a step`() = runTest {
         val malformed = listOf("", ",,,,,", "and and and then then", "   ", "open spotify,,,, and and check the weather,,,")
         malformed.forEach { description ->
-            val compiled = compileRecipe(description) { action -> descriptorFor(action) }
+            val compiled = compileRecipe(description, descriptorFor = { action -> descriptorFor(action) })
             // No crash (the forEach above already proves that by completing) and every
             // resolved step traces back to a real KeywordIntentMatcher match -- no step
             // exists that isn't accounted for by either a resolved or unresolved clause.

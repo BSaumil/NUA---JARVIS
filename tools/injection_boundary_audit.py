@@ -35,6 +35,11 @@ DECLARATION_LINE = re.compile(r'\bvalue class UserUtterance\b')
 # (file path suffix, expected number of constructor call sites in that file)
 ALLOWLIST = {
     'app/src/main/java/com/nua/assistant/ui/NuaViewModel.kt': 1,
+    # A recipe's description is the user's own typed/spoken text, written at the moment
+    # they create (or edit) the recipe -- the same provenance a live chat turn has, never
+    # a document/vision/notification/email body. Reviewed by hand alongside the Model
+    # Mesh fallback parsing this call site exists for (RecipeCompiler.kt's compileRecipe).
+    'app/src/main/java/com/nua/assistant/recipes/RecipeCompiler.kt': 1,
 }
 
 
