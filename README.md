@@ -575,9 +575,15 @@ needs to change, including the multi-keyword detection code in `NuaForegroundSer
 - Android Auto (`car/NuaCarAppService.kt`) and the Wear OS tile (`:wear` module) are
   both real usage of their respective official libraries (Car App Library, classic Wear
   Tiles API) but neither has been tested on a head unit, the Desktop Head Unit
-  emulator, a Wear OS device, or the Wear emulator — CI only confirms they compile.
-  `HostValidator.ALLOW_ALL_HOSTS_VALIDATOR` and `IOT` as the declared category are both
-  things to revisit before any real Play Store submission.
+  emulator, a Wear OS device, or the Wear emulator — CI only confirms they compile; no
+  `adb`/`emulator`/Android SDK tooling exists in this development environment to change
+  that. `createHostValidator()` now uses the Car App Library's own bundled
+  `hosts_allowlist_sample` allowlist for release builds (debug builds keep
+  `ALLOW_ALL_HOSTS_VALIDATOR`, since the Desktop Head Unit signs with a certificate that
+  allowlist doesn't include) — the one real, code-level fix this gap didn't need a
+  device to make. `IOT` as the declared category is still a real open question (no
+  Car App Library category cleanly fits a general voice assistant) to revisit before
+  any real Play Store submission.
 - The Wear tile now reads the phone app's presence via the real Wearable Data Layer API
   (`presence/` package, `docs/PRESENCE_MESH_RFC.md`) instead of only ever showing static
   text — but that round trip has never been verified against a real paired Wear OS
