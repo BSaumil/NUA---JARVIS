@@ -28,6 +28,8 @@ enum class NuaActionType {
     EMAIL,
     SMS_SEND,
     CALENDAR_INVITE,
+    /** Governed external MCP/A2A capability. Not advertised to general intent classification. */
+    REMOTE_TOOL,
     /** No concrete action fits — fall through to a normal conversational reply. */
     CHAT,
 }

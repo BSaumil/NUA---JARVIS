@@ -1,0 +1,19 @@
+[project]
+name = "nua-sovereign-companion"
+version = "0.1.0"
+description = "NUA Sovereign Presence Mesh companion service"
+requires-python = ">=3.11"
+dependencies = [
+  "cryptography>=44,<46",
+  "wasmtime==50.0.1",
+]
+
+[project.scripts]
+nua-companion = "nua_companion.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"

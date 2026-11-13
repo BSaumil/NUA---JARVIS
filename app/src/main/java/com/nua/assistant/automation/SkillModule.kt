@@ -1,6 +1,7 @@
 package com.nua.assistant.automation
 
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.remote.RemoteToolSkill
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -76,4 +77,9 @@ abstract class SkillModule {
     @IntoMap
     @ActionTypeKey(NuaActionType.CALENDAR_INVITE)
     abstract fun bindCalendarInviteSkill(impl: CalendarInviteSkill): NuaSkill
+
+    @Binds
+    @IntoMap
+    @ActionTypeKey(NuaActionType.REMOTE_TOOL)
+    abstract fun bindRemoteToolSkill(impl: RemoteToolSkill): NuaSkill
 }

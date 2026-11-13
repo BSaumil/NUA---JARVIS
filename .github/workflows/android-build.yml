@@ -49,6 +49,9 @@ jobs:
       - name: UAF boundary audit
         run: python3 tools/uaf_boundary_audit.py
 
+      - name: Remote MCP A2A boundary audit
+        run: python3 tools/remote_gateway_boundary_audit.py
+
       # Prevents local-first/private background intelligence from silently regressing
       # into direct cloud egress, and keeps learned model routing subordinate to the
       # privacy-safe fallback order.

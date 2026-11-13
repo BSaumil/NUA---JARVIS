@@ -50,9 +50,13 @@ BRIEFING_REQUIRED = (
 )
 
 MESH_PATH = "app/src/main/java/com/nua/assistant/ai/mesh/ModelMesh.kt"
+ROUTING_POLICY_PATH = "app/src/main/java/com/nua/assistant/ai/mesh/TaskRoutingPolicy.kt"
 MESH_REQUIRED = (
-    "val baseOrder = fallbackOrder(contract, available)",
-    "routingLearning.order(contract.task, baseOrder)",
+    "val routingDecision = ModelRoutingPlanner().decide(",
+    "routingLearning.order(contract.task, routingDecision.orderedTiers)",
+)
+ROUTING_POLICY_REQUIRED = (
+    "val policySafe = fallbackOrder(contract, available).toMutableList()",
 )
 
 
@@ -100,7 +104,15 @@ def audit(root: Path) -> list[str]:
     else:
         for required in MESH_REQUIRED:
             if required not in mesh:
-                issues.append(f"{MESH_PATH}: learned routing is no longer bounded by fallbackOrder")
+                issues.append(f"{MESH_PATH}: learned routing no longer consumes the policy-safe routing decision")
+
+    routing_policy = read(root, ROUTING_POLICY_PATH)
+    if routing_policy is None:
+        issues.append(f"{ROUTING_POLICY_PATH}: missing")
+    else:
+        for required in ROUTING_POLICY_REQUIRED:
+            if required not in routing_policy:
+                issues.append(f"{ROUTING_POLICY_PATH}: routing policy is no longer bounded by fallbackOrder")
 
     return issues
 
@@ -143,8 +155,15 @@ def selftest() -> int:
         mesh = root / MESH_PATH
         mesh.parent.mkdir(parents=True, exist_ok=True)
         mesh.write_text(
-            "val baseOrder = fallbackOrder(contract, available)\n"
-            "routingLearning.order(contract.task, baseOrder)",
+            "val routingDecision = ModelRoutingPlanner().decide(\n"
+            "routingLearning.order(contract.task, routingDecision.orderedTiers)",
+            encoding="utf-8",
+        )
+
+        routing = root / ROUTING_POLICY_PATH
+        routing.parent.mkdir(parents=True, exist_ok=True)
+        routing.write_text(
+            "val policySafe = fallbackOrder(contract, available).toMutableList()",
             encoding="utf-8",
         )
 

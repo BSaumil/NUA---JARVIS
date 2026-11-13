@@ -1,0 +1,31 @@
+name: Companion Build
+
+on:
+  push:
+    paths:
+      - "services/companion/**"
+      - ".github/workflows/companion-build.yml"
+  pull_request:
+    paths:
+      - "services/companion/**"
+      - ".github/workflows/companion-build.yml"
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install companion and test dependencies
+        run: python -m pip install --upgrade pip pytest && python -m pip install -e services/companion
+      - name: Run companion tests
+        run: python -m pytest services/companion/tests -q
+      - name: Compile Python sources
+        run: python -m compileall services/companion/nua_companion
