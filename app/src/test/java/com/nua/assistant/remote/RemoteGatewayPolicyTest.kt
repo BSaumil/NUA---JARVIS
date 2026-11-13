@@ -54,6 +54,16 @@ class RemoteGatewayPolicyTest {
         assertFalse(validateRemoteInvocation(trust(manifest()), RemoteProtocol.MCP, "weather.lookup", """{"apiKey":"secret-value"}""", capsule()).allowed)
     }
 
+    @Test fun `unsafe remote invocation path is refused`() {
+        val bad = manifest().copy(invokePath = "/tools/../admin")
+        assertFalse(validateRemoteInvocation(trust(bad), RemoteProtocol.MCP, "weather.lookup", "{}", capsule()).allowed)
+    }
+
+    @Test fun `non-local arbitrary HTTPS port is refused`() {
+        val bad = manifest(baseUrl = "https://tools.example.test:9443")
+        assertFalse(validateRemoteInvocation(trust(bad), RemoteProtocol.MCP, "weather.lookup", "{}", capsule()).allowed)
+    }
+
     @Test fun `plain HTTP is localhost only`() {
         val remote = manifest(baseUrl = "http://192.168.1.10:8765")
         assertFalse(validateRemoteInvocation(trust(remote), RemoteProtocol.MCP, "weather.lookup", "{}", capsule()).allowed)
