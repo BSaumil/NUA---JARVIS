@@ -142,10 +142,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // Private on-device inference through Gemini Nano / Android AICore.
-    // beta4 is intentionally used here: beta5 requires Kotlin 2.3+, while NUA's
-    // current compiler is Kotlin 2.0.21. Coroutines is pinned to 1.11.0 because
-    // ML Kit documents a beta3/beta4 runtime incompatibility with <=1.10.x.
-    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+    // Current Prompt API. This requires Kotlin 2.3+, which the root toolchain now supplies.
+    // Coroutines stays on 1.11.0 for compatibility across the GenAI stack.
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta5")
 
     // Secure storage for the Claude API key
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
