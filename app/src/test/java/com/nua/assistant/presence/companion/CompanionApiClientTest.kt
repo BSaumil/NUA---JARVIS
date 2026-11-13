@@ -13,7 +13,7 @@ import org.junit.Test
 
 private val TEST_JSON = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
-private class FakeSigningIdentity(deviceId: String = "device-1") : CompanionSigningIdentity {
+private class FakeApiSigningIdentity(deviceId: String = "device-1") : CompanionSigningIdentity {
     override val identity = DeviceIdentity(
         deviceId = deviceId,
         publicKey = "fake-public-key",
@@ -45,7 +45,7 @@ class CompanionApiClientTest {
         val transport = RecordingTransport(
             CompanionHttpResult.Success("""{"succeeded":true,"text":"hi there","provider":"ollama"}"""),
         )
-        val client = CompanionApiClient(transport, FakeSigningIdentity(), TEST_JSON)
+        val client = CompanionApiClient(transport, FakeApiSigningIdentity(), TEST_JSON)
 
         val outcome = client.inference("hello", "local-model")
 
@@ -56,7 +56,7 @@ class CompanionApiClientTest {
     @Test
     fun `the signed request's payload exactly matches what was sent for prompt and modelId`() = runTest {
         val transport = RecordingTransport(CompanionHttpResult.Success("""{"succeeded":true,"text":"ok"}"""))
-        val client = CompanionApiClient(transport, FakeSigningIdentity(), TEST_JSON)
+        val client = CompanionApiClient(transport, FakeApiSigningIdentity(), TEST_JSON)
 
         client.inference("what's the weather", "llama3.2")
 
@@ -74,7 +74,7 @@ class CompanionApiClientTest {
         val transport = RecordingTransport(
             CompanionHttpResult.Failure(403, """{"error":"unpaired_or_revoked"}"""),
         )
-        val client = CompanionApiClient(transport, FakeSigningIdentity(), TEST_JSON)
+        val client = CompanionApiClient(transport, FakeApiSigningIdentity(), TEST_JSON)
 
         val outcome = client.inference("hello")
 
@@ -84,7 +84,7 @@ class CompanionApiClientTest {
     @Test
     fun `an unreachable companion is refused, never silently treated as success`() = runTest {
         val transport = RecordingTransport(CompanionHttpResult.Unreachable("timed out"))
-        val client = CompanionApiClient(transport, FakeSigningIdentity(), TEST_JSON)
+        val client = CompanionApiClient(transport, FakeApiSigningIdentity(), TEST_JSON)
 
         val outcome = client.inference("hello")
 

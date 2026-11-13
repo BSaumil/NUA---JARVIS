@@ -11,7 +11,7 @@ import org.junit.Test
 
 private val TEST_JSON = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
-private class FakeSigningIdentity(deviceId: String = "device-1") : CompanionSigningIdentity {
+private class FakePairingSigningIdentity(deviceId: String = "device-1") : CompanionSigningIdentity {
     override val identity = DeviceIdentity(
         deviceId = deviceId,
         publicKey = "fake-public-key",
@@ -56,7 +56,7 @@ class CompanionPairingClientTest {
                 "/pair/prove" to CompanionHttpResult.Success("""{"verified":true,"ownerApprovalRequired":true}"""),
             ),
         )
-        val identity = FakeSigningIdentity()
+        val identity = FakePairingSigningIdentity()
         val client = CompanionPairingClient(transport, identity, TEST_JSON)
 
         val outcome = client.requestPairing()
@@ -74,7 +74,7 @@ class CompanionPairingClientTest {
                 "/pair/prove" to CompanionHttpResult.Failure(403, """{"verified":false,"ownerApprovalRequired":false}"""),
             ),
         )
-        val client = CompanionPairingClient(transport, FakeSigningIdentity(), TEST_JSON)
+        val client = CompanionPairingClient(transport, FakePairingSigningIdentity(), TEST_JSON)
 
         val outcome = client.requestPairing()
 
@@ -86,7 +86,7 @@ class CompanionPairingClientTest {
         val transport = ScriptedTransport(
             mutableMapOf("/pair/challenge" to CompanionHttpResult.Unreachable("connection refused")),
         )
-        val client = CompanionPairingClient(transport, FakeSigningIdentity(), TEST_JSON)
+        val client = CompanionPairingClient(transport, FakePairingSigningIdentity(), TEST_JSON)
 
         val outcome = client.requestPairing()
 
@@ -99,7 +99,7 @@ class CompanionPairingClientTest {
         val transport = ScriptedTransport(
             mutableMapOf("/pair/challenge" to CompanionHttpResult.Success("not json at all")),
         )
-        val client = CompanionPairingClient(transport, FakeSigningIdentity(), TEST_JSON)
+        val client = CompanionPairingClient(transport, FakePairingSigningIdentity(), TEST_JSON)
 
         val outcome = client.requestPairing()
 
