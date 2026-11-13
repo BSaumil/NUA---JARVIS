@@ -45,3 +45,21 @@ def test_approval_and_revocation_survive_restart(tmp_path):
 
     assert PairingStore(path).revoke("phone-1")
     assert PairingStore(path).approved("phone-1") is None
+
+
+def test_owner_scopes_are_persisted_and_not_client_self_asserted(tmp_path):
+    path = tmp_path / "pairing.json"
+    private = Ed25519PrivateKey.generate()
+    store = PairingStore(path)
+    challenge = store.create_challenge(identity(private), now=1000)
+    signature = private.sign(base64.b64decode(challenge.nonceBase64))
+    assert store.verify_proof(challenge.challengeId, base64.b64encode(signature).decode(), now=1001)
+    trusted = store.owner_approve(
+        challenge.challengeId,
+        now=1002,
+        granted_scopes=("HEALTH", "PRESENCE_READ", "INFERENCE"),
+    )
+    assert trusted is not None
+    reloaded = PairingStore(path).approved("phone-1")
+    assert reloaded is not None
+    assert reloaded.granted_scopes == ("HEALTH", "INFERENCE", "PRESENCE_READ")
