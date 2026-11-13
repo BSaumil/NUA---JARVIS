@@ -6,6 +6,8 @@ struct DeviceIdentity: Codable {
     let ownerLabel: String
     let platform: String
     let appVersion: String
+    let keyAlgorithm: String?
+    let publicKeyEncoding: String?
     let protocolVersion: Int
 }
 
