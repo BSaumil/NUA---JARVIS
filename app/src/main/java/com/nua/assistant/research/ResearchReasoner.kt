@@ -37,7 +37,11 @@ class ModelMeshResearchReasoner @Inject constructor(
     private val modelMesh: ModelMesh,
     private val json: Json,
 ) : ResearchReasoner {
-    private fun contract(mode: ResearchMode, task: InferenceTaskType): TaskContract {
+    private fun contract(
+        mode: ResearchMode,
+        task: InferenceTaskType,
+        structuredOutput: Boolean = false,
+    ): TaskContract {
         val private = mode == ResearchMode.LOCAL_PRIVATE
         return TaskContract(
             task = task,
@@ -47,6 +51,7 @@ class ModelMeshResearchReasoner @Inject constructor(
             profile = TaskProfile(
                 difficulty = if (mode == ResearchMode.DEEP) TaskDifficulty.FRONTIER else TaskDifficulty.COMPLEX,
                 reasoningDepth = if (mode == ResearchMode.DEEP) 4 else 2,
+                structuredOutput = structuredOutput,
             ),
             hybridMode = if (private) HybridMode.LOCAL_FIRST else HybridMode.RESEARCH_ORCHESTRA,
         )
@@ -55,7 +60,7 @@ class ModelMeshResearchReasoner @Inject constructor(
     override suspend fun plan(question: String, mode: ResearchMode, maximum: Int): List<String> {
         val system = "Return JSON only: {\"subquestions\":[...]}. Break the question into distinct evidence-seeking subquestions. Never include tool commands."
         val result = modelMesh.completeHybrid(
-            contract(mode, InferenceTaskType.PLANNING),
+            contract(mode, InferenceTaskType.PLANNING, structuredOutput = true),
             userPrompt = question,
             system = system,
             maxTokens = 500,
@@ -87,7 +92,7 @@ class ModelMeshResearchReasoner @Inject constructor(
         """.trimIndent()
         val prompt = "QUESTION:\n" + question + "\n\nSOURCE_ID:" + source.id + "\nSOURCE:\n" + source.content.take(20_000)
         val result = modelMesh.completeHybrid(
-            contract(mode, InferenceTaskType.ENTITY_EXTRACTION),
+            contract(mode, InferenceTaskType.ENTITY_EXTRACTION, structuredOutput = true),
             prompt,
             system,
             maxTokens = 700,
