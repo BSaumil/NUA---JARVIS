@@ -2588,3 +2588,52 @@ Two failures repeat in the record above, and both became process, not just fixes
    because either failure was catastrophic, but because the whole premise of
    `ROADMAP.md`'s ground rule (nothing is done until it's real, wired, and green) only
    holds if verification itself is held to the same standard as the code it checks.
+
+
+## November 13, 2026 — OpenJarvis competitive benchmark / Sovereign Runtime upgrade
+
+Benchmarked `open-jarvis/OpenJarvis` at
+`afdbd5b35cb21f51564588c8cdbf6b74889c4f1f` against NUA's deployed architecture.
+The useful gap was not personal-assistant breadth — NUA already had the stronger
+memory/trust/autonomy/mobile-context substrate — but local execution, persistent
+operators, portable skills and trace-driven provider routing.
+
+Implemented independently in NUA-native form:
+
+- **Gemini Nano / AICore PRIVATE_OS_MODEL** through ML Kit Prompt, runtime-probed and
+  fail-closed. HIGH-sensitivity TaskContracts now default cloud off.
+- **Validator-aware Model Mesh fallback** so typed/JSON tasks only accept a provider
+  response that satisfies the caller's output contract.
+- **Provider-specific prompts**: local inference can receive richer context while cloud
+  receives a minimized/redacted prompt.
+- **Local-first production call sites**: intent classification, fact extraction,
+  planning, What Now and Daily Intelligence.
+- **Autonomous private jobs are local-only**: Goal Review, Memory Consolidation and
+  Dreams now use HIGH + requiresOffline and never call Claude directly.
+- **Sovereign Operators**: recipe-backed WorkManager agents with explicit capability
+  envelopes, daily limits, cooldowns and health state; every effect stays behind
+  WorkflowExecutor.
+- **Sovereign Skill Packages**: declarative recipe/capability packages with provenance,
+  signature/user-approval boundary, dependency cycle/depth checks and no executable
+  imported scripts.
+- **Privacy-bounded routing learning**: content-free task/tier success and latency
+  aggregates can reorder only the already-policy-safe fallback list. Learning cannot
+  introduce a cloud tier excluded by privacy.
+- **Guardian-style CI audit**:
+  `tools/model_mesh_boundary_audit.py` self-tests and then pins the private-worker,
+  cloud-minimization and learned-routing invariants.
+
+The Android toolchain had to move to Kotlin 2.3 / modern KSP for the current ML Kit
+GenAI family. That exposed two pre-existing compatibility constraints during CI:
+old-style `kotlinOptions.jvmTarget` in both app/Wear and Room 2.6.1's KSP processor.
+Both were fixed forward: compilerOptions DSL in both modules and Room 2.8.5. Hilt 2.60.1
+was tested but correctly rejected because it requires AGP 9; NUA instead uses the
+AGP-8-compatible Hilt 2.57.1 rather than forcing an unrelated AGP-9 migration.
+
+Explicitly not adopted: arbitrary shell execution, imported executable skill scripts,
+raw MCP/A2A clients that bypass Privacy Capsules/UAF, server-GPU telemetry presented as
+an Android feature, or autonomous source-code rewriting. Those would increase breadth
+while weakening the properties that make NUA a sovereign personal assistant.
+
+Full rationale and implementation matrix:
+`docs/OPENJARVIS_COMPETITIVE_AUDIT_2026-11-13.md`.

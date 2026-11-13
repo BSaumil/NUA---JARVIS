@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -85,10 +86,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -125,14 +122,14 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.52")
-    ksp("com.google.dagger:hilt-android-compiler:2.52")
+    implementation("com.google.dagger:hilt-android:2.57.1")
+    ksp("com.google.dagger:hilt-android-compiler:2.57.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Room
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-runtime:2.8.5")
+    implementation("androidx.room:room-ktx:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
 
     // Networking (Claude API, Open-Meteo)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -142,7 +139,12 @@ dependencies {
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+
+    // Private on-device inference through Gemini Nano / Android AICore.
+    // Current Prompt API. This requires Kotlin 2.3+, which the root toolchain now supplies.
+    // Coroutines stays on 1.11.0 for compatibility across the GenAI stack.
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta5")
 
     // Secure storage for the Claude API key
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
@@ -173,11 +175,17 @@ dependencies {
     implementation("androidx.car.app:app:1.4.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     // Verifies executeCancellably (ai/CancellableHttpCall.kt) actually cancels an
     // in-flight request against a real local socket — same publisher/version as the
     // production okhttp dependency, no new transitive risk.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.fromTarget("17")
+    }
 }

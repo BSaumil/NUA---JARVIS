@@ -1,5 +1,9 @@
 package com.nua.assistant.ai
 
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.calendar.CalendarReader
 import com.nua.assistant.voice.NuaLanguage
 import com.nua.assistant.weather.WeatherRepository
@@ -63,7 +67,7 @@ private val PLANNER_SYSTEM_PROMPT = """
 class TaskPlanner @Inject constructor(
     private val weatherRepository: WeatherRepository,
     private val calendarReader: CalendarReader,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
     private val json: Json,
 ) {
 
@@ -91,11 +95,20 @@ class TaskPlanner @Inject constructor(
             if (pinnedLanguage != null) appendLine(NuaLanguage.pinnedDirective(pinnedLanguage))
         }
 
-        val result = claudeApiClient.complete(
+        val result = modelMesh.completeValidated(
+            contract = TaskContract(
+                task = InferenceTaskType.PLANNING,
+                privacySensitivity = PrivacySensitivity.MEDIUM,
+                requiresFrontierCapability = true,
+            ),
             userPrompt = prompt,
             system = system,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 700,
+            validator = { raw ->
+                runCatching {
+                    json.decodeFromString(TaskPlanDto.serializer(), extractJsonPayload(raw))
+                }.getOrNull()?.steps?.isNotEmpty() == true
+            },
         )
 
         val text = (result as? ClaudeResult.Success)?.text ?: return null

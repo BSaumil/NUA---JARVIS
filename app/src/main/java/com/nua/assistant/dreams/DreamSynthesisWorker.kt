@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
-import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.ai.WorkerOutcome
 import com.nua.assistant.ai.extractJsonPayload
 import com.nua.assistant.ai.outcomeForWorkerRun
@@ -69,7 +71,7 @@ class DreamSynthesisWorker @AssistedInject constructor(
     private val trustRepository: TrustRepository,
     private val contextEngine: ContextEngine,
     private val dreamRepository: DreamRepository,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
     private val json: Json,
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -106,11 +108,20 @@ class DreamSynthesisWorker @AssistedInject constructor(
             )
         }
 
-        val result = claudeApiClient.complete(
+        val result = modelMesh.completeValidated(
+            contract = TaskContract(
+                task = InferenceTaskType.REASONING,
+                privacySensitivity = PrivacySensitivity.HIGH,
+                requiresOffline = true,
+            ),
             userPrompt = prompt,
             system = DREAM_SYSTEM_PROMPT,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 250,
+            validator = { raw ->
+                runCatching {
+                    json.decodeFromString(DreamDto.serializer(), extractJsonPayload(raw))
+                }.isSuccess
+            },
         )
 
         if (outcomeForWorkerRun(result is ClaudeResult.Success, runAttemptCount) == WorkerOutcome.RETRY) return Result.retry()

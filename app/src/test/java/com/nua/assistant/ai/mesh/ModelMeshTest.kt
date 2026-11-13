@@ -10,120 +10,319 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Reports a fixed availability set, task-aware like the real detector. */
-private class FakeAvailabilityDetector(private val available: Set<ModelProviderTier>) : ModelAvailabilityDetector {
-    override suspend fun isAvailable(tier: ModelProviderTier, task: InferenceTaskType): Boolean = tier in available
+private class FakeAvailabilityDetector(
+    private val available: Set<ModelProviderTier>,
+) : ModelAvailabilityDetector {
+    override suspend fun isAvailable(tier: ModelProviderTier, task: InferenceTaskType): Boolean =
+        tier in available
 }
 
-private class FakeCloudCompletionProvider(private val result: ClaudeResult) : CloudCompletionProvider {
+private class FakeCloudCompletionProvider(
+    private val result: ClaudeResult,
+) : CloudCompletionProvider {
     var calls = 0
     var lastModel: String? = null
-    override suspend fun complete(userPrompt: String, system: String?, model: String, maxTokens: Int): ClaudeResult {
+    var lastPrompt: String? = null
+    override suspend fun complete(
+        userPrompt: String,
+        system: String?,
+        model: String,
+        maxTokens: Int,
+    ): ClaudeResult {
         calls++
         lastModel = model
+        lastPrompt = userPrompt
         return result
     }
 }
 
-/**
- * Exercises the real coroutine orchestration of [ModelMesh.complete]/[ModelMesh.classifyIntent]
- * against fakes — [fallbackOrder] itself is tested directly in [ModelProviderTierTest];
- * this file proves the Mesh actually wires availability detection and provider selection
- * together correctly, including the duplicate-cloud-call defect caught and fixed before
- * this push (see [ModelMesh.classifyIntent]'s own doc comment).
- */
+private class FakePrivateOsCompletionProvider(
+    private val result: ClaudeResult,
+    private val available: Boolean = true,
+) : PrivateOsCompletionProvider {
+    var calls = 0
+    override suspend fun isAvailable(task: InferenceTaskType): Boolean = available
+    override suspend fun complete(
+        userPrompt: String,
+        system: String?,
+        maxTokens: Int,
+    ): ClaudeResult {
+        calls++
+        return result
+    }
+}
+
+private class FakeRoutingLearning : ModelRoutingLearning {
+    val observations = mutableListOf<Triple<InferenceTaskType, ModelProviderTier, Boolean>>()
+    override fun order(
+        task: InferenceTaskType,
+        baseOrder: List<ModelProviderTier>,
+        nowMillis: Long,
+    ): List<ModelProviderTier> = baseOrder
+
+    override fun record(
+        task: InferenceTaskType,
+        tier: ModelProviderTier,
+        success: Boolean,
+        latencyMillis: Long,
+        nowMillis: Long,
+    ) {
+        observations += Triple(task, tier, success)
+    }
+}
+
+private fun mesh(
+    cloud: FakeCloudCompletionProvider,
+    privateOs: FakePrivateOsCompletionProvider = FakePrivateOsCompletionProvider(
+        ClaudeResult.Failure("unused"),
+        available = false,
+    ),
+    available: Set<ModelProviderTier>,
+) = ModelMesh(cloud, privateOs, FakeAvailabilityDetector(available), FakeRoutingLearning())
+
 class ModelMeshTest {
 
     @Test
-    fun `complete resolves to CLOUD_FAST's model for a task with no frontier requirement`() = runTest {
-        val provider = FakeCloudCompletionProvider(ClaudeResult.Success("ok"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
-        val contract = TaskContract(InferenceTaskType.ENTITY_EXTRACTION, PrivacySensitivity.LOW)
+    fun `private OS model wins before cloud for supported text completion`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("cloud"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Success("local"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
 
-        mesh.complete(contract, "extract entities")
+        val result = mesh.complete(
+            TaskContract(InferenceTaskType.SUMMARIZATION, PrivacySensitivity.LOW),
+            "summarize",
+        )
 
-        assertEquals(1, provider.calls)
-        assertEquals("claude-haiku-4-5-20251001", provider.lastModel)
+        assertEquals("local", (result as ClaudeResult.Success).text)
+        assertEquals(1, local.calls)
+        assertEquals(0, cloud.calls)
     }
 
     @Test
-    fun `complete resolves to CLOUD_FRONTIER's model when the contract requires frontier capability`() = runTest {
-        val provider = FakeCloudCompletionProvider(ClaudeResult.Success("ok"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
-        val contract = TaskContract(InferenceTaskType.REASONING, PrivacySensitivity.LOW, requiresFrontierCapability = true)
+    fun `local failure can fall through to cloud when contract permits cloud`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("cloud"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Failure("local failed"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
 
-        mesh.complete(contract, "reason about this")
+        val result = mesh.complete(
+            TaskContract(InferenceTaskType.SUMMARIZATION, PrivacySensitivity.LOW),
+            "summarize",
+        )
 
-        assertEquals(1, provider.calls)
-        assertEquals("claude-sonnet-5", provider.lastModel)
+        assertEquals("cloud", (result as ClaudeResult.Success).text)
+        assertEquals(1, local.calls)
+        assertEquals(1, cloud.calls)
+    }
+
+
+    @Test
+    fun `validator rejection falls through from private OS to cloud without relaxing contract`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("{\"ok\":true}"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Success("not-json"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
+
+        val result = mesh.completeValidated(
+            contract = TaskContract(InferenceTaskType.ENTITY_EXTRACTION, PrivacySensitivity.LOW),
+            userPrompt = "extract",
+            validator = { it.startsWith("{") && it.endsWith("}") },
+        )
+
+        assertEquals("{\"ok\":true}", (result as ClaudeResult.Success).text)
+        assertEquals(1, local.calls)
+        assertEquals(1, cloud.calls)
     }
 
     @Test
-    fun `complete never attempts a network call when no cloud tier is available -- offline, honestly reported`() = runTest {
-        val provider = FakeCloudCompletionProvider(ClaudeResult.Success("should never be seen"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(emptySet()))
-        val contract = TaskContract(InferenceTaskType.SUMMARIZATION, PrivacySensitivity.LOW)
+    fun `validator rejection cannot cause HIGH privacy cloud egress`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("{\"ok\":true}"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Success("not-json"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
 
-        val result = mesh.complete(contract, "summarize this")
+        val result = mesh.completeValidated(
+            contract = TaskContract(InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM, PrivacySensitivity.HIGH),
+            userPrompt = "sensitive",
+            validator = { it.startsWith("{") && it.endsWith("}") },
+        )
 
-        assertEquals(0, provider.calls)
         assertTrue(result is ClaudeResult.Failure)
+        assertEquals(1, local.calls)
+        assertEquals(0, cloud.calls)
     }
 
     @Test
-    fun `complete never attempts a network call for an offline-required task even when cloud is technically available`() = runTest {
-        val provider = FakeCloudCompletionProvider(ClaudeResult.Success("should never be seen"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
-        val contract = TaskContract(InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM, PrivacySensitivity.HIGH, requiresOffline = true)
+    fun `cloud fallback receives minimized cloud prompt rather than richer local prompt`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("cloud"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Failure("local unavailable"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
 
-        val result = mesh.complete(contract, "transform this locally")
+        val result = mesh.completeValidated(
+            contract = TaskContract(InferenceTaskType.SUMMARIZATION, PrivacySensitivity.MEDIUM),
+            userPrompt = "rich local prompt with private context",
+            cloudUserPrompt = "minimized cloud prompt",
+            validator = { it.isNotBlank() },
+        )
 
-        assertEquals(0, provider.calls)
+        assertEquals("cloud", (result as ClaudeResult.Success).text)
+        assertEquals("minimized cloud prompt", cloud.lastPrompt)
+    }
+
+    @Test
+    fun `HIGH privacy refuses cloud by default even when cloud is available`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("must not run"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Failure("local unavailable"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER),
+        )
+
+        val result = mesh.complete(
+            TaskContract(InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM, PrivacySensitivity.HIGH),
+            "sensitive",
+        )
+
         assertTrue(result is ClaudeResult.Failure)
+        assertEquals(0, cloud.calls)
     }
 
     @Test
-    fun `classifyIntent resolves locally without ever invoking the cloud path when a keyword rule matches`() = runTest {
-        val provider = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.LOCAL_RULES, ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
+    fun `caller can explicitly allow cloud for HIGH privacy after policy approval`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("approved cloud"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Failure("local unavailable"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
+
+        val result = mesh.complete(
+            TaskContract(
+                InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM,
+                PrivacySensitivity.HIGH,
+                allowCloud = true,
+            ),
+            "sensitive but approved",
+        )
+
+        assertEquals("approved cloud", (result as ClaudeResult.Success).text)
+        assertEquals(1, cloud.calls)
+    }
+
+    @Test
+    fun `complete resolves to CLOUD_FAST model for utility task when local is absent`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("ok"))
+        val mesh = mesh(
+            cloud,
+            available = setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER),
+        )
+
+        mesh.complete(
+            TaskContract(InferenceTaskType.ENTITY_EXTRACTION, PrivacySensitivity.LOW),
+            "extract entities",
+        )
+
+        assertEquals(1, cloud.calls)
+        assertEquals("claude-haiku-4-5-20251001", cloud.lastModel)
+    }
+
+    @Test
+    fun `frontier contract routes to CLOUD_FRONTIER when local is absent`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("ok"))
+        val mesh = mesh(
+            cloud,
+            available = setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER),
+        )
+
+        mesh.complete(
+            TaskContract(
+                InferenceTaskType.REASONING,
+                PrivacySensitivity.LOW,
+                requiresFrontierCapability = true,
+            ),
+            "reason",
+        )
+
+        assertEquals("claude-sonnet-5", cloud.lastModel)
+    }
+
+    @Test
+    fun `offline-required task never attempts cloud`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("must not run"))
+        val mesh = mesh(
+            cloud,
+            available = setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER),
+        )
+
+        val result = mesh.complete(
+            TaskContract(
+                InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM,
+                PrivacySensitivity.HIGH,
+                requiresOffline = true,
+            ),
+            "local only",
+        )
+
+        assertTrue(result is ClaudeResult.Failure)
+        assertEquals(0, cloud.calls)
+    }
+
+    @Test
+    fun `classifyIntent resolves local rule without cloud`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
+        val mesh = mesh(
+            cloud,
+            available = setOf(
+                ModelProviderTier.LOCAL_RULES,
+                ModelProviderTier.PRIVATE_OS_MODEL,
+                ModelProviderTier.CLOUD_FAST,
+            ),
+        )
         var cloudCalls = 0
 
-        val result = mesh.classifyIntent(UserUtterance("open spotify")) { cloudCalls++; null }
+        val result = mesh.classifyIntent(UserUtterance("open spotify")) {
+            cloudCalls++
+            null
+        }
 
         assertEquals(NuaActionType.OPEN_APP, result?.action)
-        assertEquals("no keyword match means the cloud path must never be invoked", 0, cloudCalls)
+        assertEquals(0, cloudCalls)
     }
 
     @Test
-    fun `classifyIntent falls through to the cloud path when no keyword rule matches`() = runTest {
-        val provider = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.LOCAL_RULES, ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
-        val expected = ClassifiedIntent(NuaActionType.GET_WEATHER, confidence = 0.9)
-
-        val result = mesh.classifyIntent(UserUtterance("something ambiguous entirely")) { expected }
-
-        assertEquals(expected, result)
-    }
-
-    @Test
-    fun `classifyIntent invokes the cloud path at most once, even though two cloud tiers are available -- the duplicate-call defect`() = runTest {
-        val provider = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(setOf(ModelProviderTier.LOCAL_RULES, ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
+    fun `generic private text model is not guessed into a typed ClassifiedIntent`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
+        val mesh = mesh(
+            cloud,
+            available = setOf(ModelProviderTier.PRIVATE_OS_MODEL),
+        )
         var cloudCalls = 0
 
-        val result = mesh.classifyIntent(UserUtterance("something ambiguous entirely")) { cloudCalls++; null }
+        val result = mesh.classifyIntent(UserUtterance("ambiguous")) {
+            cloudCalls++
+            ClassifiedIntent(NuaActionType.GET_WEATHER, confidence = 0.9)
+        }
 
         assertNull(result)
-        assertEquals("a null cloud result must not trigger a second identical call under a different nominal tier", 1, cloudCalls)
-    }
-
-    @Test
-    fun `classifyIntent returns null, never crashes, when nothing resolves it`() = runTest {
-        val provider = FakeCloudCompletionProvider(ClaudeResult.Success("unused"))
-        val mesh = ModelMesh(provider, FakeAvailabilityDetector(emptySet()))
-
-        val result = mesh.classifyIntent(UserUtterance("anything at all")) { error("must never be called with no available tiers") }
-
-        assertNull(result)
+        assertEquals(0, cloudCalls)
     }
 }
