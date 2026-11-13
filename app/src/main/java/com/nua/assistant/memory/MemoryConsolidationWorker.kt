@@ -44,10 +44,14 @@ class MemoryConsolidationWorker @AssistedInject constructor(
         if (batch.isEmpty()) return Result.success()
 
         val transcript = batch.joinToString("\n") { "${it.role}: ${it.content}" }
-        val result = claudeApiClient.complete(
+        val result = modelMesh.complete(
+            contract = TaskContract(
+                task = InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM,
+                privacySensitivity = PrivacySensitivity.HIGH,
+                requiresOffline = true,
+            ),
             userPrompt = transcript,
             system = CONSOLIDATION_SYSTEM_PROMPT,
-            model = CLAUDE_MODEL_UTILITY,
             maxTokens = 300,
         )
 
