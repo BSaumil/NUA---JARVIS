@@ -39,6 +39,7 @@ class ModelMesh @Inject constructor(
     private val cloudCompletionProvider: CloudCompletionProvider,
     private val privateOsCompletionProvider: PrivateOsCompletionProvider,
     private val availabilityDetector: ModelAvailabilityDetector,
+    private val routingLearning: ModelRoutingLearning,
 ) {
     suspend fun complete(
         contract: TaskContract,
@@ -79,8 +80,12 @@ class ModelMesh @Inject constructor(
             .filter { availabilityDetector.isAvailable(it, contract.task) }
             .toSet()
 
+        val baseOrder = fallbackOrder(contract, available)
+        val learnedOrder = routingLearning.order(contract.task, baseOrder)
+
         var lastFailure: ClaudeResult.Failure? = null
-        for (tier in fallbackOrder(contract, available)) {
+        for (tier in learnedOrder) {
+            val startedNanos = System.nanoTime()
             val result = when (tier) {
                 ModelProviderTier.PRIVATE_OS_MODEL ->
                     privateOsCompletionProvider.complete(userPrompt, system, maxTokens)
@@ -103,15 +108,20 @@ class ModelMesh @Inject constructor(
                 -> continue
             }
 
+            val latencyMillis = ((System.nanoTime() - startedNanos) / 1_000_000L).coerceAtLeast(0)
             when (result) {
                 is ClaudeResult.Success -> {
                     val valid = runCatching { validator(result.text) }.getOrDefault(false)
+                    routingLearning.record(contract.task, tier, valid, latencyMillis)
                     if (valid) return result
                     lastFailure = ClaudeResult.Failure(
                         "Provider $tier returned output that did not satisfy the task contract.",
                     )
                 }
-                is ClaudeResult.Failure -> lastFailure = result
+                is ClaudeResult.Failure -> {
+                    routingLearning.record(contract.task, tier, false, latencyMillis)
+                    lastFailure = result
+                }
             }
         }
 

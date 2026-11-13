@@ -50,6 +50,25 @@ private class FakePrivateOsCompletionProvider(
     }
 }
 
+private class FakeRoutingLearning : ModelRoutingLearning {
+    val observations = mutableListOf<Triple<InferenceTaskType, ModelProviderTier, Boolean>>()
+    override fun order(
+        task: InferenceTaskType,
+        baseOrder: List<ModelProviderTier>,
+        nowMillis: Long,
+    ): List<ModelProviderTier> = baseOrder
+
+    override fun record(
+        task: InferenceTaskType,
+        tier: ModelProviderTier,
+        success: Boolean,
+        latencyMillis: Long,
+        nowMillis: Long,
+    ) {
+        observations += Triple(task, tier, success)
+    }
+}
+
 private fun mesh(
     cloud: FakeCloudCompletionProvider,
     privateOs: FakePrivateOsCompletionProvider = FakePrivateOsCompletionProvider(
@@ -57,7 +76,7 @@ private fun mesh(
         available = false,
     ),
     available: Set<ModelProviderTier>,
-) = ModelMesh(cloud, privateOs, FakeAvailabilityDetector(available))
+) = ModelMesh(cloud, privateOs, FakeAvailabilityDetector(available), FakeRoutingLearning())
 
 class ModelMeshTest {
 

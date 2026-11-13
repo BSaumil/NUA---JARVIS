@@ -23,4 +23,9 @@ abstract class ModelMeshModule {
     abstract fun bindPrivateOsCompletionProvider(
         impl: GeminiNanoPrivateOsCompletionProvider,
     ): PrivateOsCompletionProvider
+
+    @Binds
+    abstract fun bindModelRoutingLearning(
+        impl: SharedPreferencesModelRoutingLearning,
+    ): ModelRoutingLearning
 }
