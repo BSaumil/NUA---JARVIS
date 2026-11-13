@@ -79,9 +79,16 @@ class SovereignSkillPackageManager @Inject constructor(
             return SkillPackageRunResult.Refused("recipe is not declared by this package")
         }
 
-        val actions = recipes.actionsForRecipe(recipeId)
-            ?: return SkillPackageRunResult.Refused("recipe no longer exists")
-        if (!recipeActionEnvelopeSatisfied(installed.manifest, mapOf(recipeId to actions))) {
+        // Revalidate the package's complete recipe envelope, not only the selected
+        // recipe. A multi-recipe package must remain safe as a whole, and validating a
+        // one-entry map against manifest.recipeIds would incorrectly refuse every run.
+        val currentActions = mutableMapOf<Long, Set<com.nua.assistant.ai.NuaActionType>>()
+        for (declaredRecipeId in installed.manifest.recipeIds) {
+            val actions = recipes.actionsForRecipe(declaredRecipeId)
+                ?: return SkillPackageRunResult.Refused("declared recipe $declaredRecipeId no longer exists")
+            currentActions[declaredRecipeId] = actions
+        }
+        if (!recipeActionEnvelopeSatisfied(installed.manifest, currentActions)) {
             return SkillPackageRunResult.Refused("recipe capabilities drifted outside the package declaration")
         }
 
