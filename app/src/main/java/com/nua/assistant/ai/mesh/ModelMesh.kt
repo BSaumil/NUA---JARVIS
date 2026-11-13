@@ -6,6 +6,11 @@ import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.ClassifiedIntent
 import com.nua.assistant.automation.KeywordIntentMatcher
+import com.nua.assistant.evolution.EvolutionFailureSink
+import com.nua.assistant.evolution.FailureCategory
+import com.nua.assistant.evolution.FailureSeverity
+import com.nua.assistant.evolution.FailureSource
+import com.nua.assistant.evolution.NoOpEvolutionFailureSink
 import com.nua.assistant.security.UserUtterance
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,6 +45,7 @@ class ModelMesh @Inject constructor(
     private val privateOsCompletionProvider: PrivateOsCompletionProvider,
     private val availabilityDetector: ModelAvailabilityDetector,
     private val routingLearning: ModelRoutingLearning,
+    private val evolutionFailureSink: EvolutionFailureSink = NoOpEvolutionFailureSink,
 ) {
     suspend fun complete(
         contract: TaskContract,
@@ -114,12 +120,30 @@ class ModelMesh @Inject constructor(
                     val valid = runCatching { validator(result.text) }.getOrDefault(false)
                     routingLearning.record(contract.task, tier, valid, latencyMillis)
                     if (valid) return result
+                    runCatching {
+                        evolutionFailureSink.recordFailureSignal(
+                            source = FailureSource.MODEL_MESH,
+                            component = contract.task.name + ":" + tier.name,
+                            category = FailureCategory.INVALID_OUTPUT,
+                            code = "CONTRACT_VALIDATION_FAILED",
+                            severity = FailureSeverity.LOW,
+                        )
+                    }
                     lastFailure = ClaudeResult.Failure(
                         "Provider $tier returned output that did not satisfy the task contract.",
                     )
                 }
                 is ClaudeResult.Failure -> {
                     routingLearning.record(contract.task, tier, false, latencyMillis)
+                    runCatching {
+                        evolutionFailureSink.recordFailureSignal(
+                            source = FailureSource.MODEL_MESH,
+                            component = contract.task.name + ":" + tier.name,
+                            category = FailureCategory.PROVIDER_FAILURE,
+                            code = "PROVIDER_FAILURE",
+                            severity = FailureSeverity.LOW,
+                        )
+                    }
                     lastFailure = result
                 }
             }
