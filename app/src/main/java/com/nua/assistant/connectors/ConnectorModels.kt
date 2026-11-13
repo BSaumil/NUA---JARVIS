@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 
 /** COMPANION_PAIRED connectors (e.g. the companion mounted-files connector) are never
  * routed through [SafeHttpConnector] -- they reach a paired companion node over its own
- * Ed25519-signed Local API (presence/companion/**), not plain bearer-token HTTPS, so
+ * Ed25519-signed Local API (presence/companion package), not plain bearer-token HTTPS, so
  * [SafeHttpConnector.read] refuses this authType outright rather than silently sending an
  * unsigned request a companion would reject anyway. */
 @Serializable

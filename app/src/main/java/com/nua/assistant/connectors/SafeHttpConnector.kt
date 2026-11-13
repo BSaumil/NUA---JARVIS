@@ -26,7 +26,7 @@ class SafeHttpConnector @Inject constructor(
         }
         if (manifest.authType == ConnectorAuthType.COMPANION_PAIRED) {
             // A companion-paired connector's requests must be Ed25519-signed against a
-            // specific paired device's key (presence/companion/**); this generic HTTP path
+            // specific paired device's key (presence/companion package); this generic HTTP path
             // has no way to produce that signature, so it must never silently attempt an
             // unsigned request. See CompanionFilesConnector for the real implementation.
             return@withContext ConnectorResult.Refused("companion-paired connectors are not served by SafeHttpConnector")

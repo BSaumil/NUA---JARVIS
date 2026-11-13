@@ -41,7 +41,7 @@ private data class FilesReadResponseWire(val succeeded: Boolean = false, val con
  * work follows explicitly forbids ("arbitrary remote filesystem access").
  *
  * This never goes through [SafeHttpConnector]: a companion's Local API is authenticated
- * by an Ed25519 signature over a paired device's key (presence/companion/**), not a
+ * by an Ed25519 signature over a paired device's key (presence/companion package), not a
  * bearer token, so [ConnectorAuthType.COMPANION_PAIRED] is refused there outright and
  * served here instead, reusing the exact same signing ([signCompanionRequest]) and
  * pairing/transport infrastructure workstream 2 already built and tested.
