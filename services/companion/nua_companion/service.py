@@ -167,8 +167,25 @@ class Handler(BaseHTTPRequestHandler):
         if not STATE.replay.accept(nonce, timestamp):
             return "replay_or_clock_skew"
         operation = str(body.get("operation", ""))
-        payload_json = compact_json(body.get("payload", {}))
-        digest = digest_request(protocol, str(meta.get("requestId", "")), client_id, nonce, timestamp, operation, payload_json)
+        payload = body.get("payload", {})
+        payload_json = str(body.get("payloadJson", ""))
+        if not payload_json:
+            return "signed_payload_missing"
+        try:
+            signed_payload = json.loads(payload_json)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return "signed_payload_invalid"
+        if signed_payload != payload:
+            return "signed_payload_mismatch"
+        digest = digest_request(
+            protocol,
+            str(meta.get("requestId", "")),
+            client_id,
+            nonce,
+            timestamp,
+            operation,
+            payload_json,
+        )
         if not verify_device_signature(
             trusted.identity.keyAlgorithm,
             trusted.identity.publicKeyEncoding,
