@@ -1,19 +1,24 @@
 from __future__ import annotations
+import base64
 import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from .models import configured_models, complete
+from .mounts import MountRegistry
 from .pairing import PairingStore
 from .protocol import DeviceIdentity, PROTOCOL_VERSION, to_json_dict
 from .security import ReplayWindow, compact_json, digest_request, now_ms, verify_ed25519
+
+MAX_FILE_READ_BYTES = 1 * 1024 * 1024
 
 class CompanionState:
     def __init__(self) -> None:
         state_path = Path(os.getenv("NUA_COMPANION_STATE", "~/.nua/companion-pairing.json")).expanduser()
         self.pairing = PairingStore(state_path)
         self.replay = ReplayWindow()
+        self.mounts = MountRegistry.from_env()
         self.device = DeviceIdentity(
             deviceId=os.getenv("NUA_COMPANION_DEVICE_ID", "companion-local"),
             publicKey="",
@@ -54,7 +59,11 @@ class Handler(BaseHTTPRequestHandler):
                     {"id": m.id, "provider": m.provider, "localToNode": True, "supportsVision": False, "supportsStructuredOutput": False}
                     for m in configured_models()
                 ],
-                "connectors": [],
+                "connectors": (
+                    [{"id": "companion-files", "version": "1", "readCapabilities": ["files.read"], "writeCapabilities": []}]
+                    if STATE.mounts.names()
+                    else []
+                ),
                 "lastVerifiedAtMillis": now_ms(),
             })
             return
@@ -98,6 +107,45 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, {"succeeded": True, "text": text, "provider": endpoint.provider})
             except Exception:
                 self._json(502, {"succeeded": False, "errorCode": "MODEL_FAILURE"})
+            return
+
+        if self.path == "/files/list":
+            auth = self._authorize(body, "FILES_READ")
+            if auth is not None:
+                self._json(403, {"error": auth})
+                return
+            payload = body.get("payload") or {}
+            mount = str(payload.get("mount", ""))
+            relative_path = str(payload.get("path", ""))
+            entries = STATE.mounts.list_entries(mount, relative_path)
+            if entries is None:
+                self._json(404, {"error": "mount_or_path_not_found"})
+                return
+            self._json(200, {"succeeded": True, "entries": entries})
+            return
+
+        if self.path == "/files/read":
+            auth = self._authorize(body, "FILES_READ")
+            if auth is not None:
+                self._json(403, {"error": auth})
+                return
+            payload = body.get("payload") or {}
+            mount = str(payload.get("mount", ""))
+            relative_path = str(payload.get("path", ""))
+            resolved = STATE.mounts.resolve(mount, relative_path)
+            if resolved is None or not resolved.is_file():
+                self._json(404, {"error": "mount_or_path_not_found"})
+                return
+            try:
+                size = resolved.stat().st_size
+                if size > MAX_FILE_READ_BYTES:
+                    self._json(413, {"error": "file_too_large"})
+                    return
+                data = resolved.read_bytes()
+            except OSError:
+                self._json(502, {"succeeded": False, "errorCode": "READ_FAILURE"})
+                return
+            self._json(200, {"succeeded": True, "contentBase64": base64.b64encode(data).decode("ascii"), "sizeBytes": size})
             return
 
         self._json(404, {"error": "not_found"})

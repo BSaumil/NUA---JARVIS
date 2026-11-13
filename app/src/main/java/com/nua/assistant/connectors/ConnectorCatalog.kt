@@ -96,6 +96,21 @@ object ConnectorCatalog {
         dataCategories = setOf(DataCategory.STANDARD_FACTS),
     )
 
+    // COMPANION_PAIRED: served by CompanionFilesConnector over a paired companion's own
+    // signed Local API, never by SafeHttpConnector (which refuses this authType
+    // outright). "allowedHosts" doesn't apply to this transport -- there is no single
+    // fixed host, since it reaches whichever companion node this device is paired with --
+    // so this is a documented sentinel, not an enforced allowlist. See validateConnectorManifest.
+    val companionFiles = ConnectorManifest(
+        id = "companion-files",
+        displayName = "Companion Mounted Files",
+        version = "1",
+        authType = ConnectorAuthType.COMPANION_PAIRED,
+        allowedHosts = setOf("paired-companion"),
+        readCapabilities = setOf("files.read"),
+        dataCategories = setOf(DataCategory.DOCUMENT_CONTENT),
+    )
+
     fun all(): List<ConnectorManifest> =
-        listOf(google, microsoft, dropbox, slack, homeAssistant, weather, news, finance)
+        listOf(google, microsoft, dropbox, slack, homeAssistant, weather, news, finance, companionFiles)
 }

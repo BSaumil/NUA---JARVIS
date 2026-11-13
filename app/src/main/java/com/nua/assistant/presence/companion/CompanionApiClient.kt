@@ -1,6 +1,5 @@
 package com.nua.assistant.presence.companion
 
-import java.util.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -10,18 +9,8 @@ private const val INFERENCE_OPERATION = "inference.start"
 private const val INFERENCE_SCOPE = "INFERENCE"
 
 @Serializable
-private data class SignedMetaWire(
-    val protocolVersion: Int,
-    val requestId: String,
-    val clientId: String,
-    val nonce: String,
-    val timestampMillis: Long,
-    val signatureBase64: String,
-)
-
-@Serializable
 private data class InferenceRequestWire(
-    val meta: SignedMetaWire,
+    val meta: CompanionSignedMeta,
     val scopes: List<String>,
     val operation: String,
     val payload: Map<String, String>,
@@ -56,7 +45,7 @@ class CompanionApiClient(
 ) {
     suspend fun inference(prompt: String, modelId: String = ""): InferenceOutcome {
         val payload = mapOf("modelId" to modelId, "prompt" to prompt)
-        val meta = signMeta(INFERENCE_OPERATION, payload)
+        val meta = signCompanionRequest(identity, INFERENCE_OPERATION, payload)
         val body = json.encodeToString(InferenceRequestWire(meta, listOf(INFERENCE_SCOPE), INFERENCE_OPERATION, payload))
 
         val result = transport.post("/inference", body)
@@ -72,30 +61,5 @@ class CompanionApiClient(
             return InferenceOutcome.Refused(response.errorCode ?: response.error ?: "UNKNOWN_FAILURE")
         }
         return InferenceOutcome.Succeeded(response.text.orEmpty(), response.provider)
-    }
-
-    private fun signMeta(operation: String, payload: Map<String, String>): SignedMetaWire {
-        val device = identity.identity
-        val requestId = UUID.randomUUID().toString()
-        val nonce = CompanionSecurity.newNonce()
-        val timestampMillis = CompanionSecurity.nowMillis()
-        val payloadJson = CompanionSecurity.compactJson(payload)
-        val digest = CompanionSecurity.digestRequest(
-            device.protocolVersion,
-            requestId,
-            device.deviceId,
-            nonce,
-            timestampMillis,
-            operation,
-            payloadJson,
-        )
-        return SignedMetaWire(
-            protocolVersion = device.protocolVersion,
-            requestId = requestId,
-            clientId = device.deviceId,
-            nonce = nonce,
-            timestampMillis = timestampMillis,
-            signatureBase64 = identity.sign(digest),
-        )
     }
 }

@@ -9,6 +9,7 @@ own unauthenticated GET handlers.
 """
 from __future__ import annotations
 
+import base64
 import uuid
 from dataclasses import dataclass
 
@@ -18,6 +19,9 @@ from .transport import get_json, post_json
 
 INFERENCE_OPERATION = "inference.start"
 INFERENCE_SCOPE = "INFERENCE"
+FILES_LIST_OPERATION = "files.list"
+FILES_READ_OPERATION = "files.read"
+FILES_READ_SCOPE = "FILES_READ"
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,13 @@ class InferenceResult:
     text: str | None = None
     provider: str | None = None
     error_code: str | None = None
+
+
+@dataclass(frozen=True)
+class FileEntry:
+    name: str
+    is_dir: bool
+    size_bytes: int
 
 
 class ApiClient:
@@ -52,6 +63,30 @@ class ApiClient:
         if not response.get("succeeded", False):
             return InferenceResult(succeeded=False, error_code=response.get("error") or response.get("errorCode"))
         return InferenceResult(succeeded=True, text=response.get("text"), provider=response.get("provider"))
+
+    def files_list(self, mount: str, path: str = "") -> list[FileEntry]:
+        """Lists the entries directly inside `path` (relative to the named
+        mount's root) on a paired, approved companion. Only ever names a
+        mount by the owner's own pre-configured alias -- never a raw
+        filesystem path -- so this can't be used to probe the companion's
+        wider filesystem."""
+        payload = {"mount": mount, "path": path}
+        meta = self._sign_meta(FILES_LIST_OPERATION, payload)
+        body = {"meta": meta, "scopes": [FILES_READ_SCOPE], "operation": FILES_LIST_OPERATION, "payload": payload}
+        response = post_json(self._base_url, "/files/list", body)
+        return [
+            FileEntry(name=entry["name"], is_dir=entry["isDir"], size_bytes=entry["sizeBytes"])
+            for entry in response.get("entries", [])
+        ]
+
+    def files_read(self, mount: str, path: str) -> bytes:
+        """Reads one file's contents (size-capped on the companion side) from
+        a named mount."""
+        payload = {"mount": mount, "path": path}
+        meta = self._sign_meta(FILES_READ_OPERATION, payload)
+        body = {"meta": meta, "scopes": [FILES_READ_SCOPE], "operation": FILES_READ_OPERATION, "payload": payload}
+        response = post_json(self._base_url, "/files/read", body)
+        return base64.b64decode(response["contentBase64"])
 
     def _sign_meta(self, operation: str, payload: dict) -> dict:
         protocol_version = self._identity.identity.protocolVersion

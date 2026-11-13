@@ -78,6 +78,49 @@ no local-JVM-testable seam. This is a pre-existing architectural gap, not
 introduced here; flagging it for whoever owns `connectors/**` test coverage
 next rather than silently working around it.
 
+**Addition: companion mounted-files connector (priority item #10 in the
+directive's own connector list).** Status: **SHIPPED_VERIFIED** on the
+companion side, **SHIPPED_BUILDABLE_NOT_DEVICE_VERIFIED** on Android.
+
+Lets the app read files a companion's *owner* has explicitly configured as
+named mounts (`NUA_COMPANION_MOUNTS`) — never an arbitrary path, and never
+the companion's wider filesystem, matching the directive's explicit ban on
+"arbitrary remote filesystem access":
+
+- `services/companion/nua_companion/mounts.py`: an owner-configured
+  `MountRegistry` of named aliases. Every resolved path is re-verified to
+  still be inside its mount's root after resolution, defeating `../`
+  traversal, absolute-path substitution, and symlink escapes alike —
+  `test_mounts.py` (10 tests) covers all three attack shapes plus normal
+  listing/reading.
+- `service.py` adds `POST /files/list` / `POST /files/read`, authenticated
+  through the *same* `_authorize` signed-request path `/inference` already
+  uses (no new auth scheme, `FILES_READ` scope) — size-capped reads (1MB),
+  read-only, no write path at all. `/presence` now advertises a
+  `companion-files` connector only when at least one mount is actually
+  configured, so advertisement never overclaims capability.
+- Found and fixed a real duplication smell while wiring the Android side:
+  `CompanionApiClient`'s signing logic was pulled out into a shared
+  `signCompanionRequest` (`presence/companion/CompanionRequestSigning.kt`)
+  so `CompanionFilesConnector` doesn't reimplement request-signing a second
+  time; `CompanionApiClient` itself now calls the same shared function.
+- Android: `ConnectorAuthType.COMPANION_PAIRED` (a companion's Local API is
+  Ed25519-signed against a paired device's key, not a bearer token) —
+  `SafeHttpConnector.read` refuses this authType outright rather than
+  silently attempting an unsigned request a companion would reject anyway.
+  `CompanionFilesConnector.kt` is the real implementation, built on the
+  exact same `CompanionHttpTransport`/`CompanionSigningIdentity` from
+  workstream 2.
+- Verified for real: `test_files_connector.py` pairs a real client against
+  the real companion service (with a real configured mount, real files on
+  disk), gets owner approval, then lists and reads through it over actual
+  HTTP with actual Ed25519 signatures — plus an unapproved-device case, a
+  `../` traversal attempt, and an unconfigured-mount-name case, all refused.
+  5/5 passing, on top of the companion's and client's full existing suites
+  (29/29 Python tests total). The Android side (`CompanionFilesConnector`,
+  `ConnectorCatalog.companionFiles`) is covered by fake-transport unit tests
+  only, pending the same Android CI compile this whole handoff depends on.
+
 ### Workstream 5 — External Skills Import / Compatibility
 **Status: SHIPPED_VERIFIED**
 

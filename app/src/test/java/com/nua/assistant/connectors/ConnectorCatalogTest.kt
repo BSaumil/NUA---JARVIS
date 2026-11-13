@@ -13,11 +13,12 @@ class ConnectorCatalogTest {
     private val keylessConnectors = listOf(ConnectorCatalog.weather, ConnectorCatalog.news, ConnectorCatalog.finance)
 
     @Test
-    fun `all lists every catalog connector including the new keyless ones`() {
+    fun `all lists every catalog connector including the new keyless ones and companion-files`() {
         val all = ConnectorCatalog.all()
 
-        assertEquals(8, all.size)
+        assertEquals(9, all.size)
         assertTrue(all.containsAll(keylessConnectors))
+        assertTrue(all.contains(ConnectorCatalog.companionFiles))
     }
 
     @Test
@@ -57,5 +58,16 @@ class ConnectorCatalogTest {
         val result = writeProposal(ConnectorCatalog.weather, "weather.forecast", "{}", "{}", "idem-1")
 
         assertTrue(result is ConnectorResult.Refused)
+    }
+
+    @Test
+    fun `companion-files declares COMPANION_PAIRED, read-only, and passes validation`() {
+        val manifest = ConnectorCatalog.companionFiles
+
+        assertEquals(ConnectorAuthType.COMPANION_PAIRED, manifest.authType)
+        assertTrue(manifest.writeCapabilities.isEmpty())
+        assertEquals(null, manifest.remoteEndpointIdForWrites)
+        val validation = validateConnectorManifest(manifest)
+        assertTrue("companion-files failed validation: ${validation.reason}", validation.allowed)
     }
 }
