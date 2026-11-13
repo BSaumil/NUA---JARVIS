@@ -22,6 +22,7 @@ private class FakeCloudCompletionProvider(
 ) : CloudCompletionProvider {
     var calls = 0
     var lastModel: String? = null
+    var lastPrompt: String? = null
     override suspend fun complete(
         userPrompt: String,
         system: String?,
@@ -30,6 +31,7 @@ private class FakeCloudCompletionProvider(
     ): ClaudeResult {
         calls++
         lastModel = model
+        lastPrompt = userPrompt
         return result
     }
 }
@@ -161,6 +163,27 @@ class ModelMeshTest {
         assertTrue(result is ClaudeResult.Failure)
         assertEquals(1, local.calls)
         assertEquals(0, cloud.calls)
+    }
+
+    @Test
+    fun `cloud fallback receives minimized cloud prompt rather than richer local prompt`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("cloud"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Failure("local unavailable"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
+
+        val result = mesh.completeValidated(
+            contract = TaskContract(InferenceTaskType.SUMMARIZATION, PrivacySensitivity.MEDIUM),
+            userPrompt = "rich local prompt with private context",
+            cloudUserPrompt = "minimized cloud prompt",
+            validator = { it.isNotBlank() },
+        )
+
+        assertEquals("cloud", (result as ClaudeResult.Success).text)
+        assertEquals("minimized cloud prompt", cloud.lastPrompt)
     }
 
     @Test
