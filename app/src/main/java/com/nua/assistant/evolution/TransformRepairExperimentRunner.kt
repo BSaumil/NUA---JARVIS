@@ -2,7 +2,9 @@ package com.nua.assistant.evolution
 
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class TransformRepairTestCase(
     val inputs: Map<String, String>,
     val expectedOutput: String,
