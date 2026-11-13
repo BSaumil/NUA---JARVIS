@@ -2,6 +2,9 @@ package com.nua.assistant.ai.mesh
 
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.prompt.Generation
+import com.google.mlkit.genai.prompt.SystemInstruction
+import com.google.mlkit.genai.prompt.TextPart
+import com.google.mlkit.genai.prompt.generateContentRequest
 import com.nua.assistant.ai.ClaudeResult
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -62,21 +65,17 @@ class GeminiNanoPrivateOsCompletionProvider @Inject constructor() : PrivateOsCom
                 return ClaudeResult.Failure("Gemini Nano is not currently available on this device.")
             }
 
-            // Direct-model access has its own device/model output limits. maxTokens remains
-            // part of NUA's provider-neutral contract; this beta API's simple text overload
-            // does not expose that limit without coupling the Mesh to SDK request builders.
-            @Suppress("UNUSED_VARIABLE")
-            val requestedMaxTokens = maxTokens
-            val prompt = buildString {
-                if (!system.isNullOrBlank()) {
-                    append("NUA instructions:\n")
-                    append(system.trim())
-                    append("\n\n")
+            val outputBudget = maxTokens.coerceIn(1, 4096)
+            val request = if (system.isNullOrBlank()) {
+                generateContentRequest(TextPart(userPrompt)) {
+                    maxOutputTokens = outputBudget
                 }
-                append("User request:\n")
-                append(userPrompt)
+            } else {
+                generateContentRequest(SystemInstruction(system), TextPart(userPrompt)) {
+                    maxOutputTokens = outputBudget
+                }
             }
-            val response = model.generateContent(prompt)
+            val response = model.generateContent(request)
             val text = response.candidates.firstOrNull()?.text?.trim().orEmpty()
             if (text.isBlank()) ClaudeResult.Failure("Gemini Nano returned no usable text.")
             else ClaudeResult.Success(text)
