@@ -15,99 +15,170 @@ privacy classification, contextual trust/autonomy, biometric step-up, Android-na
 actions, prompt-injection boundaries, idempotency, Flight Recorder lineage, personal
 goals/decisions/Dreams, document/vision context, and user-visible consent.
 
-The strategy is therefore **adopt the architectural advantages, not clone the product**.
+The implementation strategy is therefore **adopt the architectural advantages, not clone
+the product**. OpenJarvis is Apache-2.0; this round independently implements the useful
+patterns in NUA's Kotlin/Android architecture rather than importing its Python runtime.
 
-## Adopted now
+## Implemented from the benchmark
 
 ### 1. Real private OS model tier
 
-OpenJarvis's local-engine breadth exposed NUA's most important gap: Model Mesh declared
-LOCAL_MODEL/PRIVATE_OS_MODEL but had no actual model behind either.
+NUA's previously-declared `PRIVATE_OS_MODEL` tier is now real through Gemini Nano /
+Android AICore via ML Kit Prompt. Runtime availability is capability-probed rather than
+guessed from device model.
 
-NUA now implements PRIVATE_OS_MODEL with Gemini Nano via Android AICore/ML Kit Prompt.
-It is capability-probed at runtime, text-task scoped, exception-safe, and local-first.
-
-Security improvement over a generic local runtime:
-- no arbitrary model server/socket;
+Safety properties:
+- no arbitrary local model server/socket;
 - no shell execution;
-- no model download initiated by background work;
+- no background model download initiated by NUA;
 - unsupported tasks report unavailable;
+- AICore/status failures degrade to unavailable rather than crashing;
 - HIGH-sensitivity contracts exclude cloud by default.
 
-### 2. Privacy-aware routing contract
+### 2. Privacy-aware Model Mesh
 
-TaskContract now has an explicit cloud boundary. HIGH sensitivity defaults to local-only.
-A caller can permit cloud only explicitly, intended to happen after Data Egress Gateway
-policy/consent. This removes "local unavailable => silently send sensitive context away"
-as a routing failure mode.
+`TaskContract` now has an explicit cloud boundary. `HIGH` sensitivity defaults to
+`allowCloud = false`; `requiresOffline` always removes cloud tiers.
 
-## Adopt next
+`ModelMesh.completeValidated` adds output-contract validation. A local model returning
+syntactically unusable output can fall through to another *already authorized* tier; a
+validation failure can never widen the privacy contract.
 
-### Sovereign Operators
+The Mesh also supports separate `userPrompt` and `cloudUserPrompt` payloads. Local
+inference may use richer private context while cloud receives a minimized/redacted view.
 
-Translate OpenJarvis Operators into recipe-backed persistent workers:
-- WorkManager scheduling;
-- deny-by-default declared action envelope;
-- per-operator rate limit;
-- heartbeat/health;
-- failure backoff;
-- all effects through WorkflowExecutor;
-- all sensitive actions still require live autonomy/confirmation;
-- no shell/code execution.
+### 3. Real NUA experiences moved local-first
 
-### Sovereign Skill Packages
+The following text-only intelligence paths now route through Model Mesh:
+- intent classification;
+- fact extraction;
+- task planning;
+- What Now reasoning;
+- Daily Intelligence / morning briefing.
 
-Extend NUA's existing NuaSkill catalog with signed, declarative skill manifests:
-- required NuaActionType capability set;
-- dependency DAG validation;
-- max composition depth;
-- source/provenance;
-- signature/trust state;
-- injection scan before activation;
-- no imported scripts by default;
-- every side effect compiled into ActionPlan and executed by WorkflowExecutor.
+Daily Intelligence gives local inference the richer fact set while the cloud fallback is
+built through `DataEgressGateway`, excluding sensitive facts without an explicit
+privacy capsule.
 
-### Trace-driven routing
+Three broad autonomous personal-data jobs are stricter still and are now **on-device
+only**:
+- goal review;
+- memory consolidation;
+- Dreams synthesis.
 
-Use NUA's existing Flight Recorder/action outcomes and model usage as the substrate for
-routing feedback. Learn only after a minimum sample count; include success, latency, user
-correction/rejection, privacy and cost. Never let a learned policy widen cloud permission
-or autonomy.
+If private inference is unavailable, these jobs defer rather than exporting broad
+personal history to a cloud model.
 
-### Local-cloud collaboration
+### 4. Sovereign Operators
 
-For long/sensitive context, local model should extract/redact/compress first; cloud may
-reason only over the approved capsule. This should be implemented inside DataEgressGateway
-and ModelMesh, not as a second inference path.
+OpenJarvis-style scheduled/continuous agents are translated into NUA-native,
+recipe-backed WorkManager operators.
 
-### Evaluation discipline
+Each operator has:
+- an explicit deny-by-default action envelope;
+- schedule;
+- maximum runs per day;
+- cooldown;
+- persisted health/run state;
+- recipe capability re-validation on every run.
 
-Add repeatable suites for:
-- response quality;
-- local/cloud route choice;
+Operators cannot invoke an adapter or skill directly. Execution remains
+`RecipeRepository -> WorkflowExecutor`, preserving NUA's authorization, autonomy,
+idempotency and Flight Recorder boundaries.
+
+### 5. Sovereign Skill Packages
+
+Portable skills are implemented as **declarative packages, not executable script
+bundles**.
+
+Packages declare:
+- semantic version and provenance;
+- exact NUA action capabilities;
+- recipe IDs;
+- dependencies.
+
+Activation rejects:
+- unknown capabilities;
+- missing dependencies;
+- dependency cycles;
+- excessive dependency depth;
+- transitive capability escalation;
+- missing recipes;
+- recipe/action envelope drift;
+- untrusted imported provenance.
+
+Imported packages require verified provenance plus immutable source metadata. Package
+content cannot self-assert trust. Every real side effect still runs through UAF.
+
+### 6. Privacy-bounded trace-driven routing
+
+NUA now learns aggregate provider reliability per inference task from:
+- accepted/invalid outcome;
 - latency;
-- cost;
-- privacy-egress violations;
-- action success;
-- autonomy refusal correctness;
-- memory retrieval quality;
-- battery impact on Android.
+- sample count;
+- recency.
 
-## Explicitly rejected
+It stores **no prompt, response or personal content** for this routing signal. A tier is
+only deprioritized after a minimum sample count and poor recent success rate; history
+expires so a later AICore/model update gets another chance.
 
-NUA will not adopt:
-- default-open capability policy;
-- arbitrary shell execution in the personal Android runtime;
-- imported executable scripts by default;
-- tool/plugin paths that bypass T0-T5, biometric, sandbox, idempotency or Flight Recorder;
-- learned routing that can override privacy constraints;
-- autonomous self-modification of application source.
+Most importantly, learning receives the output of `fallbackOrder`. It can reorder only
+tiers the current privacy/offline policy already allowed; it cannot add a cloud provider
+that the contract excluded.
 
-## Competitive target
+### 7. CI-enforced privacy boundary
 
-NUA should combine OpenJarvis-class local execution/orchestration with a stronger personal
-world model, safer autonomy, richer mobile context and verifiable action lineage.
+`tools/model_mesh_boundary_audit.py` is self-testing and runs in Android CI. It fails if:
+- Dreams, memory consolidation or goal review regain direct `ClaudeApiClient` access;
+- those workers lose `HIGH + requiresOffline`;
+- HIGH sensitivity stops defaulting cloud off;
+- Daily Intelligence loses cloud prompt minimization;
+- learned routing stops being subordinate to `fallbackOrder`.
 
-The differentiator is not "more tools." It is:
+This sits alongside the existing forward-reference, injection and UAF boundary audits.
+
+## OpenJarvis capabilities deliberately not transplanted
+
+### Arbitrary shell / imported executable scripts
+
+Rejected for the personal Android runtime. They would materially weaken NUA's capability
+model and create an execution path that is difficult to reconcile with T0-T5,
+confirmation, biometric step-up and UAF.
+
+### Raw MCP / A2A clients
+
+Useful eventually, but not as unrestricted network clients. A future NUA implementation
+should expose MCP/A2A only through explicit capability descriptors, Privacy Capsules,
+Data Egress Gateway and UAF adapters so remote agents cannot become a second action or
+data-egress path.
+
+### Desktop/server inference engines
+
+Ollama, vLLM, SGLang and llama.cpp are valuable on workstation/server hardware but are
+not direct substitutes for an Android personal assistant's OS-managed private model.
+They belong later in Presence Mesh as trusted companion compute nodes.
+
+### GPU/SoC MFU, MBU and rack-style energy telemetry
+
+OpenJarvis's hardware-efficiency telemetry is excellent for model-serving research.
+For Android NUA the useful equivalent is battery/thermal/latency measurement around
+on-device inference, not NVIDIA/AMD server GPU metrics. That should be measured on real
+Android hardware before claims are made.
+
+### Self-optimizing prompts/code
+
+No autonomous source-code rewriting is introduced. Any learning remains bounded routing
+or explicitly reviewed configuration. Privacy and authorization policy are not learnable
+parameters.
+
+## Competitive position after this round
+
+OpenJarvis remains broader as a general-purpose local-agent research/runtime platform.
+NUA is intentionally narrower and stronger in the personal sovereign-assistant category:
 
 **private intelligence + personal world model + bounded autonomy + verified action.**
+
+The important advantage is structural: NUA can use more private context locally, send
+less context to cloud, operate continuously through declared capability envelopes, learn
+which provider works best without learning its way around privacy, and preserve one
+auditable action boundary throughout.
