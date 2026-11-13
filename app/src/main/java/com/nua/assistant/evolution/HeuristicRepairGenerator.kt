@@ -31,6 +31,19 @@ class HeuristicRepairGenerator @Inject constructor(
             )
         }
 
+        if (entry.category == FailureCategory.PARSER_SHAPE || entry.category == FailureCategory.INVALID_OUTPUT) {
+            return RepairCandidate(
+                failureSignature = entry.signature,
+                kind = RepairKind.SPEC_TUNING,
+                risk = RepairRisk.LOW,
+                reason = "Repeated structured-output failure; challenge one additional schema reminder.",
+                reversible = true,
+                specTunings = listOf(
+                    SpecTuningPatch(SpecTuningKey.PROMPT_SCHEMA_REMINDERS, 2),
+                ),
+            )
+        }
+
         if (entry.category in setOf(
                 FailureCategory.ACTION_EXECUTION,
                 FailureCategory.PARSER_SHAPE,
