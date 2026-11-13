@@ -49,10 +49,14 @@ class GoalReviewWorker @AssistedInject constructor(
 
         activeGoals.forEach { goal ->
             val prompt = "Goal: ${goal.text}\n\nCurrent situation:\n$situation"
-            val result = claudeApiClient.complete(
+            val result = modelMesh.complete(
+                contract = TaskContract(
+                    task = InferenceTaskType.REASONING,
+                    privacySensitivity = PrivacySensitivity.HIGH,
+                    requiresOffline = true,
+                ),
                 userPrompt = prompt,
                 system = GOAL_REVIEW_SYSTEM_PROMPT,
-                model = CLAUDE_MODEL_UTILITY,
                 maxTokens = 200,
             )
             if (result !is ClaudeResult.Success) {
