@@ -85,9 +85,16 @@ fun validateRemoteInvocation(
     if (argumentsJson.toByteArray().size > 64 * 1024) return RemoteInvocationValidation(false, "remote payload exceeds 64 KiB")
     if (SECRET_FIELD.containsMatchIn(argumentsJson)) return RemoteInvocationValidation(false, "payload appears to contain a credential or secret")
 
+    if (!manifest.invokePath.startsWith("/") || ".." in manifest.invokePath) {
+        return RemoteInvocationValidation(false, "unsafe invocation path")
+    }
     val uri = runCatching { URI(manifest.baseUrl) }.getOrNull()
         ?: return RemoteInvocationValidation(false, "invalid endpoint URL")
+    if (uri.userInfo != null) return RemoteInvocationValidation(false, "endpoint URL userinfo is forbidden")
     val localHost = uri.host in setOf("127.0.0.1", "localhost", "::1")
+    if (!localHost && uri.port !in setOf(-1, 443)) {
+        return RemoteInvocationValidation(false, "non-local endpoint must use standard HTTPS port")
+    }
     if (uri.scheme != "https" && !(localHost && uri.scheme == "http")) {
         return RemoteInvocationValidation(false, "remote endpoint must use HTTPS; HTTP is localhost-only")
     }
