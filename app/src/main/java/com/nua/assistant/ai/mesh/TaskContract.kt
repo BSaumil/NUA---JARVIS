@@ -29,4 +29,6 @@ data class TaskContract(
     val requiresOffline: Boolean = false,
     val requiresFrontierCapability: Boolean = false,
     val allowCloud: Boolean = privacySensitivity != PrivacySensitivity.HIGH,
+    val profile: TaskProfile = TaskProfile(),
+    val hybridMode: HybridMode = HybridMode.LOCAL_FIRST,
 )
