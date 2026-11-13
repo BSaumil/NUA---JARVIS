@@ -78,6 +78,47 @@ no local-JVM-testable seam. This is a pre-existing architectural gap, not
 introduced here; flagging it for whoever owns `connectors/**` test coverage
 next rather than silently working around it.
 
+### Workstream 5 — External Skills Import / Compatibility
+**Status: SHIPPED_VERIFIED**
+
+`app/src/main/java/com/nua/assistant/skills/importers/ExternalSkillImporter.kt`
+was already implemented before this phase (ChatGPT, pre-merge) and was not
+modified here — recorded in this handoff because it's in this workstream's
+owned scope and the directive requires reporting status for all of it, not
+just what changed this phase. It recursively scans an imported manifest for
+`FORBIDDEN_EXECUTABLE_KEYS` (script/command/shell/exec/python/javascript/
+node/binary/dockerfile/entrypoint/etc.) before any conversion, and converts
+only a clean, declarative manifest into a `SovereignSkillPackageManifest`.
+`ExternalSkillImporterTest.kt` directly satisfies the directive's own
+acceptance bar for this workstream: one valid declarative (OpenJarvis-style)
+fixture converts successfully, one script-bearing fixture is refused before
+conversion, plus two more adversarial cases (unverified provenance, an
+unknown/undeclared action). All four pass as part of the same CI run
+covering everything else in this handoff.
+
+### Workstream 6 — NUA Deep Research
+**Status: SHIPPED_VERIFIED**
+
+`app/src/main/java/com/nua/assistant/research/` (`ResearchModels.kt`,
+`ResearchRepository.kt`, `DeepResearchEngine.kt`, `ResearchSourceProvider.kt`,
+`ResearchReasoner.kt`) was already implemented before this phase and was not
+rewritten here — again recorded for completeness of ownership reporting.
+`DeepResearchEngine.run()` is a real, resumable pipeline, persisting the
+session via `ResearchRepository` after every stage: plan subquestions ->
+gather sources (via the now-fixed `DirectUrlResearchSourceProvider`, see the
+build-fix commit above) -> assess each source into evidence -> build claims
+and flag contradictions (evidence that both supports and contradicts the
+same claim) -> synthesize an answer -> extract only citations that resolve
+to a real gathered source id. `ResearchMode` covers Fast/Standard/Deep/
+Local-private as the directive specifies. `DeepResearchPolicyTest.kt` covers
+the claim/evidence-mapping logic (support+contradiction preserved, neutral
+evidence never fabricates a contradiction).
+
+One thing this phase *did* touch here, indirectly: the
+`ByteArray?.orEmpty()` compile-error fix (commit `9772343`, above) was in
+`ResearchSourceProvider.kt` — without it, this workstream wouldn't have
+compiled at all, so this workstream's green status depends on that fix.
+
 ### Workstream 7 — Sandboxed Computation / WASM (Android half)
 **Status: SHIPPED_BUILDABLE_NOT_DEVICE_VERIFIED**
 
