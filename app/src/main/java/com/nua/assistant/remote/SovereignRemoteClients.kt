@@ -29,11 +29,15 @@ interface A2ATransport {
 }
 
 private fun clientFor(base: OkHttpClient, trust: RemoteEndpointTrust): OkHttpClient {
-    val pin = trust.manifest.tlsPinSha256 ?: return base
-    val host = URI(trust.manifest.baseUrl).host ?: return base
-    return base.newBuilder()
-        .certificatePinner(CertificatePinner.Builder().add(host, pin).build())
-        .build()
+    val builder = base.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+    val pin = trust.manifest.tlsPinSha256
+    val host = URI(trust.manifest.baseUrl).host
+    if (!pin.isNullOrBlank() && !host.isNullOrBlank()) {
+        builder.certificatePinner(CertificatePinner.Builder().add(host, pin).build())
+    }
+    return builder.build()
 }
 
 @Singleton
