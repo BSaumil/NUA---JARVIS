@@ -11,6 +11,9 @@ import com.nua.assistant.evolution.FailureCategory
 import com.nua.assistant.evolution.FailureSeverity
 import com.nua.assistant.evolution.FailureSource
 import com.nua.assistant.evolution.NoOpEvolutionFailureSink
+import com.nua.assistant.evolution.PromptSpecPolicy
+import com.nua.assistant.evolution.SafeSpecPolicyStore
+import com.nua.assistant.evolution.applyPromptSpec
 import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.telemetry.InferenceTelemetryEvent
 import kotlinx.coroutines.async
@@ -49,6 +52,7 @@ class ModelMesh @Inject constructor(
     private val availabilityDetector: ModelAvailabilityDetector,
     private val routingLearning: ModelRoutingLearning,
     private val evolutionFailureSink: EvolutionFailureSink = NoOpEvolutionFailureSink,
+    private val safeSpecPolicyStore: SafeSpecPolicyStore? = null,
 ) {
     suspend fun complete(
         contract: TaskContract,
@@ -85,6 +89,9 @@ class ModelMesh @Inject constructor(
         cloudUserPrompt: String = userPrompt,
         validator: (String) -> Boolean,
     ): ClaudeResult {
+        val promptPolicy = safeSpecPolicyStore?.prompt() ?: PromptSpecPolicy()
+        val effectiveSystem = applyPromptSpec(system, contract.profile.structuredOutput, promptPolicy)
+
         val available = ModelProviderTier.entries
             .filter { availabilityDetector.isAvailable(it, contract.task) }
             .toSet()
@@ -103,18 +110,18 @@ class ModelMesh @Inject constructor(
             val startedNanos = System.nanoTime()
             val result = when (tier) {
                 ModelProviderTier.PRIVATE_OS_MODEL ->
-                    privateOsCompletionProvider.complete(userPrompt, system, maxTokens)
+                    privateOsCompletionProvider.complete(userPrompt, effectiveSystem, maxTokens)
                 ModelProviderTier.CLOUD_FAST ->
                     cloudCompletionProvider.complete(
                         cloudUserPrompt,
-                        system,
+                        effectiveSystem,
                         model = CLAUDE_MODEL_UTILITY,
                         maxTokens = maxTokens,
                     )
                 ModelProviderTier.CLOUD_FRONTIER ->
                     cloudCompletionProvider.complete(
                         cloudUserPrompt,
-                        system,
+                        effectiveSystem,
                         model = CLAUDE_MODEL_CONVERSATION,
                         maxTokens = maxTokens,
                     )
