@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .protocol import DeviceIdentity, PairingChallenge, TrustState
-from .security import now_ms, new_nonce, verify_ed25519
+from .security import now_ms, new_nonce, verify_device_signature
 
 PAIRING_TTL_MS = 5 * 60 * 1000
 
@@ -61,7 +61,14 @@ class PairingStore:
         import base64
 
         message = base64.b64decode(pending.challenge.nonceBase64)
-        ok = verify_ed25519(pending.challenge.challenger.publicKey, signature_b64, message)
+        identity = pending.challenge.challenger
+        ok = verify_device_signature(
+            identity.keyAlgorithm,
+            identity.publicKeyEncoding,
+            identity.publicKey,
+            signature_b64,
+            message,
+        )
         pending.proof_verified = ok
         self._save()
         return ok
