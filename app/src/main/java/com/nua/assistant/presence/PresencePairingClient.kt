@@ -218,6 +218,7 @@ class PresencePairingClient @Inject constructor(
         val body = buildJsonObject {
             put("meta", json.encodeToJsonElement(LocalApiRequestMeta.serializer(), meta))
             put("operation", operation)
+            put("payloadJson", payloadJson)
             put("payload", payload)
         }
         val request = Request.Builder()
