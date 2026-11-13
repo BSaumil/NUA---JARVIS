@@ -68,6 +68,12 @@ class RecipeRepository @Inject constructor(
     suspend fun recentRuns(recipeId: Long, limit: Int = 20): List<RecipeRunEntity> =
         recipeRunDao.recentForRecipe(recipeId, limit)
 
+    /** Read-only capability projection used by Sovereign Operators before every run. */
+    suspend fun actionsForRecipe(recipeId: Long): Set<NuaActionType>? {
+        val recipe = recipeDao.getById(recipeId) ?: return null
+        return compiledFrom(recipe).steps.map { it.action }.toSet()
+    }
+
     /** Zero-side-effect preview of what running this recipe would do right now — see
      *  recipes/RecipeSimulator.kt. Never calls [runRecipe]. */
     suspend fun simulate(recipeId: Long): RecipeSimulation? {
