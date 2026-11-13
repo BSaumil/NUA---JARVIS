@@ -72,6 +72,7 @@ data class EvolutionMemoryEntry(
 @Serializable
 enum class RepairKind {
     RUNTIME_TUNING,
+    SPEC_TUNING,
     TRANSFORM_PROGRAM,
     RECIPE_PATCH,
     SKILL_PACKAGE_PATCH,
@@ -116,6 +117,20 @@ data class RuntimeTuningPatch(
 )
 
 @Serializable
+enum class SpecTuningKey {
+    PROMPT_SCHEMA_REMINDERS,
+    PROMPT_REPAIR_ATTEMPTS,
+    RESEARCH_MAX_SUBQUESTIONS,
+    RESEARCH_CROSSCHECK_DEPTH,
+}
+
+@Serializable
+data class SpecTuningPatch(
+    val key: SpecTuningKey,
+    val intValue: Int,
+)
+
+@Serializable
 data class RepairCandidate(
     val id: String = UUID.randomUUID().toString(),
     val failureSignature: String,
@@ -125,6 +140,7 @@ data class RepairCandidate(
     val reversible: Boolean,
     val impact: RepairImpact = RepairImpact(),
     val runtimeTunings: List<RuntimeTuningPatch> = emptyList(),
+    val specTunings: List<SpecTuningPatch> = emptyList(),
     val transformProgram: SovereignProgram? = null,
     val artifactRef: String? = null,
     val artifactSha256: String? = null,

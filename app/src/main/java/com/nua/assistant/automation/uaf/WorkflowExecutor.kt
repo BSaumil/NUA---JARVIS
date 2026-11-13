@@ -87,7 +87,11 @@ class WorkflowExecutor @Inject constructor(
                 adapterType = execution.adapterType?.name ?: "NONE",
                 authorizationKind = execution.authorizationKind,
                 outcomeState = execution.outcome.state.name,
-                detail = execution.outcome.detail,
+                detail = if (execution.adapterType in setOf(ExecutionAdapterType.MCP, ExecutionAdapterType.A2A)) {
+                    execution.outcome.detail?.let { "Remote execution completed; payload omitted from lineage." }
+                } else {
+                    execution.outcome.detail
+                },
                 timestampMillis = System.currentTimeMillis(),
             ),
         )
@@ -112,7 +116,7 @@ class WorkflowExecutor @Inject constructor(
             )
         }
 
-        val adapterType = adapterTypeFor(descriptor, step.authorizationProof)
+        val adapterType = adapterTypeFor(descriptor, step.authorizationProof, step.parameters)
         val adapter = adapters[adapterType]
             ?: return StepExecution(
                 StepOutcome(step.id, outcomeForFailedStep(step), "No adapter registered for $adapterType"),
@@ -155,8 +159,20 @@ class WorkflowExecutor @Inject constructor(
      * [LocalNativeAdapter] only *proposes* a reply (see [CapabilityDescriptor]'s doc
      * comment); re-running it after confirmation would re-propose instead of sending.
      */
-    private fun adapterTypeFor(descriptor: CapabilityDescriptor, proof: AuthorizationProof): ExecutionAdapterType =
-        if (descriptor.confirmation == ConfirmationPolicy.CONFIRM_BEFORE_EXECUTE &&
+    private fun adapterTypeFor(
+        descriptor: CapabilityDescriptor,
+        proof: AuthorizationProof,
+        parameters: Map<String, String>,
+    ): ExecutionAdapterType {
+        if (descriptor.action == com.nua.assistant.ai.NuaActionType.REMOTE_TOOL) {
+            val requested = runCatching {
+                ExecutionAdapterType.valueOf(parameters["protocol"].orEmpty().uppercase())
+            }.getOrNull()
+            val allowed = setOf(descriptor.preferredAdapter) + descriptor.fallbackAdapters
+            if (requested != null && requested in allowed) return requested
+            return descriptor.preferredAdapter
+        }
+        return if (descriptor.confirmation == ConfirmationPolicy.CONFIRM_BEFORE_EXECUTE &&
             proof is AuthorizationProof.UserConfirmed &&
             descriptor.fallbackAdapters.isNotEmpty()
         ) {
@@ -164,4 +180,5 @@ class WorkflowExecutor @Inject constructor(
         } else {
             descriptor.preferredAdapter
         }
+    }
 }

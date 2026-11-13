@@ -63,6 +63,7 @@ class CapabilityDescriptorTest {
             NuaActionType.REPLY_TO_NOTIFICATION to ExecutionAdapterType.NOTIFICATION_REMOTE_INPUT,
             NuaActionType.SMS_SEND to ExecutionAdapterType.SMS_MANAGER,
             NuaActionType.PLAN_TASK to ExecutionAdapterType.PLAN_CONFIRMATION,
+            NuaActionType.REMOTE_TOOL to ExecutionAdapterType.A2A,
         )
         for ((action, expectedAdapter) in expectedFallbacks) {
             assertEquals("$action must name its real mechanism as its one fallback adapter", listOf(expectedAdapter), capabilityDescriptorFor(action, SkillManifest()).fallbackAdapters)
@@ -73,9 +74,24 @@ class CapabilityDescriptorTest {
     }
 
     @Test
-    fun `every descriptor defaults to the local-native adapter as preferred`() {
+    fun `only governed remote tool uses a non-local preferred adapter`() {
         for (action in NuaActionType.entries) {
-            assertEquals(ExecutionAdapterType.LOCAL_NATIVE, capabilityDescriptorFor(action, SkillManifest()).preferredAdapter)
+            val expected = if (action == NuaActionType.REMOTE_TOOL) {
+                ExecutionAdapterType.MCP
+            } else {
+                ExecutionAdapterType.LOCAL_NATIVE
+            }
+            assertEquals(expected, capabilityDescriptorFor(action, SkillManifest()).preferredAdapter)
         }
+    }
+
+    @Test
+    fun `remote tool is ask-first and may route only through MCP or A2A`() {
+        val descriptor = capabilityDescriptorFor(NuaActionType.REMOTE_TOOL, SkillManifest())
+        assertEquals(ConfirmationPolicy.CONFIRM_BEFORE_EXECUTE, descriptor.confirmation)
+        assertEquals(ExecutionAdapterType.MCP, descriptor.preferredAdapter)
+        assertEquals(listOf(ExecutionAdapterType.A2A), descriptor.fallbackAdapters)
+        assertEquals(SideEffectClass.EXTERNAL_WORLD, descriptor.sideEffect)
+        assertEquals(Reversibility.MANUALLY_REVERSIBLE, descriptor.reversibility)
     }
 }

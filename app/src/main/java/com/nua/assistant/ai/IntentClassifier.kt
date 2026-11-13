@@ -4,6 +4,7 @@ import com.nua.assistant.ai.mesh.InferenceTaskType
 import com.nua.assistant.ai.mesh.ModelMesh
 import com.nua.assistant.ai.mesh.PrivacySensitivity
 import com.nua.assistant.ai.mesh.TaskContract
+import com.nua.assistant.ai.mesh.TaskProfile
 import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.voice.NuaLanguage
 import java.text.SimpleDateFormat
@@ -28,6 +29,8 @@ enum class NuaActionType {
     EMAIL,
     SMS_SEND,
     CALENDAR_INVITE,
+    /** Governed external MCP/A2A capability. Not advertised to general intent classification. */
+    REMOTE_TOOL,
     /** No concrete action fits — fall through to a normal conversational reply. */
     CHAT,
 }
@@ -118,7 +121,11 @@ class IntentClassifier @Inject constructor(
         // CLOUD_FAST/CLAUDE_MODEL_UTILITY exactly as this call always used), but the
         // Mesh now owns the online/API-key preflight instead of always attempting the
         // network call first.
-        val contract = TaskContract(task = InferenceTaskType.INTENT_CLASSIFICATION, privacySensitivity = PrivacySensitivity.MEDIUM)
+        val contract = TaskContract(
+            task = InferenceTaskType.INTENT_CLASSIFICATION,
+            privacySensitivity = PrivacySensitivity.MEDIUM,
+            profile = TaskProfile(structuredOutput = true),
+        )
         val result = modelMesh.completeValidated(
             contract = contract,
             userPrompt = utterance.text,

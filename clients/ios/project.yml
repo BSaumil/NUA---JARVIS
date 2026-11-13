@@ -1,0 +1,24 @@
+name: NuaSovereign
+options:
+  bundleIdPrefix: com.nua
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    IPHONEOS_DEPLOYMENT_TARGET: 17.0
+targets:
+  NuaSovereign:
+    type: application
+    platform: iOS
+    sources:
+      - NuaSovereign
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nua.sovereign
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: NUA
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: NUA uses your local network only to connect to companion devices you pair.
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        CODE_SIGN_STYLE: Automatic
+    scheme:
+      testTargets: []

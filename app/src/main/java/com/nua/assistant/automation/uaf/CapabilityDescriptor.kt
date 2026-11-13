@@ -19,6 +19,7 @@ enum class ExecutionAdapterType {
     ANDROID_INTENT,
     APP_FUNCTIONS,
     MCP,
+    A2A,
     NOTIFICATION_REMOTE_INPUT,
     ACCESSIBILITY,
     EXTERNAL_API,
@@ -90,7 +91,7 @@ fun capabilityDescriptorFor(action: NuaActionType, manifest: SkillManifest): Cap
         idempotency = idempotency,
         confirmation = confirmation,
         timeoutMillis = manifest.timeoutMillis,
-        preferredAdapter = ExecutionAdapterType.LOCAL_NATIVE,
+        preferredAdapter = if (action == NuaActionType.REMOTE_TOOL) ExecutionAdapterType.MCP else ExecutionAdapterType.LOCAL_NATIVE,
         // REPLY_TO_NOTIFICATION/SMS_SEND/PLAN_TASK's LOCAL_NATIVE path (their skill, via
         // SkillSandbox) only ever *proposes* -- confirming and actually performing the real
         // side effect (sending through the notification's quick-reply action, sending the
@@ -101,6 +102,7 @@ fun capabilityDescriptorFor(action: NuaActionType, manifest: SkillManifest): Cap
             NuaActionType.REPLY_TO_NOTIFICATION -> listOf(ExecutionAdapterType.NOTIFICATION_REMOTE_INPUT)
             NuaActionType.SMS_SEND -> listOf(ExecutionAdapterType.SMS_MANAGER)
             NuaActionType.PLAN_TASK -> listOf(ExecutionAdapterType.PLAN_CONFIRMATION)
+            NuaActionType.REMOTE_TOOL -> listOf(ExecutionAdapterType.A2A)
             else -> emptyList()
         },
     )
@@ -139,6 +141,9 @@ private fun classificationFor(action: NuaActionType): Classification = when (act
     ->
         Classification(SideEffectClass.EXTERNAL_WORLD, Reversibility.IRREVERSIBLE, IdempotencyPolicy.DEDUPE_REQUIRED, ConfirmationPolicy.CONFIRM_BEFORE_EXECUTE)
 
+    NuaActionType.REMOTE_TOOL ->
+        Classification(SideEffectClass.EXTERNAL_WORLD, Reversibility.MANUALLY_REVERSIBLE, IdempotencyPolicy.DEDUPE_REQUIRED, ConfirmationPolicy.CONFIRM_BEFORE_EXECUTE)
+
     NuaActionType.PLAN_TASK ->
         Classification(SideEffectClass.LOCAL_STATE_ONLY, Reversibility.MANUALLY_REVERSIBLE, IdempotencyPolicy.SAFE_TO_REPEAT, ConfirmationPolicy.CONFIRM_BEFORE_EXECUTE)
 }
@@ -157,5 +162,6 @@ private fun purposeFor(action: NuaActionType): String = when (action) {
     NuaActionType.EMAIL -> "Check inbox status."
     NuaActionType.SMS_SEND -> "Send a text message to a resolved contact."
     NuaActionType.CALENDAR_INVITE -> "Create a calendar event, optionally inviting an attendee."
+    NuaActionType.REMOTE_TOOL -> "Invoke an explicitly approved remote MCP/A2A capability through UAF."
     NuaActionType.CHAT -> "Fall through to a normal conversational reply."
 }

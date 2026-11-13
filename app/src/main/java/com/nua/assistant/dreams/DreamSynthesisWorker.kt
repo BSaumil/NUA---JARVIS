@@ -9,6 +9,7 @@ import com.nua.assistant.ai.mesh.InferenceTaskType
 import com.nua.assistant.ai.mesh.ModelMesh
 import com.nua.assistant.ai.mesh.PrivacySensitivity
 import com.nua.assistant.ai.mesh.TaskContract
+import com.nua.assistant.ai.mesh.TaskProfile
 import com.nua.assistant.ai.WorkerOutcome
 import com.nua.assistant.ai.extractJsonPayload
 import com.nua.assistant.ai.outcomeForWorkerRun
@@ -113,6 +114,7 @@ class DreamSynthesisWorker @AssistedInject constructor(
                 task = InferenceTaskType.REASONING,
                 privacySensitivity = PrivacySensitivity.HIGH,
                 requiresOffline = true,
+                profile = TaskProfile(structuredOutput = true),
             ),
             userPrompt = prompt,
             system = DREAM_SYSTEM_PROMPT,

@@ -1,5 +1,8 @@
 package com.nua.assistant.automation.uaf
 
+import com.nua.assistant.remote.A2AActionAdapter
+import com.nua.assistant.remote.McpActionAdapter
+
 import dagger.Binds
 import dagger.MapKey
 import dagger.Module
@@ -41,4 +44,14 @@ abstract class AdapterModule {
     @IntoMap
     @AdapterTypeKey(ExecutionAdapterType.PLAN_CONFIRMATION)
     abstract fun bindPlanConfirmationAdapter(impl: PlanConfirmationAdapter): ActionAdapter
+
+    @Binds
+    @IntoMap
+    @AdapterTypeKey(ExecutionAdapterType.MCP)
+    abstract fun bindMcpAdapter(impl: McpActionAdapter): ActionAdapter
+
+    @Binds
+    @IntoMap
+    @AdapterTypeKey(ExecutionAdapterType.A2A)
+    abstract fun bindA2AAdapter(impl: A2AActionAdapter): ActionAdapter
 }

@@ -4,6 +4,7 @@ import com.nua.assistant.ai.mesh.InferenceTaskType
 import com.nua.assistant.ai.mesh.ModelMesh
 import com.nua.assistant.ai.mesh.PrivacySensitivity
 import com.nua.assistant.ai.mesh.TaskContract
+import com.nua.assistant.ai.mesh.TaskProfile
 import com.nua.assistant.calendar.CalendarReader
 import com.nua.assistant.voice.NuaLanguage
 import com.nua.assistant.weather.WeatherRepository
@@ -100,6 +101,7 @@ class TaskPlanner @Inject constructor(
                 task = InferenceTaskType.PLANNING,
                 privacySensitivity = PrivacySensitivity.MEDIUM,
                 requiresFrontierCapability = true,
+                profile = TaskProfile(structuredOutput = true),
             ),
             userPrompt = prompt,
             system = system,
