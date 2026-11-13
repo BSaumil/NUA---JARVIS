@@ -5,6 +5,7 @@ description = "NUA Sovereign Presence Mesh companion service"
 requires-python = ">=3.11"
 dependencies = [
   "cryptography>=44,<46",
+  "wasmtime==50.0.1",
 ]
 
 [project.scripts]
