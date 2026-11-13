@@ -18,7 +18,7 @@ from .security import (
     now_ms,
     public_key_b64,
     sign_b64,
-    verify_ed25519,
+    verify_device_signature,
 )
 
 class CompanionState:
@@ -103,14 +103,15 @@ class Handler(BaseHTTPRequestHandler):
             if auth is not None:
                 self._json(403, {"error": auth})
                 return
+            payload = body.get("payload") or {}
             models = configured_models()
-            requested = str(body.get("modelId", ""))
+            requested = str(payload.get("modelId", ""))
             endpoint = next((m for m in models if m.id == requested), models[0] if models else None)
             if endpoint is None:
                 self._json(503, {"error": "no_local_model_configured"})
                 return
             try:
-                text = complete(endpoint, str(body.get("prompt", "")))
+                text = complete(endpoint, str(payload.get("prompt", "")))
                 self._json(200, {"succeeded": True, "text": text, "provider": endpoint.provider})
             except Exception:
                 self._json(502, {"succeeded": False, "errorCode": "MODEL_FAILURE"})
@@ -168,7 +169,13 @@ class Handler(BaseHTTPRequestHandler):
         operation = str(body.get("operation", ""))
         payload_json = compact_json(body.get("payload", {}))
         digest = digest_request(protocol, str(meta.get("requestId", "")), client_id, nonce, timestamp, operation, payload_json)
-        if not verify_ed25519(trusted.identity.publicKey, str(meta.get("signatureBase64", "")), digest):
+        if not verify_device_signature(
+            trusted.identity.keyAlgorithm,
+            trusted.identity.publicKeyEncoding,
+            trusted.identity.publicKey,
+            str(meta.get("signatureBase64", "")),
+            digest,
+        ):
             return "bad_signature"
         return None
 
