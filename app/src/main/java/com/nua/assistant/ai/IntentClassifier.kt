@@ -121,7 +121,11 @@ class IntentClassifier @Inject constructor(
         // CLOUD_FAST/CLAUDE_MODEL_UTILITY exactly as this call always used), but the
         // Mesh now owns the online/API-key preflight instead of always attempting the
         // network call first.
-        val contract = TaskContract(\n            task = InferenceTaskType.INTENT_CLASSIFICATION,\n            privacySensitivity = PrivacySensitivity.MEDIUM,\n            profile = TaskProfile(structuredOutput = true),\n        )
+        val contract = TaskContract(
+            task = InferenceTaskType.INTENT_CLASSIFICATION,
+            privacySensitivity = PrivacySensitivity.MEDIUM,
+            profile = TaskProfile(structuredOutput = true),
+        )
         val result = modelMesh.completeValidated(
             contract = contract,
             userPrompt = utterance.text,
