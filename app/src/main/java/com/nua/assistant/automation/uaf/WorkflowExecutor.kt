@@ -1,6 +1,11 @@
 package com.nua.assistant.automation.uaf
 
 import com.nua.assistant.automation.NuaRouteResult
+import com.nua.assistant.evolution.EvolutionFailureSink
+import com.nua.assistant.evolution.FailureCategory
+import com.nua.assistant.evolution.FailureSeverity
+import com.nua.assistant.evolution.FailureSource
+import com.nua.assistant.evolution.NoOpEvolutionFailureSink
 import com.nua.assistant.trust.lineage.LineageEntry
 import com.nua.assistant.trust.lineage.LineageRecorder
 import javax.inject.Inject
@@ -35,6 +40,7 @@ class WorkflowExecutor @Inject constructor(
     private val capabilityRegistry: CapabilityRegistry,
     private val adapters: Map<ExecutionAdapterType, @JvmSuppressWildcards ActionAdapter>,
     private val lineageRecorder: LineageRecorder,
+    private val evolutionFailureSink: EvolutionFailureSink = NoOpEvolutionFailureSink,
 ) {
     suspend fun run(
         plan: ActionPlan,
@@ -94,7 +100,9 @@ class WorkflowExecutor @Inject constructor(
                 StepOutcome(step.id, outcomeForFailedStep(step), "No capability registered for ${step.action}"),
                 adapterType = null,
                 authorizationKind = authorizationKind,
-            )
+            ).also {
+                observeEvolutionFailure(step.action.name, "NO_CAPABILITY")
+            }
 
         if (!isAuthorizationSufficient(descriptor.confirmation, step.authorizationProof)) {
             return StepExecution(
@@ -110,13 +118,34 @@ class WorkflowExecutor @Inject constructor(
                 StepOutcome(step.id, outcomeForFailedStep(step), "No adapter registered for $adapterType"),
                 adapterType = adapterType,
                 authorizationKind = authorizationKind,
-            )
+            ).also {
+                observeEvolutionFailure(step.action.name, "NO_ADAPTER")
+            }
 
-        val result = runCatching { adapter.execute(descriptor, step.parameters, context) }.getOrNull()
+        val attempt = runCatching { adapter.execute(descriptor, step.parameters, context) }
+        val result = attempt.getOrNull()
         val succeeded = result is NuaRouteResult.ActionTaken && result.succeeded
+        if (!succeeded) {
+            observeEvolutionFailure(
+                action = step.action.name,
+                code = if (attempt.isFailure) "ADAPTER_EXCEPTION" else "ADAPTER_FAILURE",
+            )
+        }
         val message = (result as? NuaRouteResult.ActionTaken)?.message
         val outcome = StepOutcome(step.id, if (succeeded) StepOutcomeState.SUCCEEDED else outcomeForFailedStep(step), message)
         return StepExecution(outcome, adapterType, authorizationKind)
+    }
+
+    private fun observeEvolutionFailure(action: String, code: String) {
+        runCatching {
+            evolutionFailureSink.recordFailureSignal(
+                source = FailureSource.UAF,
+                component = action,
+                category = FailureCategory.ACTION_EXECUTION,
+                code = code,
+                severity = FailureSeverity.MEDIUM,
+            )
+        }
     }
 
     /**
