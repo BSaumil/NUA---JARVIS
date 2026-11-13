@@ -35,7 +35,7 @@ object ConnectorCatalog {
         allowedHosts = setOf("api.dropboxapi.com"),
         readCapabilities = setOf("files.read"),
         writeCapabilities = setOf("files.write"),
-        dataCategories = setOf(DataCategory.DOCUMENTS),
+        dataCategories = setOf(DataCategory.DOCUMENT_CONTENT),
         remoteEndpointIdForWrites = "dropbox",
     )
 
