@@ -2658,3 +2658,36 @@ Built the first governed self-improvement loop on top of the merged OpenJarvis b
 Full contract: docs/NUA_SOVEREIGN_EVOLUTION_ENGINE.md.
 
 Version advanced to 0.4.0 / versionCode 2.
+
+
+## November 14, 2026 — NUA Sovereign 0.5.0 / OpenJarvis Final 10
+
+Completed the ten remaining high-value OpenJarvis-derived workstreams as NUA-native,
+governed capabilities rather than unrestricted copies.
+
+- Governed MCP/A2A remote tools are first-class T3 UAF actions with endpoint identity,
+  TLS pinning, Privacy Capsules, capability allowlists, idempotency and audit boundaries.
+- Presence Mesh v1 defines shared device/model/capability/pairing/job schemas. Android
+  uses a Keystore P-256 identity; the companion uses persistent Ed25519 identity and
+  owner-approved scopes, revocation and replay protection.
+- Model Mesh now routes by privacy, difficulty, cost, energy/thermal state and task
+  profile, with seven hybrid orchestration modes that remain subordinate to fallbackOrder.
+- Added sovereign connector SDK/catalog, encrypted credentials and a strict rule that
+  connector writes become UAF REMOTE_TOOL proposals.
+- Added external skill import/conversion with provenance and recursive executable-field
+  rejection before conversion to Sovereign Skill Packages.
+- Added encrypted, resumable Deep Research state with evidence, claims, contradictions,
+  source IDs and synthesis; source text is always untrusted.
+- Added companion-side Wasmtime sandbox with no WASI/host imports, digest pinning, fuel,
+  memory and wall-time limits.
+- Added content-free inference resource telemetry and privacy-first energy/cost routing.
+- Evolution Phase 2 adds bounded prompt and research spec tuning with Champion/Challenger
+  gates and rollback; security/authority policy remains non-learnable.
+- Added authenticated Local API contracts, Windows Tauri control surface, iOS/iPadOS
+  SwiftUI shell, and Windows/macOS/Linux companion service packaging.
+- Expanded CI with remote gateway boundary audit, Windows/macOS/Linux companion tests,
+  Windows executable build and iOS simulator build.
+
+Version advanced to **0.5.0 / versionCode 3**.
+
+Full status: docs/OPENJARVIS_FINAL10_GO_GO_2026-11-14.md
