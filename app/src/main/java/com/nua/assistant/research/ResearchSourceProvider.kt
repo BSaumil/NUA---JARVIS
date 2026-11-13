@@ -35,7 +35,7 @@ class DirectUrlResearchSourceProvider @Inject constructor(
                     if (!response.isSuccessful) return@use null
                     val type = response.header("content-type").orEmpty().lowercase()
                     if (!type.startsWith("text/") && !type.startsWith("application/json")) return@use null
-                    val raw = response.body?.bytes().orEmpty()
+                    val raw = response.body?.bytes() ?: ByteArray(0)
                     val text = raw.copyOf(minOf(raw.size, 512 * 1024))
                         .toString(Charsets.UTF_8)
                         .replace(Regex("""<script[\s\S]*?</script>""", RegexOption.IGNORE_CASE), " ")
