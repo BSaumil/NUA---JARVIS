@@ -66,7 +66,7 @@ fun decideRepairPromotion(
     }
 
     val runtimeEligible =
-        candidate.kind == RepairKind.RUNTIME_TUNING &&
+        candidate.kind in setOf(RepairKind.RUNTIME_TUNING, RepairKind.SPEC_TUNING) &&
             candidate.reversible &&
             candidate.risk == RepairRisk.LOW
 
