@@ -61,12 +61,18 @@ class ModelMesh @Inject constructor(
      * [validator] rejects the text, the Mesh records that provider as unusable for this
      * attempt and continues to the next *already-authorized* tier. Privacy/offline rules
      * are never relaxed by validation failure.
+     *
+     * [cloudUserPrompt] lets a caller provide a minimized/redacted cloud view while the
+     * private OS tier receives the richer [userPrompt]. This is NUA's hybrid privacy
+     * boundary: provider routing must never force "local context" and "cloud egress" to
+     * be the same payload.
      */
     suspend fun completeValidated(
         contract: TaskContract,
         userPrompt: String,
         system: String? = null,
         maxTokens: Int = 512,
+        cloudUserPrompt: String = userPrompt,
         validator: (String) -> Boolean,
     ): ClaudeResult {
         val available = ModelProviderTier.entries
@@ -80,14 +86,14 @@ class ModelMesh @Inject constructor(
                     privateOsCompletionProvider.complete(userPrompt, system, maxTokens)
                 ModelProviderTier.CLOUD_FAST ->
                     cloudCompletionProvider.complete(
-                        userPrompt,
+                        cloudUserPrompt,
                         system,
                         model = CLAUDE_MODEL_UTILITY,
                         maxTokens = maxTokens,
                     )
                 ModelProviderTier.CLOUD_FRONTIER ->
                     cloudCompletionProvider.complete(
-                        userPrompt,
+                        cloudUserPrompt,
                         system,
                         model = CLAUDE_MODEL_CONVERSATION,
                         maxTokens = maxTokens,
