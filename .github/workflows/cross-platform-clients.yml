@@ -1,0 +1,35 @@
+name: Cross Platform Clients
+
+on:
+  push:
+    paths:
+      - "clients/windows/**"
+      - "clients/ios/**"
+      - ".github/workflows/cross-platform-clients.yml"
+  pull_request:
+    paths:
+      - "clients/windows/**"
+      - "clients/ios/**"
+      - ".github/workflows/cross-platform-clients.yml"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check Windows Tauri shell
+        run: cargo check --manifest-path clients/windows/src-tauri/Cargo.toml
+      - name: Test Windows shell policy
+        run: cargo test --manifest-path clients/windows/src-tauri/Cargo.toml
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate iOS project
+        run: xcodegen generate --spec clients/ios/project.yml
+      - name: Build iOS simulator shell
+        run: xcodebuild -project clients/ios/NuaSovereign.xcodeproj -scheme NuaSovereign -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
