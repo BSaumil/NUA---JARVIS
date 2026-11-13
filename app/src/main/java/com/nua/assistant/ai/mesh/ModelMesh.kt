@@ -45,6 +45,29 @@ class ModelMesh @Inject constructor(
         userPrompt: String,
         system: String? = null,
         maxTokens: Int = 512,
+    ): ClaudeResult = completeValidated(
+        contract = contract,
+        userPrompt = userPrompt,
+        system = system,
+        maxTokens = maxTokens,
+        validator = { true },
+    )
+
+    /**
+     * Provider-neutral completion with an output-contract gate.
+     *
+     * This is the important path for structured tasks. A provider returning HTTP/model
+     * "success" is not enough when the caller requires JSON or another schema. If
+     * [validator] rejects the text, the Mesh records that provider as unusable for this
+     * attempt and continues to the next *already-authorized* tier. Privacy/offline rules
+     * are never relaxed by validation failure.
+     */
+    suspend fun completeValidated(
+        contract: TaskContract,
+        userPrompt: String,
+        system: String? = null,
+        maxTokens: Int = 512,
+        validator: (String) -> Boolean,
     ): ClaudeResult {
         val available = ModelProviderTier.entries
             .filter { availabilityDetector.isAvailable(it, contract.task) }
@@ -73,8 +96,15 @@ class ModelMesh @Inject constructor(
                 ModelProviderTier.LOCAL_MODEL,
                 -> continue
             }
+
             when (result) {
-                is ClaudeResult.Success -> return result
+                is ClaudeResult.Success -> {
+                    val valid = runCatching { validator(result.text) }.getOrDefault(false)
+                    if (valid) return result
+                    lastFailure = ClaudeResult.Failure(
+                        "Provider $tier returned output that did not satisfy the task contract.",
+                    )
+                }
                 is ClaudeResult.Failure -> lastFailure = result
             }
         }
