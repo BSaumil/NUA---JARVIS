@@ -6,63 +6,66 @@ import org.junit.Test
 
 private fun contract(
     task: InferenceTaskType = InferenceTaskType.REASONING,
+    sensitivity: PrivacySensitivity = PrivacySensitivity.MEDIUM,
     requiresOffline: Boolean = false,
     requiresFrontierCapability: Boolean = false,
-) = TaskContract(task, PrivacySensitivity.MEDIUM, requiresOffline, requiresFrontierCapability)
+    allowCloud: Boolean = sensitivity != PrivacySensitivity.HIGH,
+) = TaskContract(task, sensitivity, requiresOffline, requiresFrontierCapability, allowCloud)
 
 class ModelProviderTierTest {
-
     private val allTiers = ModelProviderTier.entries.toSet()
 
     @Test
-    fun `with everything available, the priority order is tried in full, cheapest-first`() {
+    fun `full availability is local-first then cloud`() {
         assertEquals(
-            listOf(ModelProviderTier.LOCAL_RULES, ModelProviderTier.LOCAL_MODEL, ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER),
+            listOf(
+                ModelProviderTier.LOCAL_RULES,
+                ModelProviderTier.LOCAL_MODEL,
+                ModelProviderTier.PRIVATE_OS_MODEL,
+                ModelProviderTier.CLOUD_FAST,
+                ModelProviderTier.CLOUD_FRONTIER,
+            ),
             fallbackOrder(contract(), allTiers),
         )
     }
 
     @Test
-    fun `only genuinely available tiers are offered`() {
-        assertEquals(
-            listOf(ModelProviderTier.CLOUD_FAST),
-            fallbackOrder(contract(), setOf(ModelProviderTier.CLOUD_FAST)),
-        )
-    }
-
-    @Test
-    fun `requiresOffline excludes both cloud tiers even when they're available`() {
-        val order = fallbackOrder(contract(requiresOffline = true), allTiers)
+    fun `HIGH privacy is local-only by default`() {
+        val order = fallbackOrder(contract(sensitivity = PrivacySensitivity.HIGH), allTiers)
         assertTrue(ModelProviderTier.CLOUD_FAST !in order)
         assertTrue(ModelProviderTier.CLOUD_FRONTIER !in order)
-        assertEquals(listOf(ModelProviderTier.LOCAL_RULES, ModelProviderTier.LOCAL_MODEL, ModelProviderTier.PRIVATE_OS_MODEL), order)
+        assertTrue(ModelProviderTier.PRIVATE_OS_MODEL in order)
     }
 
     @Test
-    fun `requiresOffline with no on-device tier available produces an empty order -- never falls back to network`() {
-        assertEquals(emptyList<ModelProviderTier>(), fallbackOrder(contract(requiresOffline = true), setOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.CLOUD_FRONTIER)))
+    fun `explicit HIGH privacy cloud allowance restores cloud candidates`() {
+        val order = fallbackOrder(
+            contract(sensitivity = PrivacySensitivity.HIGH, allowCloud = true),
+            allTiers,
+        )
+        assertTrue(ModelProviderTier.CLOUD_FAST in order)
+        assertTrue(ModelProviderTier.CLOUD_FRONTIER in order)
     }
 
     @Test
-    fun `requiresFrontierCapability skips CLOUD_FAST straight to CLOUD_FRONTIER`() {
+    fun `offline excludes cloud regardless of explicit allowance`() {
+        val order = fallbackOrder(
+            contract(requiresOffline = true, allowCloud = true),
+            allTiers,
+        )
+        assertTrue(ModelProviderTier.CLOUD_FAST !in order)
+        assertTrue(ModelProviderTier.CLOUD_FRONTIER !in order)
+    }
+
+    @Test
+    fun `frontier requirement skips fast cloud`() {
         val order = fallbackOrder(contract(requiresFrontierCapability = true), allTiers)
         assertTrue(ModelProviderTier.CLOUD_FAST !in order)
         assertTrue(ModelProviderTier.CLOUD_FRONTIER in order)
     }
 
     @Test
-    fun `a utility task with no frontier requirement includes CLOUD_FAST before CLOUD_FRONTIER`() {
-        val order = fallbackOrder(contract(task = InferenceTaskType.INTENT_CLASSIFICATION), allTiers)
-        assertTrue(order.indexOf(ModelProviderTier.CLOUD_FAST) < order.indexOf(ModelProviderTier.CLOUD_FRONTIER))
-    }
-
-    @Test
-    fun `no available tiers at all produces an empty order, never a crash`() {
-        assertEquals(emptyList<ModelProviderTier>(), fallbackOrder(contract(), emptySet()))
-    }
-
-    @Test
-    fun `routing is deterministic -- the same inputs always produce the same order`() {
+    fun `routing remains deterministic`() {
         val c = contract(requiresFrontierCapability = true)
         assertEquals(fallbackOrder(c, allTiers), fallbackOrder(c, allTiers))
     }

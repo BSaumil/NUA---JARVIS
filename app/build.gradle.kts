@@ -142,7 +142,13 @@ dependencies {
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+
+    // Private on-device inference through Gemini Nano / Android AICore.
+    // beta4 is intentionally used here: beta5 requires Kotlin 2.3+, while NUA's
+    // current compiler is Kotlin 2.0.21. Coroutines is pinned to 1.11.0 because
+    // ML Kit documents a beta3/beta4 runtime incompatibility with <=1.10.x.
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
 
     // Secure storage for the Claude API key
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
@@ -173,7 +179,7 @@ dependencies {
     implementation("androidx.car.app:app:1.4.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     // Verifies executeCancellably (ai/CancellableHttpCall.kt) actually cancels an
     // in-flight request against a real local socket — same publisher/version as the
     // production okhttp dependency, no new transitive risk.

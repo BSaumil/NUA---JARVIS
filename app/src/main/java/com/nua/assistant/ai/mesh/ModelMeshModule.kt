@@ -10,8 +10,17 @@ import dagger.hilt.components.SingletonComponent
 abstract class ModelMeshModule {
 
     @Binds
-    abstract fun bindModelAvailabilityDetector(impl: RealModelAvailabilityDetector): ModelAvailabilityDetector
+    abstract fun bindModelAvailabilityDetector(
+        impl: RealModelAvailabilityDetector,
+    ): ModelAvailabilityDetector
 
     @Binds
-    abstract fun bindCloudCompletionProvider(impl: ClaudeApiCloudCompletionProvider): CloudCompletionProvider
+    abstract fun bindCloudCompletionProvider(
+        impl: ClaudeApiCloudCompletionProvider,
+    ): CloudCompletionProvider
+
+    @Binds
+    abstract fun bindPrivateOsCompletionProvider(
+        impl: GeminiNanoPrivateOsCompletionProvider,
+    ): PrivateOsCompletionProvider
 }
