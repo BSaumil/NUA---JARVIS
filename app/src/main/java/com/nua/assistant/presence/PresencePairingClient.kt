@@ -234,9 +234,12 @@ class PresencePairingClient @Inject constructor(
 
     private fun clientFor(baseUrl: String, pin: String?): OkHttpClient {
         val validation = validatePresenceEndpoint(baseUrl, pin)
-        if (!validation.allowed || validation.local || pin.isNullOrBlank()) return baseClient
+        val builder = baseClient.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+        if (!validation.allowed || validation.local || pin.isNullOrBlank()) return builder.build()
         val host = URI(baseUrl).host
-        return baseClient.newBuilder()
+        return builder
             .certificatePinner(CertificatePinner.Builder().add(host, pin).build())
             .build()
     }
