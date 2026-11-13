@@ -5,6 +5,7 @@ import com.nua.assistant.ai.mesh.InferenceTaskType
 import com.nua.assistant.ai.mesh.ModelMesh
 import com.nua.assistant.ai.mesh.PrivacySensitivity
 import com.nua.assistant.ai.mesh.TaskContract
+import com.nua.assistant.ai.mesh.TaskProfile
 import com.nua.assistant.context.ContextEngine
 import com.nua.assistant.context.ContextSnapshot
 import com.nua.assistant.context.describe
@@ -77,6 +78,7 @@ class MorningBriefing @Inject constructor(
                 task = InferenceTaskType.SUMMARIZATION,
                 privacySensitivity = PrivacySensitivity.MEDIUM,
                 requiresFrontierCapability = true,
+                profile = TaskProfile(structuredOutput = true),
             ),
             userPrompt = prompt,
             cloudUserPrompt = cloudPrompt,
