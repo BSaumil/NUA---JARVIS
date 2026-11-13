@@ -106,11 +106,20 @@ class DreamSynthesisWorker @AssistedInject constructor(
             )
         }
 
-        val result = claudeApiClient.complete(
+        val result = modelMesh.completeValidated(
+            contract = TaskContract(
+                task = InferenceTaskType.REASONING,
+                privacySensitivity = PrivacySensitivity.HIGH,
+                requiresOffline = true,
+            ),
             userPrompt = prompt,
             system = DREAM_SYSTEM_PROMPT,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 250,
+            validator = { raw ->
+                runCatching {
+                    json.decodeFromString(DreamDto.serializer(), extractJsonPayload(raw))
+                }.isSuccess
+            },
         )
 
         if (outcomeForWorkerRun(result is ClaudeResult.Success, runAttemptCount) == WorkerOutcome.RETRY) return Result.retry()
