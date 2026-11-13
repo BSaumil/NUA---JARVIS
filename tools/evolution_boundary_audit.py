@@ -26,6 +26,7 @@ RUNNER = EVOLUTION_DIR / "SovereignCodeRunner.kt"
 POLICY = EVOLUTION_DIR / "EvolutionPolicy.kt"
 TUNING = EVOLUTION_DIR / "EvolutionRuntimeTuningApplier.kt"
 SPEC = EVOLUTION_DIR / "SafeSpecPolicy.kt"
+SYNTH = EVOLUTION_DIR / "TransformRepairSynthesizer.kt"
 
 FORBIDDEN_TOKENS = (
     "Runtime.getRuntime().exec",
@@ -44,7 +45,6 @@ FORBIDDEN_TOKENS = (
     "System.loadLibrary",
     "System.load(",
     "android.Manifest",
-    "PrivacySensitivity",
     "DataEgressGateway",
     "ConfirmationPolicy",
     "isAuthorizationSufficient",
@@ -80,6 +80,12 @@ TUNING_REQUIRED = (
     "saveSpecRollback",
 )
 
+SYNTH_REQUIRED = (
+    "PrivacySensitivity.HIGH",
+    "requiresOffline = true",
+    "InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM",
+)
+
 SPEC_REQUIRED = (
     "SpecTuningKey.PROMPT_SCHEMA_REMINDERS",
     "SpecTuningKey.PROMPT_REPAIR_ATTEMPTS",
@@ -109,6 +115,7 @@ def audit_root(root: Path) -> list[str]:
         (POLICY, POLICY_REQUIRED),
         (TUNING, TUNING_REQUIRED),
         (SPEC, SPEC_REQUIRED),
+        (SYNTH, SYNTH_REQUIRED),
     ):
         path = root / rel
         if not path.exists():
@@ -152,6 +159,13 @@ def selftest() -> int:
             "patch.intValue !in 1..30\n"
             "RepairKind.SPEC_TUNING\n"
             "saveSpecRollback",
+            encoding="utf-8",
+        )
+        synth = root / SYNTH
+        synth.write_text(
+            "PrivacySensitivity.HIGH\n"
+            "requiresOffline = true\n"
+            "InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM",
             encoding="utf-8",
         )
         (root / SPEC).write_text(
