@@ -3,6 +3,26 @@ package com.nua.assistant.evolution
 import javax.inject.Inject
 import javax.inject.Singleton
 
+interface EvolutionFailureSink {
+    fun recordFailureSignal(
+        source: FailureSource,
+        component: String,
+        category: FailureCategory,
+        code: String,
+        severity: FailureSeverity = FailureSeverity.MEDIUM,
+    )
+}
+
+object NoOpEvolutionFailureSink : EvolutionFailureSink {
+    override fun recordFailureSignal(
+        source: FailureSource,
+        component: String,
+        category: FailureCategory,
+        code: String,
+        severity: FailureSeverity,
+    ) = Unit
+}
+
 data class EvolutionObservationResult(
     val memory: EvolutionMemoryEntry,
     val candidate: RepairCandidate?,
@@ -21,7 +41,17 @@ class EvolutionEngine @Inject constructor(
     private val settingsStore: EvolutionSettingsStore,
     private val generator: HeuristicRepairGenerator,
     private val tuningApplier: EvolutionRuntimeTuningApplier,
-) {
+) : EvolutionFailureSink {
+    override fun recordFailureSignal(
+        source: FailureSource,
+        component: String,
+        category: FailureCategory,
+        code: String,
+        severity: FailureSeverity,
+    ) {
+        observeFailure(source, component, category, code, severity)
+    }
+
     fun observeFailure(
         source: FailureSource,
         component: String,
