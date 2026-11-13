@@ -61,7 +61,7 @@ class SafeHttpConnector @Inject constructor(
                 if (!contentType.startsWith("application/json") && !contentType.startsWith("text/")) {
                     return@use ConnectorResult.Refused("binary connector response is not accepted")
                 }
-                val bytes = response.body?.bytes().orEmpty()
+                val bytes = response.body?.bytes() ?: ByteArray(0)
                 val truncated = bytes.size > MAX_CONNECTOR_BODY
                 val safe = bytes.copyOf(minOf(bytes.size, MAX_CONNECTOR_BODY)).toString(Charsets.UTF_8)
                 ConnectorResult.ReadSuccess(manifest.id, contentType, safe, truncated)
