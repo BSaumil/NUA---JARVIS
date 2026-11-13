@@ -28,3 +28,20 @@ def test_revocation_blocks_device():
     assert store.owner_approve(challenge.challengeId, now=1002)
     assert store.revoke("phone-1")
     assert store.approved("phone-1") is None
+
+
+def test_approval_and_revocation_survive_restart(tmp_path):
+    path = tmp_path / "pairing.json"
+    private = Ed25519PrivateKey.generate()
+    first = PairingStore(path)
+    challenge = first.create_challenge(identity(private), now=1000)
+    signature = private.sign(base64.b64decode(challenge.nonceBase64))
+    assert first.verify_proof(challenge.challengeId, base64.b64encode(signature).decode(), now=1001)
+
+    # Owner approval may be issued by a separate CLI process.
+    second = PairingStore(path)
+    assert second.owner_approve(challenge.challengeId, now=1002)
+    assert PairingStore(path).approved("phone-1") is not None
+
+    assert PairingStore(path).revoke("phone-1")
+    assert PairingStore(path).approved("phone-1") is None
