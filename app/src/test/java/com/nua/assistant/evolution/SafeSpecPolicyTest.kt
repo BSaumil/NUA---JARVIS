@@ -30,3 +30,12 @@ class SafeSpecPolicyTest {
         )
     }
 }
+
+
+    @Test fun `prompt spec only changes structured output tasks`() {
+        val policy = PromptSpecPolicy(schemaReminderCount = 2, maxRepairAttempts = 1)
+        assertEquals("base", applyPromptSpec("base", false, policy))
+        val structured = applyPromptSpec("base", true, policy)!!
+        assertEquals(2, Regex("Output contract reminder").findAll(structured).count())
+        assert(structured.contains("self-check"))
+    }
