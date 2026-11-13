@@ -6,7 +6,9 @@ import secrets
 import time
 from dataclasses import dataclass
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, PublicFormat, NoEncryption
+from pathlib import Path
 
 MAX_CLOCK_SKEW_MS = 120_000
 
@@ -52,3 +54,22 @@ def new_nonce() -> str:
 
 def compact_json(value: object) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def load_or_create_identity_key(path: Path) -> Ed25519PrivateKey:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        raw = path.read_bytes()
+        return Ed25519PrivateKey.from_private_bytes(raw)
+    key = Ed25519PrivateKey.generate()
+    raw = key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    return key
+
+def public_key_b64(key: Ed25519PrivateKey) -> str:
+    raw = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    return base64.b64encode(raw).decode("ascii")
+
+def sign_b64(key: Ed25519PrivateKey, message: bytes) -> str:
+    return base64.b64encode(key.sign(message)).decode("ascii")
