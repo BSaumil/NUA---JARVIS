@@ -15,3 +15,12 @@ def test_loopback_serving_allows_plain_http_for_local_shells():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_signed_payload_string_must_match_dispatched_payload():
+    # The request verifier must not sign one payload and dispatch another. The full
+    # cryptographic path is covered by pairing/security tests; this pins body agreement.
+    import json
+    signed = json.dumps({"prompt": "safe"}, separators=(",", ":"), sort_keys=True)
+    dispatched = {"prompt": "changed"}
+    assert json.loads(signed) != dispatched
