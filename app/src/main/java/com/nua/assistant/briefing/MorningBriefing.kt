@@ -1,12 +1,16 @@
 package com.nua.assistant.briefing
 
-import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
-import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.context.ContextEngine
 import com.nua.assistant.context.ContextSnapshot
 import com.nua.assistant.context.describe
 import com.nua.assistant.memory.MemoryDao
+import com.nua.assistant.memory.UserFactEntity
+import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.voice.NuaLanguage
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,18 +50,20 @@ private val BRIEFING_SYSTEM_PROMPT = """
 class MorningBriefing @Inject constructor(
     private val contextEngine: ContextEngine,
     private val memoryDao: MemoryDao,
-    private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
 ) {
 
     suspend fun generate(triggerUtterance: String? = null, pinnedLanguage: NuaLanguage? = null): DailyBriefing {
         val snapshot = contextEngine.currentSnapshot()
         val facts = memoryDao.getAllFacts()
 
-        val prompt = buildString {
-            appendLine(snapshot.describe())
-            appendLine("Known facts about the user: ${if (facts.isEmpty()) "none yet" else facts.joinToString("; ") { it.value }}")
-            if (triggerUtterance != null) appendLine("User's own words when they asked for this, for you to notice what language to reply in: \"$triggerUtterance\"")
-        }
+        val prompt = buildBriefingPrompt(snapshot, facts, triggerUtterance)
+        val cloudFacts = DataEgressGateway.filterFacts(
+            capsule = null,
+            facts = facts,
+            purpose = "daily briefing",
+        ).first
+        val cloudPrompt = buildBriefingPrompt(snapshot, cloudFacts, triggerUtterance)
 
         val system = buildString {
             appendLine(BRIEFING_SYSTEM_PROMPT)
@@ -66,15 +72,38 @@ class MorningBriefing @Inject constructor(
             if (pinnedLanguage != null) appendLine(NuaLanguage.pinnedDirective(pinnedLanguage))
         }
 
-        val result = claudeApiClient.complete(
+        val result = modelMesh.completeValidated(
+            contract = TaskContract(
+                task = InferenceTaskType.SUMMARIZATION,
+                privacySensitivity = PrivacySensitivity.MEDIUM,
+                requiresFrontierCapability = true,
+            ),
             userPrompt = prompt,
+            cloudUserPrompt = cloudPrompt,
             system = system,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 400,
+            validator = { raw -> parseDailyBriefingResponse(raw) != null },
         )
 
         val parsed = (result as? ClaudeResult.Success)?.text?.let(::parseDailyBriefingResponse)
         return parsed ?: fallbackBriefing(snapshot)
+    }
+
+    private fun buildBriefingPrompt(
+        snapshot: ContextSnapshot,
+        facts: List<UserFactEntity>,
+        triggerUtterance: String?,
+    ): String = buildString {
+        appendLine(snapshot.describe())
+        appendLine(
+            "Known facts about the user: " +
+                if (facts.isEmpty()) "none yet" else facts.joinToString("; ") { it.value },
+        )
+        if (triggerUtterance != null) {
+            appendLine(
+                "User's own words when they asked for this, for you to notice what language to reply in: \"$triggerUtterance\"",
+            )
+        }
     }
 
     /** Offline/Claude-failure-safe: built entirely from data already fetched for the
