@@ -6,6 +6,7 @@ import com.nua.assistant.ai.mesh.InferenceTaskType
 import com.nua.assistant.ai.mesh.ModelMesh
 import com.nua.assistant.ai.mesh.PrivacySensitivity
 import com.nua.assistant.ai.mesh.TaskContract
+import com.nua.assistant.ai.mesh.TaskProfile
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.decodeFromString
@@ -100,6 +101,7 @@ class TransformRepairSynthesizer @Inject constructor(
                 task = InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM,
                 privacySensitivity = PrivacySensitivity.HIGH,
                 requiresOffline = true,
+                profile = TaskProfile(structuredOutput = true),
             ),
             userPrompt = prompt,
             system = system,
