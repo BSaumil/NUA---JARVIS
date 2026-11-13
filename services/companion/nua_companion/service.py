@@ -3,6 +3,7 @@ import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from .models import configured_models, complete
 from .pairing import PairingStore
 from .protocol import DeviceIdentity, PROTOCOL_VERSION, to_json_dict
@@ -10,7 +11,8 @@ from .security import ReplayWindow, compact_json, digest_request, now_ms, verify
 
 class CompanionState:
     def __init__(self) -> None:
-        self.pairing = PairingStore()
+        state_path = Path(os.getenv("NUA_COMPANION_STATE", "~/.nua/companion-pairing.json")).expanduser()
+        self.pairing = PairingStore(state_path)
         self.replay = ReplayWindow()
         self.device = DeviceIdentity(
             deviceId=os.getenv("NUA_COMPANION_DEVICE_ID", "companion-local"),
