@@ -24,6 +24,7 @@ class TrustedDevice:
     identity: DeviceIdentity
     state: TrustState
     approved_at_ms: int
+    granted_scopes: tuple[str, ...] = ()
 
 
 class PairingStore:
@@ -65,12 +66,18 @@ class PairingStore:
         self._save()
         return ok
 
-    def owner_approve(self, challenge_id: str, now: int | None = None) -> TrustedDevice | None:
+    def owner_approve(
+        self,
+        challenge_id: str,
+        now: int | None = None,
+        granted_scopes: tuple[str, ...] = ("HEALTH", "PRESENCE_READ"),
+    ) -> TrustedDevice | None:
         now = now if now is not None else now_ms()
         pending = self.pending.get(challenge_id)
         if not pending or not pending.proof_verified or now >= pending.challenge.expiresAtMillis:
             return None
-        trusted = TrustedDevice(pending.challenge.challenger, TrustState.APPROVED, now)
+        scopes = tuple(sorted(set(granted_scopes)))
+        trusted = TrustedDevice(pending.challenge.challenger, TrustState.APPROVED, now, scopes)
         self.trusted[trusted.identity.deviceId] = trusted
         self.pending.pop(challenge_id, None)
         self._save()
@@ -112,6 +119,7 @@ class PairingStore:
                     identity=identity,
                     state=TrustState(item["state"]),
                     approved_at_ms=int(item["approved_at_ms"]),
+                    granted_scopes=tuple(item.get("granted_scopes", [])),
                 )
                 self.trusted[identity.deviceId] = trusted
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
@@ -136,6 +144,7 @@ class PairingStore:
                     "identity": asdict(item.identity),
                     "state": item.state.value,
                     "approved_at_ms": item.approved_at_ms,
+                    "granted_scopes": list(item.granted_scopes),
                 }
                 for item in self.trusted.values()
             ],
