@@ -101,6 +101,49 @@ class ModelMeshTest {
         assertEquals(1, cloud.calls)
     }
 
+
+    @Test
+    fun `validator rejection falls through from private OS to cloud without relaxing contract`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("{\"ok\":true}"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Success("not-json"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
+
+        val result = mesh.completeValidated(
+            contract = TaskContract(InferenceTaskType.ENTITY_EXTRACTION, PrivacySensitivity.LOW),
+            userPrompt = "extract",
+            validator = { it.startsWith("{") && it.endsWith("}") },
+        )
+
+        assertEquals("{\"ok\":true}", (result as ClaudeResult.Success).text)
+        assertEquals(1, local.calls)
+        assertEquals(1, cloud.calls)
+    }
+
+    @Test
+    fun `validator rejection cannot cause HIGH privacy cloud egress`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("{\"ok\":true}"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Success("not-json"))
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+        )
+
+        val result = mesh.completeValidated(
+            contract = TaskContract(InferenceTaskType.SENSITIVE_LOCAL_TRANSFORM, PrivacySensitivity.HIGH),
+            userPrompt = "sensitive",
+            validator = { it.startsWith("{") && it.endsWith("}") },
+        )
+
+        assertTrue(result is ClaudeResult.Failure)
+        assertEquals(1, local.calls)
+        assertEquals(0, cloud.calls)
+    }
+
     @Test
     fun `HIGH privacy refuses cloud by default even when cloud is available`() = runTest {
         val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("must not run"))
