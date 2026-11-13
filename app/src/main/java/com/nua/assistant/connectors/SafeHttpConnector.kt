@@ -55,7 +55,13 @@ class SafeHttpConnector @Inject constructor(
         }
 
         runCatching {
-            client.newCall(builder.build()).execute().use { response ->
+            client.newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+                .newCall(builder.build())
+                .execute()
+                .use { response ->
                 if (!response.isSuccessful) return@use ConnectorResult.Failed("HTTP_${response.code}")
                 val contentType = response.header("content-type").orEmpty().lowercase()
                 if (!contentType.startsWith("application/json") && !contentType.startsWith("text/")) {
