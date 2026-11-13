@@ -77,7 +77,7 @@ class GeminiNanoPrivateOsCompletionProvider @Inject constructor() : PrivateOsCom
                 append(userPrompt)
             }
             val response = model.generateContent(prompt)
-            val text = response.text.trim()
+            val text = response.candidates.firstOrNull()?.text?.trim().orEmpty()
             if (text.isBlank()) ClaudeResult.Failure("Gemini Nano returned no usable text.")
             else ClaudeResult.Success(text)
         } catch (t: Throwable) {
