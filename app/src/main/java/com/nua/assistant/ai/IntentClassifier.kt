@@ -119,11 +119,16 @@ class IntentClassifier @Inject constructor(
         // Mesh now owns the online/API-key preflight instead of always attempting the
         // network call first.
         val contract = TaskContract(task = InferenceTaskType.INTENT_CLASSIFICATION, privacySensitivity = PrivacySensitivity.MEDIUM)
-        val result = modelMesh.complete(
+        val result = modelMesh.completeValidated(
             contract = contract,
             userPrompt = utterance.text,
             system = system,
             maxTokens = 256,
+            validator = { raw ->
+                runCatching {
+                    json.decodeFromString(IntentClassificationDto.serializer(), extractJsonPayload(raw))
+                }.isSuccess
+            },
         )
 
         val text = (result as? ClaudeResult.Success)?.text ?: return null
