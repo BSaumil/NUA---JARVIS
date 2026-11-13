@@ -4,7 +4,19 @@
 **Baseline:** `Main` @ `dfd63a84c8f8240c40b268e3f1130d0184411363`, merged with
 `origin/chatgpt/openjarvis-final-10-20261114` at merge commit `592bde2`
 (clean, no conflicts).
-**Head at time of writing:** `7451abdc7cb212cc8ca7485c9b7688005d38f31e`
+**Final head SHA:** `447ff4bcbbcb6e91f222515d67c4dbcbf6fda4a1`
+**CI status: GREEN** — GitHub Actions "Android Build" run
+[#398](https://github.com/BSaumil/NUA---JARVIS/actions/runs/43527865937)
+on this exact head SHA: all unit tests pass, debug APK builds, release
+(R8) APK builds. Companion/client Python suites: 29/29 passing locally
+(`services/companion` + `shared/protocol-consumers/python`). Getting here
+took five CI round trips fixing real, CI-only-reproducible bugs this
+sandbox's environment couldn't catch locally (`ByteArray?.orEmpty()` not
+existing in the Kotlin stdlib, two files declaring the same private
+top-level test class name, a non-ASCII golden-vector test whose expected
+value took three attempts to actually land correctly, and a Kotlin
+nested-block-comment landmine) — see the commit list and workstream
+sections below for each one.
 
 Status labels used below are exactly the five the directive allows:
 `SHIPPED_VERIFIED`, `SHIPPED_BUILDABLE_NOT_DEVICE_VERIFIED`,
@@ -20,6 +32,13 @@ Status labels used below are exactly the five the directive allows:
 | `7cffeaa` | 2 | Android companion pairing/API client (`presence/companion/**`), cross-verified against the companion's Python implementation with golden vectors |
 | `9772343` | — (build fix) | `ResearchSourceProvider.kt`: `ByteArray?.orEmpty()` doesn't exist in the Kotlin stdlib; this was failing `compileDebugKotlin` for the whole branch |
 | `7451abd` | 4 | Weather/news/finance connectors (`ConnectorCatalog`), all keyless (`ConnectorAuthType.NONE`) |
+| `094120e` | docs | First cut of this handoff doc |
+| `fa58dc8` | — (build fix) | Two test files declared the same private top-level class name (`FakeSigningIdentity`) in one package -- a real JVM linkage conflict, not just a visibility issue |
+| `0ea8a1d` | — (build fix) | `SandboxJobRepositoryTest` hardcoded the wrong expected plan id; `CompanionSecurityTest`'s non-ASCII test had the wrong expected value |
+| `62553e4` | — (build fix) | `CompanionSecurityTest`'s non-ASCII test, take 3: rebuilt entirely from `Int.toChar()` on explicit code points after two earlier fixes still didn't land correctly -- **first fully green Android CI run of this phase** |
+| `e176429` | docs | Added workstream 5/6 coverage to this handoff (pre-existing, not touched this phase) |
+| `e494bcb` | 4 | Companion mounted-files connector (connector priority item #10) -- companion-side mounts/endpoints, Android `CompanionFilesConnector` |
+| `447ff4b` | — (build fix) | Kotlin block comments nest (unlike Java's); an embedded `/*` inside a doc comment referencing `presence/companion/**` opened a never-closed nested comment -- **final green Android CI run, this handoff's head SHA** |
 
 ## Workstream status
 
