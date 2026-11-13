@@ -60,8 +60,10 @@ fun validateOperator(manifest: SovereignOperatorManifest): OperatorValidation {
             if (minutes == null || minutes < 15) errors += "interval schedule must be at least 15 minutes"
         }
         OperatorScheduleType.DAILY -> {
-            if (manifest.schedule.hour !in 0..23) errors += "daily hour must be 0..23"
-            if (manifest.schedule.minute !in 0..59) errors += "daily minute must be 0..59"
+            val hour = manifest.schedule.hour
+            val minute = manifest.schedule.minute
+            if (hour == null || hour !in 0..23) errors += "daily hour must be 0..23"
+            if (minute == null || minute !in 0..59) errors += "daily minute must be 0..59"
         }
     }
     return OperatorValidation(errors.isEmpty(), errors)
