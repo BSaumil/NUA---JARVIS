@@ -15,6 +15,8 @@ data class DeviceIdentity(
     val ownerLabel: String,
     val platform: NuaPlatform,
     val appVersion: String,
+    val keyAlgorithm: String = "ED25519",
+    val publicKeyEncoding: String = "RAW",
     val protocolVersion: Int = 1,
 )
 
