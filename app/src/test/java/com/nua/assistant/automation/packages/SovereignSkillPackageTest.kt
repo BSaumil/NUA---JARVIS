@@ -83,6 +83,30 @@ class SovereignSkillPackageTest {
         assertTrue(validateSkillPackageGraph(graph).valid)
     }
 
+    @Test fun `multi recipe envelope accepts all declared recipe action sets`() {
+        val manifest = SovereignSkillPackageManifest(
+            id = "multi",
+            version = "1.0.0",
+            name = "multi",
+            description = "multi recipe package",
+            author = "NUA",
+            declaredActions = setOf(
+                NuaActionType.GET_WEATHER.name,
+                NuaActionType.READ_NOTIFICATIONS.name,
+            ),
+            recipeIds = listOf(1L, 2L),
+        )
+        assertTrue(
+            recipeActionEnvelopeSatisfied(
+                manifest,
+                mapOf(
+                    1L to setOf(NuaActionType.GET_WEATHER),
+                    2L to setOf(NuaActionType.READ_NOTIFICATIONS),
+                ),
+            ),
+        )
+    }
+
     @Test fun `recipe action envelope rejects undeclared action`() {
         val manifest = pkg("weather")
         assertTrue(
