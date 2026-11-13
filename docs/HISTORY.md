@@ -2637,3 +2637,24 @@ while weakening the properties that make NUA a sovereign personal assistant.
 
 Full rationale and implementation matrix:
 `docs/OPENJARVIS_COMPETITIVE_AUDIT_2026-11-13.md`.
+
+
+## November 13, 2026 — NUA Sovereign Evolution Engine / 0.4.0
+
+Built the first governed self-improvement loop on top of the merged OpenJarvis benchmark foundation.
+
+- Added Evolution Memory: content-free failure signatures, recurrence counts and candidate/outcome history; no prompts, responses, recipients, documents or memory content are persisted by this subsystem.
+- Wired real failure signals from Model Mesh (provider failure / invalid structured output) and UAF (missing capability/adapter, adapter failure/exception). Authorization refusal is intentionally excluded: NUA must never learn that a safety denial is a bug to remove.
+- Added repair levels R0–R4, exposed in Settings. Default is R2 Auto-test.
+- Added the Self-Repair Lab with Champion/Challenger/Known-Bad gating plus correctness, Guardian, privacy, authority, regression and latency checks.
+- Added a bounded Sovereign Code Runner. Android currently executes only NUA_TRANSFORM_V1, an in-memory transform DSL with operation/input/output/time budgets. Python/JavaScript/Shell/WASM names are reserved but truthfully unsupported.
+- Added private local repair synthesis: Gemini Nano/AICore may synthesize a bounded transform challenger under HIGH + requiresOffline; there is no cloud fallback for repair examples.
+- Added real R3 runtime self-repair for a hard-whitelisted, reversible Model Mesh routing policy (sample threshold, success-rate threshold, memory lifetime), including per-candidate rollback snapshots.
+- Added R4 owner gate: source/recipe/skill-package challengers may be tested/prepared but cannot self-merge or self-release.
+- Any candidate attempting to bypass UAF or weaken Guardian is refused at all levels.
+- Added self-testing tools/evolution_boundary_audit.py to CI, rejecting process/shell execution, dynamic loading, direct network/filesystem APIs and direct UAF execution access from the Android Evolution package.
+- Added adversarial/unit coverage for the runner, repair policy, Known-Bad requirement, Evolution Memory, transform experiment harness, private synthesis constraints, UAF safety-denial separation, and content-free Model Mesh failure observations.
+
+Full contract: docs/NUA_SOVEREIGN_EVOLUTION_ENGINE.md.
+
+Version advanced to 0.4.0 / versionCode 2.

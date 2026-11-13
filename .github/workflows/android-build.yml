@@ -55,6 +55,12 @@ jobs:
       - name: Model Mesh privacy boundary audit
         run: python3 tools/model_mesh_boundary_audit.py
 
+      # Self-improvement must not become a second authority/execution path. This
+      # self-testing gate rejects shell/process execution, dynamic loading, direct
+      # networking/filesystem access, UAF bypass, and silent source-code promotion.
+      - name: Sovereign Evolution boundary audit
+        run: python3 tools/evolution_boundary_audit.py
+
       # testDebugUnitTest specifically, not the `test` aggregate task: this project has no
       # debug/release-specific source sets (app/src/{debug,release} don't exist), so
       # testReleaseUnitTest would compile and run the exact same tests against the exact

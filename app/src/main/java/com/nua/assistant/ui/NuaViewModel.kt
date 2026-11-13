@@ -33,6 +33,8 @@ import com.nua.assistant.diagnostics.DiagnosticCategory
 import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.SelfDiagnosticsRepository
 import com.nua.assistant.documents.DocumentAnalyzer
+import com.nua.assistant.evolution.EvolutionSettingsStore
+import com.nua.assistant.evolution.RepairLevel
 import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.state.NuaState
 import com.nua.assistant.state.NuaStateRepository
@@ -188,6 +190,7 @@ class NuaViewModel @Inject constructor(
     private val nuaStateRepository: NuaStateRepository,
     private val skillCatalog: SkillCatalog,
     private val workflowExecutor: WorkflowExecutor,
+    private val evolutionSettingsStore: EvolutionSettingsStore,
     private val json: Json,
 ) : ViewModel() {
 
@@ -199,6 +202,9 @@ class NuaViewModel @Inject constructor(
 
     private val _briefingSchedule = MutableStateFlow(briefingScheduleStore.get())
     val briefingSchedule: StateFlow<BriefingSchedule> = _briefingSchedule.asStateFlow()
+
+    private val _repairLevel = MutableStateFlow(evolutionSettingsStore.repairLevel())
+    val repairLevel: StateFlow<RepairLevel> = _repairLevel.asStateFlow()
 
     private val _voiceEnrolled = MutableStateFlow(ownerVerifier.isEnrolled())
     val voiceEnrolled: StateFlow<Boolean> = _voiceEnrolled.asStateFlow()
@@ -1026,6 +1032,11 @@ class NuaViewModel @Inject constructor(
     fun setBriefingSchedule(schedule: BriefingSchedule) {
         briefingScheduler.applySchedule(schedule)
         _briefingSchedule.value = schedule
+    }
+
+    fun setRepairLevel(level: RepairLevel) {
+        evolutionSettingsStore.setRepairLevel(level)
+        _repairLevel.value = level
     }
 
     /** Records one short clip and feeds it to enrollment; call again until [voiceEnrolled] flips true. */

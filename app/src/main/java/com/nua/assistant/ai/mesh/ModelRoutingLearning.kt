@@ -5,10 +5,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val MIN_ROUTING_SAMPLES = 5
-private const val MIN_SUCCESS_RATE = 0.45
-private const val ROUTING_MEMORY_MILLIS = 7L * 24 * 60 * 60 * 1000
-
 data class RoutingTierStats(
     val samples: Int = 0,
     val successes: Int = 0,
@@ -32,14 +28,16 @@ fun applyReliabilityLearning(
     baseOrder: List<ModelProviderTier>,
     stats: Map<ModelProviderTier, RoutingTierStats>,
     nowMillis: Long,
+    policy: RoutingLearningPolicy = RoutingLearningPolicy(),
 ): List<ModelProviderTier> {
     if (baseOrder.size < 2) return baseOrder
 
     fun unreliable(tier: ModelProviderTier): Boolean {
         val s = stats[tier] ?: return false
-        if (s.samples < MIN_ROUTING_SAMPLES) return false
-        if (nowMillis - s.updatedAtMillis > ROUTING_MEMORY_MILLIS) return false
-        return s.successRate < MIN_SUCCESS_RATE
+        if (s.samples < policy.minSamples) return false
+        val memoryMillis = policy.memoryDays.toLong() * 24 * 60 * 60 * 1000
+        if (nowMillis - s.updatedAtMillis > memoryMillis) return false
+        return s.successRate < policy.minSuccessRate
     }
 
     val healthyOrUnknown = baseOrder.filterNot(::unreliable)
@@ -70,6 +68,7 @@ interface ModelRoutingLearning {
 @Singleton
 class SharedPreferencesModelRoutingLearning @Inject constructor(
     @ApplicationContext context: Context,
+    private val policyStore: RoutingLearningPolicyStore,
 ) : ModelRoutingLearning {
     private val prefs = context.getSharedPreferences("nua_model_routing_learning", Context.MODE_PRIVATE)
 
@@ -79,7 +78,7 @@ class SharedPreferencesModelRoutingLearning @Inject constructor(
         nowMillis: Long,
     ): List<ModelProviderTier> = synchronized(this) {
         val stats = baseOrder.associateWith { read(task, it) }
-        applyReliabilityLearning(baseOrder, stats, nowMillis)
+        applyReliabilityLearning(baseOrder, stats, nowMillis, policyStore.current())
     }
 
     override fun record(
@@ -90,9 +89,10 @@ class SharedPreferencesModelRoutingLearning @Inject constructor(
         nowMillis: Long,
     ) = synchronized(this) {
         val old = read(task, tier)
+        val memoryMillis = policyStore.current().memoryDays.toLong() * 24 * 60 * 60 * 1000
         val fresh = if (
             old.updatedAtMillis == 0L ||
-            nowMillis - old.updatedAtMillis > ROUTING_MEMORY_MILLIS
+            nowMillis - old.updatedAtMillis > memoryMillis
         ) {
             RoutingTierStats()
         } else {

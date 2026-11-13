@@ -67,6 +67,7 @@ import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.goals.GoalType
+import com.nua.assistant.evolution.RepairLevel
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.diagnostics.DiagnosticCheck
@@ -102,6 +103,8 @@ fun SettingsScreen(
     onLanguageSelected: (NuaLanguage?) -> Unit,
     briefingSchedule: BriefingSchedule,
     onBriefingScheduleChanged: (BriefingSchedule) -> Unit,
+    repairLevel: RepairLevel,
+    onRepairLevelChanged: (RepairLevel) -> Unit,
     voiceEnrolled: Boolean,
     enrollmentProgress: Int?,
     onRecordEnrollmentClip: () -> Unit,
@@ -183,6 +186,7 @@ fun SettingsScreen(
             item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
             item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
             item { DiagnosticsCard(diagnostics, testingApiConnection, onRefreshDiagnostics, onTestApiConnection) }
+            item { EvolutionCard(repairLevel, onRepairLevelChanged) }
             item { SecurityCard() }
             item { Tier2StatusCard() }
             item { BatteryOptimizationCard() }
@@ -227,6 +231,50 @@ fun SettingsScreen(
             onSetPrivacyLevel = { level -> onSetFactPrivacyLevel(fact.id, level) },
             onDismiss = { selectedFact = null },
         )
+    }
+}
+
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EvolutionCard(
+    repairLevel: RepairLevel,
+    onRepairLevelChanged: (RepairLevel) -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("NUA Evolution", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Controls how far NUA may go after it detects and reproduces a failure. " +
+                    "R2 is the safe default: learn, propose and test automatically, but do not change runtime behaviour.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RepairLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = repairLevel == level,
+                        onClick = { onRepairLevelChanged(level) },
+                        label = { Text(level.name.substringBefore('_')) },
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = when (repairLevel) {
+                    RepairLevel.R0_OBSERVE -> "R0 · Observe failures only. No repair candidates."
+                    RepairLevel.R1_SUGGEST -> "R1 · Suggest repair candidates. Nothing is tested or changed automatically."
+                    RepairLevel.R2_AUTO_TEST -> "R2 · Auto-test challengers in the Self-Repair Lab. No runtime promotion."
+                    RepairLevel.R3_AUTO_PROMOTE_RUNTIME -> "R3 · May auto-promote only low-risk, reversible, authority-neutral runtime tunings after Champion/Challenger + Known-Bad gates pass."
+                    RepairLevel.R4_CODE_PROMOTION_REQUIRES_APPROVAL -> "R4 · May prepare tested source/recipe challengers for owner review. Source code still cannot self-merge, grant permissions, widen cloud egress, bypass UAF or weaken Guardian."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

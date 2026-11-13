@@ -3,6 +3,11 @@ package com.nua.assistant.ai.mesh
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.ClassifiedIntent
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.evolution.EvolutionFailureSink
+import com.nua.assistant.evolution.FailureCategory
+import com.nua.assistant.evolution.FailureSeverity
+import com.nua.assistant.evolution.FailureSource
+import com.nua.assistant.evolution.NoOpEvolutionFailureSink
 import com.nua.assistant.security.UserUtterance
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -71,6 +76,26 @@ private class FakeRoutingLearning : ModelRoutingLearning {
     }
 }
 
+private data class MeshEvolutionEvent(
+    val source: FailureSource,
+    val component: String,
+    val category: FailureCategory,
+    val code: String,
+)
+
+private class FakeMeshEvolutionSink : EvolutionFailureSink {
+    val events = mutableListOf<MeshEvolutionEvent>()
+    override fun recordFailureSignal(
+        source: FailureSource,
+        component: String,
+        category: FailureCategory,
+        code: String,
+        severity: FailureSeverity,
+    ) {
+        events += MeshEvolutionEvent(source, component, category, code)
+    }
+}
+
 private fun mesh(
     cloud: FakeCloudCompletionProvider,
     privateOs: FakePrivateOsCompletionProvider = FakePrivateOsCompletionProvider(
@@ -78,9 +103,36 @@ private fun mesh(
         available = false,
     ),
     available: Set<ModelProviderTier>,
-) = ModelMesh(cloud, privateOs, FakeAvailabilityDetector(available), FakeRoutingLearning())
+    evolution: EvolutionFailureSink = NoOpEvolutionFailureSink,
+) = ModelMesh(cloud, privateOs, FakeAvailabilityDetector(available), FakeRoutingLearning(), evolution)
 
 class ModelMeshTest {
+
+    @Test
+    fun `invalid provider output emits content free Evolution signal`() = runTest {
+        val cloud = FakeCloudCompletionProvider(ClaudeResult.Success("{\"ok\":true}"))
+        val local = FakePrivateOsCompletionProvider(ClaudeResult.Success("private raw output that must not be recorded"))
+        val evolution = FakeMeshEvolutionSink()
+        val mesh = mesh(
+            cloud,
+            local,
+            setOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST),
+            evolution,
+        )
+
+        val result = mesh.completeValidated(
+            contract = TaskContract(InferenceTaskType.ENTITY_EXTRACTION, PrivacySensitivity.LOW),
+            userPrompt = "private user content that must not be recorded",
+            validator = { it.startsWith("{") && it.endsWith("}") },
+        )
+
+        assertEquals("{\"ok\":true}", (result as ClaudeResult.Success).text)
+        assertEquals(1, evolution.events.size)
+        assertEquals(FailureSource.MODEL_MESH, evolution.events.single().source)
+        assertEquals("ENTITY_EXTRACTION:PRIVATE_OS_MODEL", evolution.events.single().component)
+        assertEquals(FailureCategory.INVALID_OUTPUT, evolution.events.single().category)
+        assertEquals("CONTRACT_VALIDATION_FAILED", evolution.events.single().code)
+    }
 
     @Test
     fun `private OS model wins before cloud for supported text completion`() = runTest {

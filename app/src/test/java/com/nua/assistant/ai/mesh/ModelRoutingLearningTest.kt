@@ -65,6 +65,37 @@ class ModelRoutingLearningTest {
     }
 
     @Test
+    fun `evolution tuning can change reliability threshold without adding providers`() {
+        val base = listOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST)
+        val stats = mapOf(
+            ModelProviderTier.PRIVATE_OS_MODEL to RoutingTierStats(
+                samples = 5,
+                successes = 2,
+                updatedAtMillis = 10_000,
+            ),
+        )
+
+        assertEquals(
+            base,
+            applyReliabilityLearning(
+                base,
+                stats,
+                nowMillis = 11_000,
+                policy = RoutingLearningPolicy(minSamples = 5, minSuccessRate = 0.40, memoryDays = 7),
+            ),
+        )
+        assertEquals(
+            listOf(ModelProviderTier.CLOUD_FAST, ModelProviderTier.PRIVATE_OS_MODEL),
+            applyReliabilityLearning(
+                base,
+                stats,
+                nowMillis = 11_000,
+                policy = RoutingLearningPolicy(minSamples = 5, minSuccessRate = 0.50, memoryDays = 7),
+            ),
+        )
+    }
+
+    @Test
     fun `stale failure history expires and local tier gets another chance`() {
         val base = listOf(ModelProviderTier.PRIVATE_OS_MODEL, ModelProviderTier.CLOUD_FAST)
         val old = 1_000L

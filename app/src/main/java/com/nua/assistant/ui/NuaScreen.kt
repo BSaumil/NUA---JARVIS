@@ -80,6 +80,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val facts by viewModel.facts.collectAsState()
     val pinnedLanguage by viewModel.pinnedLanguage.collectAsState()
     val briefingSchedule by viewModel.briefingSchedule.collectAsState()
+    val repairLevel by viewModel.repairLevel.collectAsState()
     val voiceEnrolled by viewModel.voiceEnrolled.collectAsState()
     val enrollmentProgress by viewModel.enrollmentProgress.collectAsState()
     val geofences by viewModel.geofences.collectAsState()
@@ -224,6 +225,8 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onLanguageSelected = viewModel::setPinnedLanguage,
                     briefingSchedule = briefingSchedule,
                     onBriefingScheduleChanged = viewModel::setBriefingSchedule,
+                    repairLevel = repairLevel,
+                    onRepairLevelChanged = viewModel::setRepairLevel,
                     voiceEnrolled = voiceEnrolled,
                     enrollmentProgress = enrollmentProgress,
                     onRecordEnrollmentClip = viewModel::recordVoiceEnrollmentClip,

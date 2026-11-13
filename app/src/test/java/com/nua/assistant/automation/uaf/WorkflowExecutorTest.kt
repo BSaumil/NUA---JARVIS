@@ -5,6 +5,10 @@ import com.nua.assistant.ai.NuaActionType
 import com.nua.assistant.automation.NuaRouteResult
 import com.nua.assistant.automation.NuaSkill
 import com.nua.assistant.automation.SkillManifest
+import com.nua.assistant.evolution.EvolutionFailureSink
+import com.nua.assistant.evolution.FailureCategory
+import com.nua.assistant.evolution.FailureSeverity
+import com.nua.assistant.evolution.FailureSource
 import com.nua.assistant.trust.lineage.LineageEntry
 import com.nua.assistant.trust.lineage.LineageRecorder
 import com.nua.assistant.voice.NuaLanguage
@@ -49,6 +53,26 @@ private class FakeLineageRecorder : LineageRecorder {
     }
 }
 
+private data class ObservedFailure(
+    val source: FailureSource,
+    val component: String,
+    val category: FailureCategory,
+    val code: String,
+)
+
+private class FakeEvolutionFailureSink : EvolutionFailureSink {
+    val events = mutableListOf<ObservedFailure>()
+    override fun recordFailureSignal(
+        source: FailureSource,
+        component: String,
+        category: FailureCategory,
+        code: String,
+        severity: FailureSeverity,
+    ) {
+        events += ObservedFailure(source, component, category, code)
+    }
+}
+
 private fun step(
     id: String,
     action: NuaActionType = NuaActionType.GET_WEATHER,
@@ -66,6 +90,43 @@ private fun step(
  * resume, and Flight Recorder lineage together correctly.
  */
 class WorkflowExecutorTest {
+
+    @Test
+    fun `authorization refusal is not treated as a repairable Evolution failure`() = runTest {
+        val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
+        val evolution = FakeEvolutionFailureSink()
+        val executor = WorkflowExecutor(
+            registryOf(NuaActionType.SMS_SEND),
+            mapOf(ExecutionAdapterType.LOCAL_NATIVE to local),
+            FakeLineageRecorder(),
+            evolution,
+        )
+
+        executor.run(ActionPlan("p-auth", listOf(step("a", action = NuaActionType.SMS_SEND))), CONTEXT)
+
+        assertTrue("a safety denial must never be learned as a bug to repair away", evolution.events.isEmpty())
+    }
+
+    @Test
+    fun `real adapter failure is recorded as content-free Evolution signal`() = runTest {
+        val local = ScriptedAdapter(ExecutionAdapterType.LOCAL_NATIVE)
+        local.onStep("a", NuaRouteResult.ActionTaken("failed", succeeded = false))
+        val evolution = FakeEvolutionFailureSink()
+        val executor = WorkflowExecutor(
+            registryOf(NuaActionType.GET_WEATHER),
+            mapOf(ExecutionAdapterType.LOCAL_NATIVE to local),
+            FakeLineageRecorder(),
+            evolution,
+        )
+
+        executor.run(ActionPlan("p-fail", listOf(step("a"))), CONTEXT)
+
+        assertEquals(1, evolution.events.size)
+        assertEquals(FailureSource.UAF, evolution.events.single().source)
+        assertEquals("GET_WEATHER", evolution.events.single().component)
+        assertEquals(FailureCategory.ACTION_EXECUTION, evolution.events.single().category)
+        assertEquals("ADAPTER_FAILURE", evolution.events.single().code)
+    }
 
     @Test
     fun `a two-step plan runs both steps to SUCCEEDED in dependency order`() = runTest {
