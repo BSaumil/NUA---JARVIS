@@ -81,14 +81,20 @@ class Handler(BaseHTTPRequestHandler):
             if auth is not None:
                 self._json(403, {"error": auth})
                 return
+            # Read modelId/prompt from the signed `payload`, never from unsigned
+            # top-level fields: the signature in `meta` is computed over
+            # compact_json(payload), so acting on anything else would let a
+            # tampered request execute with a valid signature from an approved
+            # device.
+            payload = body.get("payload") or {}
             models = configured_models()
-            requested = str(body.get("modelId", ""))
+            requested = str(payload.get("modelId", ""))
             endpoint = next((m for m in models if m.id == requested), models[0] if models else None)
             if endpoint is None:
                 self._json(503, {"error": "no_local_model_configured"})
                 return
             try:
-                text = complete(endpoint, str(body.get("prompt", "")))
+                text = complete(endpoint, str(payload.get("prompt", "")))
                 self._json(200, {"succeeded": True, "text": text, "provider": endpoint.provider})
             except Exception:
                 self._json(502, {"succeeded": False, "errorCode": "MODEL_FAILURE"})
