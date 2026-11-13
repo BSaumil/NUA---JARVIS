@@ -94,7 +94,11 @@ class SandboxJobRepositoryTest {
         val outcome = repository.submit(program = byteArrayOf(0), expectedSha256 = "abc", context = CONTEXT)
 
         assertTrue("a plan naming a real, registered, NONE_REQUIRED action must actually execute", adapterCalled)
-        assertEquals(SandboxJobOutcome.PlanSubmitted(null, "job-1", 1), outcome)
+        // The plan's id is the *request's own* generated id (its own idempotency/tracking
+        // id), not the fake transport's canned response jobId -- so this reads it back
+        // from what was actually sent, rather than guessing a fixed string.
+        val sentJobId = transport.lastRequest?.jobId
+        assertEquals(SandboxJobOutcome.PlanSubmitted(null, sentJobId!!, 1), outcome)
     }
 
     @Test

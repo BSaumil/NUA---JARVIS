@@ -54,7 +54,9 @@ class CompanionSecurityTest {
 
     @Test
     fun `compactJson escapes non-ASCII text exactly like Python's ensure_ascii default`() {
-        // golden output of compact_json({"prompt": "héllo 世界 \t\n", "modelId": ""})
+        // Uses explicit \u escapes rather than literal non-ASCII source characters, so
+        // there's no risk of this file's own encoding disagreeing with the golden value
+        // below: compact_json({"prompt": "héllo 世界 \t\n", "modelId": ""})
         val compact = CompanionSecurity.compactJson(mapOf("prompt" to "héllo 世界 \t\n", "modelId" to ""))
 
         assertEquals("""{"modelId":"","prompt":"héllo 世界 \t\n"}""", compact)
