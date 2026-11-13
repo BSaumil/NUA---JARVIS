@@ -9,7 +9,7 @@ fn validate_companion_base(base: &str) -> Result<Url, String> {
     if parsed.scheme() != "http" || !matches!(host, "127.0.0.1" | "localhost" | "::1") {
         return Err("Windows shell connects only to the localhost companion".to_string());
     }
-    if parsed.port_or_known_default() != Some(8765) && parsed.port().is_none() {
+    if parsed.port_or_known_default() != Some(8765) {
         return Err("unexpected companion port".to_string());
     }
     Ok(parsed)
@@ -53,5 +53,10 @@ mod tests {
     #[test]
     fn accepts_localhost_companion() {
         assert!(validate_companion_base("http://127.0.0.1:8765").is_ok());
+    }
+
+    #[test]
+    fn refuses_wrong_localhost_port() {
+        assert!(validate_companion_base("http://127.0.0.1:9999").is_err());
     }
 }
