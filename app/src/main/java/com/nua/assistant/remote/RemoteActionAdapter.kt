@@ -14,52 +14,65 @@ import kotlinx.serialization.json.Json
 
 private const val MAX_REMOTE_RESULT_CHARS = 4_000
 
+/**
+ * Shared remote mechanism. This is deliberately NOT an ActionAdapter: WorkflowExecutor
+ * remains the only caller of ActionAdapter.execute(...), while MCP and A2A adapters can
+ * share transport/policy logic without creating an adapter-to-adapter execution path.
+ */
 @Singleton
-class McpActionAdapter @Inject constructor(
+class RemoteInvocationExecutor @Inject constructor(
     private val endpoints: RemoteEndpointResolver,
     private val mcpTransport: McpTransport,
     private val a2aTransport: A2ATransport,
     private val json: Json,
-) : ActionAdapter {
-    override val type = ExecutionAdapterType.MCP
-
-    override suspend fun execute(
+) {
+    suspend fun invoke(
+        protocol: RemoteProtocol,
         descriptor: CapabilityDescriptor,
         parameters: Map<String, String>,
-        context: AdapterExecutionContext,
     ): NuaRouteResult {
         if (descriptor.action != NuaActionType.REMOTE_TOOL) return NuaRouteResult.FallThroughToChat
+
         val endpointId = parameters["endpointId"].orEmpty()
-        val protocol = runCatching { RemoteProtocol.valueOf(parameters["protocol"].orEmpty().uppercase()) }.getOrNull()
-            ?: return NuaRouteResult.ActionTaken("Remote protocol is invalid.", false)
         val tool = parameters["tool"].orEmpty()
         val argumentsJson = parameters["argumentsJson"].orEmpty()
         val idempotencyKey = parameters["idempotencyKey"].orEmpty()
         val capsule = parameters["privacyCapsuleJson"]?.let {
             runCatching { json.decodeFromString(PrivacyCapsule.serializer(), it) }.getOrNull()
         }
+
         if (endpointId.isBlank() || tool.isBlank() || idempotencyKey.isBlank()) {
             return NuaRouteResult.ActionTaken("Remote tool request is incomplete.", false)
         }
+
         val trust = endpoints.approved(endpointId)
         val validation = validateRemoteInvocation(trust, protocol, tool, argumentsJson, capsule)
         if (!validation.allowed || trust == null) {
-            return NuaRouteResult.ActionTaken("Remote tool refused: ${validation.reason ?: "endpoint is not trusted"}.", false)
+            return NuaRouteResult.ActionTaken(
+                "Remote tool refused: ${validation.reason ?: "endpoint is not trusted"}.",
+                false,
+            )
         }
+
         val request = RemoteInvocationRequest(
-            UUID.randomUUID().toString(),
-            endpointId,
-            tool,
-            argumentsJson,
-            idempotencyKey,
+            requestId = UUID.randomUUID().toString(),
+            endpointId = endpointId,
+            capability = tool,
+            argumentsJson = argumentsJson,
+            idempotencyKey = idempotencyKey,
         )
         val result = when (protocol) {
             RemoteProtocol.MCP -> mcpTransport.invoke(trust, request)
             RemoteProtocol.A2A -> a2aTransport.invoke(trust, request)
         }
+
         if (!result.succeeded) {
-            return NuaRouteResult.ActionTaken("Remote tool failed (${result.errorCode ?: "UNKNOWN"}).", false)
+            return NuaRouteResult.ActionTaken(
+                "Remote tool failed (${result.errorCode ?: "UNKNOWN"}).",
+                false,
+            )
         }
+
         val safeText = result.outputText.orEmpty().take(MAX_REMOTE_RESULT_CHARS)
         return NuaRouteResult.ActionTaken(
             if (safeText.isBlank()) "Remote tool completed through $endpointId."
@@ -70,8 +83,21 @@ class McpActionAdapter @Inject constructor(
 }
 
 @Singleton
+class McpActionAdapter @Inject constructor(
+    private val executor: RemoteInvocationExecutor,
+) : ActionAdapter {
+    override val type = ExecutionAdapterType.MCP
+
+    override suspend fun execute(
+        descriptor: CapabilityDescriptor,
+        parameters: Map<String, String>,
+        context: AdapterExecutionContext,
+    ): NuaRouteResult = executor.invoke(RemoteProtocol.MCP, descriptor, parameters)
+}
+
+@Singleton
 class A2AActionAdapter @Inject constructor(
-    private val delegate: McpActionAdapter,
+    private val executor: RemoteInvocationExecutor,
 ) : ActionAdapter {
     override val type = ExecutionAdapterType.A2A
 
@@ -79,9 +105,5 @@ class A2AActionAdapter @Inject constructor(
         descriptor: CapabilityDescriptor,
         parameters: Map<String, String>,
         context: AdapterExecutionContext,
-    ): NuaRouteResult = delegate.execute(
-        descriptor,
-        parameters + ("protocol" to RemoteProtocol.A2A.name),
-        context,
-    )
+    ): NuaRouteResult = executor.invoke(RemoteProtocol.A2A, descriptor, parameters)
 }
