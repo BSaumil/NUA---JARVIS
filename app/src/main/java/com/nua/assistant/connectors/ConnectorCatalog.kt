@@ -63,5 +63,39 @@ object ConnectorCatalog {
         remoteEndpointIdForWrites = "home-assistant",
     )
 
-    fun all(): List<ConnectorManifest> = listOf(google, microsoft, dropbox, slack, homeAssistant)
+    // Read-only, keyless public APIs: no OAuth or API key to provision, so these are
+    // usable out of the box (unlike google/microsoft/dropbox/slack, which need an
+    // external OAuth grant, or home-assistant, which needs a user-supplied token).
+    val weather = ConnectorManifest(
+        id = "weather",
+        displayName = "Open-Meteo Weather",
+        version = "1",
+        authType = ConnectorAuthType.NONE,
+        allowedHosts = setOf("api.open-meteo.com"),
+        readCapabilities = setOf("weather.forecast"),
+        dataCategories = setOf(DataCategory.STANDARD_FACTS),
+    )
+
+    val news = ConnectorManifest(
+        id = "news",
+        displayName = "Hacker News",
+        version = "1",
+        authType = ConnectorAuthType.NONE,
+        allowedHosts = setOf("hacker-news.firebaseio.com"),
+        readCapabilities = setOf("news.topStories", "news.item"),
+        dataCategories = setOf(DataCategory.STANDARD_FACTS),
+    )
+
+    val finance = ConnectorManifest(
+        id = "finance",
+        displayName = "Frankfurter Exchange Rates",
+        version = "1",
+        authType = ConnectorAuthType.NONE,
+        allowedHosts = setOf("api.frankfurter.app"),
+        readCapabilities = setOf("finance.exchangeRate"),
+        dataCategories = setOf(DataCategory.STANDARD_FACTS),
+    )
+
+    fun all(): List<ConnectorManifest> =
+        listOf(google, microsoft, dropbox, slack, homeAssistant, weather, news, finance)
 }
