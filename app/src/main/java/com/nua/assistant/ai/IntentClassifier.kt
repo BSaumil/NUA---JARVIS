@@ -4,6 +4,7 @@ import com.nua.assistant.ai.mesh.InferenceTaskType
 import com.nua.assistant.ai.mesh.ModelMesh
 import com.nua.assistant.ai.mesh.PrivacySensitivity
 import com.nua.assistant.ai.mesh.TaskContract
+import com.nua.assistant.ai.mesh.TaskProfile
 import com.nua.assistant.security.UserUtterance
 import com.nua.assistant.voice.NuaLanguage
 import java.text.SimpleDateFormat
@@ -120,7 +121,7 @@ class IntentClassifier @Inject constructor(
         // CLOUD_FAST/CLAUDE_MODEL_UTILITY exactly as this call always used), but the
         // Mesh now owns the online/API-key preflight instead of always attempting the
         // network call first.
-        val contract = TaskContract(task = InferenceTaskType.INTENT_CLASSIFICATION, privacySensitivity = PrivacySensitivity.MEDIUM)
+        val contract = TaskContract(\n            task = InferenceTaskType.INTENT_CLASSIFICATION,\n            privacySensitivity = PrivacySensitivity.MEDIUM,\n            profile = TaskProfile(structuredOutput = true),\n        )
         val result = modelMesh.completeValidated(
             contract = contract,
             userPrompt = utterance.text,
