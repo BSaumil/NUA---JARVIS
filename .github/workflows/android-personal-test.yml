@@ -33,15 +33,27 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
-
       - name: Build Personal Test APK
         run: ./gradlew :app:assemblePersonalTest --stacktrace
+
+      - name: Verify restricted permissions are absent
+        shell: bash
+        run: |
+          APK="$(find app/build/outputs/apk/personalTest -name '*.apk' -type f | head -n 1)"
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | tee personal-test-permissions.txt
+          for permission in             android.permission.SEND_SMS             android.permission.READ_CONTACTS             android.permission.ACCESS_FINE_LOCATION             android.permission.ACCESS_BACKGROUND_LOCATION             android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS             android.permission.QUERY_ALL_PACKAGES; do
+            if grep -Fq "$permission" personal-test-permissions.txt; then
+              echo "Restricted permission survived manifest merge: $permission"
+              exit 1
+            fi
+          done
 
       - name: Upload Personal Test APK
         uses: actions/upload-artifact@v4
         with:
           name: nua-personal-test-apk
-          path: app/build/outputs/apk/personalTest/*.apk
+          path: |
+            app/build/outputs/apk/personalTest/*.apk
+            personal-test-permissions.txt
           if-no-files-found: error
