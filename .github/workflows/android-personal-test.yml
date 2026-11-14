@@ -1,0 +1,47 @@
+name: Android Personal Test
+
+on:
+  push:
+    branches:
+      - "chatgpt/android-personal-test-20261114"
+    paths:
+      - "app/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
+      - ".github/workflows/android-personal-test.yml"
+  workflow_dispatch:
+
+jobs:
+  personal-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Build Personal Test APK
+        run: ./gradlew :app:assemblePersonalTest --stacktrace
+
+      - name: Upload Personal Test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: nua-personal-test-apk
+          path: app/build/outputs/apk/personalTest/*.apk
+          if-no-files-found: error
