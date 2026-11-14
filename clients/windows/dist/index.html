@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NUA Sovereign</title>
+  <style>
+    :root { background:#F6F0E5; color:#111113; font-family: Inter,Segoe UI,sans-serif; }
+    body { margin:0; padding:40px; }
+    main { max-width:920px; margin:auto; }
+    h1 { color:#6B1738; letter-spacing:.08em; }
+    .card { border:1px solid #d6cec0; border-radius:18px; padding:20px; margin:16px 0; background:#fffaf2; }
+    button { background:#6B1738; color:white; border:0; border-radius:12px; padding:11px 18px; cursor:pointer; }
+    pre { white-space:pre-wrap; word-break:break-word; }
+    .muted { color:#666; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>NUA</h1>
+  <p>Your Intelligence. Your Control.</p>
+  <div class="card">
+    <h2>Presence Mesh</h2>
+    <p class="muted">This Windows surface talks only to the local NUA Companion. Remote device trust is handled by the companion pairing protocol.</p>
+    <button id="refresh">Refresh</button>
+    <pre id="status">Checking local companion…</pre>
+  </div>
+</main>
+<script>
+const invoke = window.__TAURI__.core.invoke;
+const base = "http://127.0.0.1:8765";
+async function refresh() {
+  const el = document.getElementById("status");
+  try {
+    const health = await invoke("companion_get", { base, path: "health" });
+    const presence = await invoke("companion_get", { base, path: "presence" });
+    el.textContent = JSON.stringify({health,presence}, null, 2);
+  } catch (_) {
+    el.textContent = "NUA Companion is not available on localhost:8765.";
+  }
+}
+document.getElementById("refresh").addEventListener("click", refresh);
+refresh();
+</script>
+</body>
+</html>

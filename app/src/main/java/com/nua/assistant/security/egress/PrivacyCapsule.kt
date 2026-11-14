@@ -1,6 +1,9 @@
 package com.nua.assistant.security.egress
 
+import kotlinx.serialization.Serializable
+
 /** One class of data a [PrivacyCapsule] can grant or withhold. */
+@Serializable
 enum class DataCategory {
     STANDARD_FACTS,
     SENSITIVE_FACTS,
@@ -10,6 +13,7 @@ enum class DataCategory {
 }
 
 /** How much of a permitted category may actually leave the device. */
+@Serializable
 enum class DisclosureLevel { RAW, REDACTED, DERIVED_ONLY }
 
 /**
@@ -23,6 +27,7 @@ enum class DisclosureLevel { RAW, REDACTED, DERIVED_ONLY }
  * constructs one; nothing user-facing issues a capsule yet (see this feature's own
  * "explicitly not attempted" note in docs/HISTORY.md).
  */
+@Serializable
 data class PrivacyCapsule(
     val purpose: String,
     val recipientProvider: String,

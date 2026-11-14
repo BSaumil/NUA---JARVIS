@@ -56,8 +56,8 @@ android {
         applicationId = "com.nua.assistant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.4.0"
+        versionCode = 3
+        versionName = "0.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -148,6 +148,10 @@ dependencies {
 
     // Secure storage for the Claude API key
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Ed25519 verification for the companion server identity on Android 26-32.
+    // The Android device itself uses one canonical Android Keystore P256 identity.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
     // Biometric step-up authentication for the highest-risk actions (security/BiometricGate.kt)
     implementation("androidx.biometric:biometric:1.1.0")

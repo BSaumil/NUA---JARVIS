@@ -55,6 +55,7 @@ fun autonomyTierFor(action: NuaActionType): AutonomyTier = when (action) {
 
     NuaActionType.REPLY_TO_NOTIFICATION,
     NuaActionType.SMS_SEND,
+    NuaActionType.REMOTE_TOOL,
     -> AutonomyTier.T3
 
     NuaActionType.PLAN_TASK -> AutonomyTier.T4
