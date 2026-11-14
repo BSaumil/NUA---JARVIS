@@ -62,17 +62,23 @@ class SafeHttpConnector @Inject constructor(
         }
 
         runCatching {
-            client.newCall(builder.build()).execute().use { response ->
-                if (!response.isSuccessful) return@use ConnectorResult.Failed("HTTP_${response.code}")
-                val contentType = response.header("content-type").orEmpty().lowercase()
-                if (!contentType.startsWith("application/json") && !contentType.startsWith("text/")) {
-                    return@use ConnectorResult.Refused("binary connector response is not accepted")
+            client.newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+                .newCall(builder.build())
+                .execute()
+                .use { response ->
+                    if (!response.isSuccessful) return@use ConnectorResult.Failed("HTTP_${response.code}")
+                    val contentType = response.header("content-type").orEmpty().lowercase()
+                    if (!contentType.startsWith("application/json") && !contentType.startsWith("text/")) {
+                        return@use ConnectorResult.Refused("binary connector response is not accepted")
+                    }
+                    val bytes = response.body?.bytes() ?: ByteArray(0)
+                    val truncated = bytes.size > MAX_CONNECTOR_BODY
+                    val safe = bytes.copyOf(minOf(bytes.size, MAX_CONNECTOR_BODY)).toString(Charsets.UTF_8)
+                    ConnectorResult.ReadSuccess(manifest.id, contentType, safe, truncated)
                 }
-                val bytes = response.body?.bytes() ?: ByteArray(0)
-                val truncated = bytes.size > MAX_CONNECTOR_BODY
-                val safe = bytes.copyOf(minOf(bytes.size, MAX_CONNECTOR_BODY)).toString(Charsets.UTF_8)
-                ConnectorResult.ReadSuccess(manifest.id, contentType, safe, truncated)
-            }
         }.getOrElse {
             ConnectorResult.Failed("TRANSPORT_FAILURE")
         }

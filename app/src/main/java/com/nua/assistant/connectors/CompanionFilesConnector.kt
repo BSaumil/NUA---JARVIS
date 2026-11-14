@@ -14,7 +14,9 @@ import kotlinx.serialization.json.Json
 
 private const val FILES_LIST_OPERATION = "files.list"
 private const val FILES_READ_OPERATION = "files.read"
-private const val FILES_READ_SCOPE = "FILES_READ"
+// Reuses CONNECTORS_READ (the canonical scope for connector reads -- see LocalApiScope
+// and cli.py's --scope choices) rather than a one-off FILES_READ scope.
+private const val FILES_READ_SCOPE = "CONNECTORS_READ"
 
 @Serializable
 private data class CompanionSignedRequestWire(
@@ -22,6 +24,7 @@ private data class CompanionSignedRequestWire(
     val scopes: List<String>,
     val operation: String,
     val payload: Map<String, String>,
+    val payloadJson: String,
 )
 
 @Serializable
@@ -83,8 +86,10 @@ class CompanionFilesConnector @Inject constructor(
     }
 
     private suspend fun send(path: String, operation: String, payload: Map<String, String>): CompanionHttpResult {
-        val meta = signCompanionRequest(identity, operation, payload)
-        val request = json.encodeToString(CompanionSignedRequestWire(meta, listOf(FILES_READ_SCOPE), operation, payload))
+        val signed = signCompanionRequest(identity, operation, payload)
+        val request = json.encodeToString(
+            CompanionSignedRequestWire(signed.meta, listOf(FILES_READ_SCOPE), operation, payload, signed.payloadJson),
+        )
         return transport.post(path, request)
     }
 

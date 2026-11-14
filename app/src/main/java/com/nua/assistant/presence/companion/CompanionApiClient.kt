@@ -14,6 +14,7 @@ private data class InferenceRequestWire(
     val scopes: List<String>,
     val operation: String,
     val payload: Map<String, String>,
+    val payloadJson: String,
 )
 
 @Serializable
@@ -45,8 +46,10 @@ class CompanionApiClient(
 ) {
     suspend fun inference(prompt: String, modelId: String = ""): InferenceOutcome {
         val payload = mapOf("modelId" to modelId, "prompt" to prompt)
-        val meta = signCompanionRequest(identity, INFERENCE_OPERATION, payload)
-        val body = json.encodeToString(InferenceRequestWire(meta, listOf(INFERENCE_SCOPE), INFERENCE_OPERATION, payload))
+        val signed = signCompanionRequest(identity, INFERENCE_OPERATION, payload)
+        val body = json.encodeToString(
+            InferenceRequestWire(signed.meta, listOf(INFERENCE_SCOPE), INFERENCE_OPERATION, payload, signed.payloadJson),
+        )
 
         val result = transport.post("/inference", body)
         val responseJson = when (result) {

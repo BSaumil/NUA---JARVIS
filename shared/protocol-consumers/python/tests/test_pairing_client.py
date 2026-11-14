@@ -69,9 +69,10 @@ def test_owner_approval_is_required_and_sufficient_to_pass_authorization(compani
     pairing = PairingClient(companion, identity)
     result = pairing.request_pairing()
 
-    # Stands in for a human running `nua-companion approve <challenge-id>` on
-    # the companion node -- this client cannot and does not do this itself.
-    approved = companion_service.STATE.pairing.owner_approve(result.challenge_id)
+    # Stands in for a human running `nua-companion approve <challenge-id>
+    # --scope INFERENCE` on the companion node -- this client cannot and does
+    # not do this itself.
+    approved = companion_service.STATE.pairing.owner_approve(result.challenge_id, granted_scopes=("INFERENCE",))
     assert approved is not None
 
     api = ApiClient(companion, identity)
@@ -88,23 +89,23 @@ def test_a_tampered_request_is_rejected_by_signature_verification(companion, tmp
     identity = _client_identity(tmp_path, "client")
     pairing = PairingClient(companion, identity)
     result = pairing.request_pairing()
-    companion_service.STATE.pairing.owner_approve(result.challenge_id)
+    companion_service.STATE.pairing.owner_approve(result.challenge_id, granted_scopes=("INFERENCE",))
 
     api = ApiClient(companion, identity)
-    # Sign a request for one prompt, then swap the *signed* payload's prompt
-    # afterwards -- the server executes exactly payload.modelId/payload.prompt,
-    # so any change there must invalidate the signature.
-    payload = {"modelId": "", "prompt": "hello"}
-    meta = api._sign_meta("inference.start", payload)
+    # Build a legitimately signed request, then swap *both* payload and
+    # payloadJson for a consistent but different pair, keeping the original
+    # meta (and so the original signature) -- this is the strongest possible
+    # tamper attempt (consistent payload/payloadJson, since inconsistent ones
+    # are already caught by the signed_payload_mismatch check on their own)
+    # and must still fail: the signature was computed over a specific
+    # payload_json string and can't verify over a different one.
     from nua_client.transport import post_json
 
+    body = api._build_signed_body("inference.start", ["INFERENCE"], {"modelId": "", "prompt": "hello"})
     tampered_payload = {"modelId": "", "prompt": "this prompt was swapped out after signing"}
-    body = {
-        "meta": meta,
-        "scopes": ["INFERENCE"],
-        "operation": "inference.start",
-        "payload": tampered_payload,
-    }
+    body["payload"] = tampered_payload
+    body["payloadJson"] = '{"modelId":"","prompt":"this prompt was swapped out after signing"}'
+
     with pytest.raises(CompanionRequestFailed) as excinfo:
         post_json(companion, "/inference", body)
     assert excinfo.value.status == 403

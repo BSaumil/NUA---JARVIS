@@ -41,6 +41,25 @@ class SafeSpecPolicyStore @Inject constructor(
     }
 }
 
+
+fun applyPromptSpec(
+    system: String?,
+    structuredOutput: Boolean,
+    policy: PromptSpecPolicy,
+): String? {
+    if (!structuredOutput) return system
+    val additions = mutableListOf<String>()
+    repeat(policy.schemaReminderCount.coerceIn(0, 2)) {
+        additions += "Output contract reminder: return only the requested structured format; do not add prose outside it."
+    }
+    if (policy.maxRepairAttempts > 0) {
+        additions += "Before responding, self-check the structured output against the requested schema up to " +
+            policy.maxRepairAttempts.coerceIn(0, 2) + " time(s); repair format errors internally."
+    }
+    if (additions.isEmpty()) return system
+    return listOfNotNull(system?.takeIf { it.isNotBlank() }, additions.joinToString("\n")).joinToString("\n\n")
+}
+
 fun applySpecPatches(
     prompt: PromptSpecPolicy,
     research: ResearchSpecPolicy,

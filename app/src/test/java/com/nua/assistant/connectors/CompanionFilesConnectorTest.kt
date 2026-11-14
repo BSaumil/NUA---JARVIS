@@ -72,8 +72,14 @@ class CompanionFilesConnectorTest {
         assertEquals("documents", payload["mount"]!!.jsonPrimitive.content)
         assertEquals("sub/dir", payload["path"]!!.jsonPrimitive.content)
         val scopes = sentBody["scopes"]!!.jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(listOf("FILES_READ"), scopes)
+        // Reuses CONNECTORS_READ (the canonical connector-read scope), not a one-off
+        // FILES_READ scope -- see CompanionFilesConnector's own doc comment.
+        assertEquals(listOf("CONNECTORS_READ"), scopes)
         assertEquals("files.list", sentBody["operation"]!!.jsonPrimitive.content)
+        val expectedPayloadJson = com.nua.assistant.presence.companion.CompanionSecurity.compactJson(
+            mapOf("mount" to "documents", "path" to "sub/dir"),
+        )
+        assertEquals(expectedPayloadJson, sentBody["payloadJson"]!!.jsonPrimitive.content)
     }
 
     @Test

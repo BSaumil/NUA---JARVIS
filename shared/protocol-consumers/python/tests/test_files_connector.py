@@ -45,7 +45,7 @@ def _paired_api_client(base_url: str, tmp_path) -> ApiClient:
     identity = ClientIdentity(state_dir=tmp_path / "client")
     pairing = PairingClient(base_url, identity)
     result = pairing.request_pairing()
-    companion_service.STATE.pairing.owner_approve(result.challenge_id)
+    companion_service.STATE.pairing.owner_approve(result.challenge_id, granted_scopes=("CONNECTORS_READ",))
     return ApiClient(base_url, identity)
 
 

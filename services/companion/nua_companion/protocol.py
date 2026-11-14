@@ -18,6 +18,8 @@ class DeviceIdentity:
     ownerLabel: str
     platform: str
     appVersion: str
+    keyAlgorithm: str = "ED25519"
+    publicKeyEncoding: str = "RAW"
     protocolVersion: int = PROTOCOL_VERSION
 
 @dataclass(frozen=True)

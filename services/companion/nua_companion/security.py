@@ -6,7 +6,12 @@ import secrets
 import time
 from dataclasses import dataclass
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import load_der_public_key
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, PublicFormat, NoEncryption
+from pathlib import Path
 
 MAX_CLOCK_SKEW_MS = 120_000
 
@@ -52,3 +57,46 @@ def new_nonce() -> str:
 
 def compact_json(value: object) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def load_or_create_identity_key(path: Path) -> Ed25519PrivateKey:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        raw = path.read_bytes()
+        return Ed25519PrivateKey.from_private_bytes(raw)
+    key = Ed25519PrivateKey.generate()
+    raw = key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    return key
+
+def public_key_b64(key: Ed25519PrivateKey) -> str:
+    raw = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    return base64.b64encode(raw).decode("ascii")
+
+def sign_b64(key: Ed25519PrivateKey, message: bytes) -> str:
+    return base64.b64encode(key.sign(message)).decode("ascii")
+
+
+def verify_device_signature(
+    algorithm: str,
+    encoding: str,
+    public_key_b64: str,
+    signature_b64: str,
+    message: bytes,
+) -> bool:
+    try:
+        raw = base64.b64decode(public_key_b64)
+        signature = base64.b64decode(signature_b64)
+        if algorithm.upper() == "ED25519" and encoding.upper() == "RAW":
+            Ed25519PublicKey.from_public_bytes(raw).verify(signature, message)
+            return True
+        if algorithm.upper() == "P256_SHA256" and encoding.upper() == "X509":
+            key = load_der_public_key(raw)
+            if not isinstance(key, ec.EllipticCurvePublicKey):
+                return False
+            key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+            return True
+        return False
+    except (ValueError, InvalidSignature):
+        return False

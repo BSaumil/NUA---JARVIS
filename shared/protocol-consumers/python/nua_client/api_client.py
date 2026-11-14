@@ -21,7 +21,10 @@ INFERENCE_OPERATION = "inference.start"
 INFERENCE_SCOPE = "INFERENCE"
 FILES_LIST_OPERATION = "files.list"
 FILES_READ_OPERATION = "files.read"
-FILES_READ_SCOPE = "FILES_READ"
+# Reuses CONNECTORS_READ (the canonical scope for connector reads) rather than
+# a one-off FILES_READ scope, matching cli.py's --scope choices and the
+# Kotlin LocalApiScope enum.
+FILES_READ_SCOPE = "CONNECTORS_READ"
 
 
 @dataclass(frozen=True)
@@ -52,13 +55,7 @@ class ApiClient:
 
     def inference(self, prompt: str, model_id: str = "") -> InferenceResult:
         payload = {"modelId": model_id, "prompt": prompt}
-        meta = self._sign_meta(INFERENCE_OPERATION, payload)
-        body = {
-            "meta": meta,
-            "scopes": [INFERENCE_SCOPE],
-            "operation": INFERENCE_OPERATION,
-            "payload": payload,
-        }
+        body = self._build_signed_body(INFERENCE_OPERATION, [INFERENCE_SCOPE], payload)
         response = post_json(self._base_url, "/inference", body)
         if not response.get("succeeded", False):
             return InferenceResult(succeeded=False, error_code=response.get("error") or response.get("errorCode"))
@@ -71,8 +68,7 @@ class ApiClient:
         filesystem path -- so this can't be used to probe the companion's
         wider filesystem."""
         payload = {"mount": mount, "path": path}
-        meta = self._sign_meta(FILES_LIST_OPERATION, payload)
-        body = {"meta": meta, "scopes": [FILES_READ_SCOPE], "operation": FILES_LIST_OPERATION, "payload": payload}
+        body = self._build_signed_body(FILES_LIST_OPERATION, [FILES_READ_SCOPE], payload)
         response = post_json(self._base_url, "/files/list", body)
         return [
             FileEntry(name=entry["name"], is_dir=entry["isDir"], size_bytes=entry["sizeBytes"])
@@ -83,12 +79,16 @@ class ApiClient:
         """Reads one file's contents (size-capped on the companion side) from
         a named mount."""
         payload = {"mount": mount, "path": path}
-        meta = self._sign_meta(FILES_READ_OPERATION, payload)
-        body = {"meta": meta, "scopes": [FILES_READ_SCOPE], "operation": FILES_READ_OPERATION, "payload": payload}
+        body = self._build_signed_body(FILES_READ_OPERATION, [FILES_READ_SCOPE], payload)
         response = post_json(self._base_url, "/files/read", body)
         return base64.b64decode(response["contentBase64"])
 
-    def _sign_meta(self, operation: str, payload: dict) -> dict:
+    def _build_signed_body(self, operation: str, scopes: list[str], payload: dict) -> dict:
+        """Builds the full signed request envelope: `meta` (signed over the
+        canonical request), plus the exact `payloadJson` string that was
+        signed alongside the raw `payload` dict -- the companion's
+        `_authorize` checks both agree, rather than trusting its own
+        recomputation of compact_json(payload) to match what was signed."""
         protocol_version = self._identity.identity.protocolVersion
         request_id = str(uuid.uuid4())
         client_id = self._identity.identity.deviceId
@@ -97,11 +97,18 @@ class ApiClient:
         payload_json = compact_json(payload)
         digest = digest_request(protocol_version, request_id, client_id, nonce, timestamp_ms, operation, payload_json)
         signature = self._identity.sign(digest)
-        return {
+        meta = {
             "protocolVersion": protocol_version,
             "requestId": request_id,
             "clientId": client_id,
             "nonce": nonce,
             "timestampMillis": timestamp_ms,
             "signatureBase64": signature,
+        }
+        return {
+            "meta": meta,
+            "scopes": scopes,
+            "operation": operation,
+            "payload": payload,
+            "payloadJson": payload_json,
         }

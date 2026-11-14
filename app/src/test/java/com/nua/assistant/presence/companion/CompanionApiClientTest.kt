@@ -67,6 +67,11 @@ class CompanionApiClientTest {
         val scopes = sentBody["scopes"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("INFERENCE"), scopes)
         assertEquals("inference.start", sentBody["operation"]!!.jsonPrimitive.content)
+        // The companion's _authorize re-parses payloadJson and requires it to equal
+        // payload exactly -- so this must be the canonical form of the same map, not
+        // some other string.
+        val expectedPayloadJson = CompanionSecurity.compactJson(mapOf("modelId" to "llama3.2", "prompt" to "what's the weather"))
+        assertEquals(expectedPayloadJson, sentBody["payloadJson"]!!.jsonPrimitive.content)
     }
 
     @Test

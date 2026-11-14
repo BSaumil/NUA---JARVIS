@@ -13,8 +13,14 @@ data class CompanionSignedMeta(
     val signatureBase64: String,
 )
 
+/** [meta] is the signed envelope; [payloadJson] is the exact canonical string that was
+ * signed, sent alongside the raw payload map as its own top-level `payloadJson` field --
+ * the companion's `_authorize` checks the two agree, rather than trusting its own
+ * recomputation of the payload's canonical form to match what the client signed. */
+data class CompanionSignedRequest(val meta: CompanionSignedMeta, val payloadJson: String)
+
 /**
- * Builds the signed `meta` envelope every privileged companion request carries, matching
+ * Builds the signed request envelope every privileged companion request carries, matching
  * the companion's own `_authorize` exactly (see [CompanionSecurity]). Shared by every
  * companion-paired client capability -- [CompanionApiClient]'s inference calls,
  * [com.nua.assistant.connectors.CompanionFilesConnector]'s file reads, and any future
@@ -24,7 +30,7 @@ fun signCompanionRequest(
     identity: CompanionSigningIdentity,
     operation: String,
     payload: Map<String, String>,
-): CompanionSignedMeta {
+): CompanionSignedRequest {
     val device = identity.identity
     val requestId = UUID.randomUUID().toString()
     val nonce = CompanionSecurity.newNonce()
@@ -39,7 +45,7 @@ fun signCompanionRequest(
         operation,
         payloadJson,
     )
-    return CompanionSignedMeta(
+    val meta = CompanionSignedMeta(
         protocolVersion = device.protocolVersion,
         requestId = requestId,
         clientId = device.deviceId,
@@ -47,4 +53,5 @@ fun signCompanionRequest(
         timestampMillis = timestampMillis,
         signatureBase64 = identity.sign(digest),
     )
+    return CompanionSignedRequest(meta, payloadJson)
 }

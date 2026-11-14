@@ -114,7 +114,9 @@ the companion's wider filesystem, matching the directive's explicit ban on
   listing/reading.
 - `service.py` adds `POST /files/list` / `POST /files/read`, authenticated
   through the *same* `_authorize` signed-request path `/inference` already
-  uses (no new auth scheme, `FILES_READ` scope) — size-capped reads (1MB),
+  uses (no new auth scheme, `CONNECTORS_READ` scope — see the PR #38
+  reconciliation note below for why this changed from the original
+  `FILES_READ` scope), size-capped reads (1MB),
   read-only, no write path at all. `/presence` now advertises a
   `companion-files` connector only when at least one mount is actually
   configured, so advertisement never overclaims capability.
@@ -307,6 +309,58 @@ No `BLOCKED_CRITICAL` items from this workstream set.
 - `shared/protocol-consumers/python/pyproject.toml`: `cryptography>=44,<46`
   (required), `pystray`/`pillow` (optional `tray` extra, lazily imported so a
   headless host never needs them).
+
+## PR #38 merge reconciliation (2026-11-14, post-handoff)
+
+After this handoff was written, `integration/openjarvis-final-10-20261114`
+turned out to already have an independent, further-evolved continuation of
+the same `services/companion` code this branch started from — built outside
+this branch, with its own further security hardening (P256/ECDSA identity
+signing, owner-granted scopes replacing client-claimed ones, an exact
+signed-payload-string check, redirect-disabling, TLS for non-loopback
+serving) and its own `/sandbox` endpoint and `clients/windows`/`clients/ios`.
+Opened [PR #38](https://github.com/BSaumil/NUA---JARVIS/pull/38) from this
+branch into `integration/...`, which came back with one real git conflict
+(`services/companion/nua_companion/service.py`) plus several of this
+branch's own files needing updates to keep working against the merged
+`_authorize`. Resolved:
+
+- **`service.py`**: kept both sides' endpoints (`/files/list`, `/files/read`,
+  `/sandbox`), and took integration's `_authorize` as-is — it is strictly
+  more secure than this branch's own (owner-granted `trusted.granted_scopes`
+  instead of a client-supplied `scopes` list; an exact-signed-payload-string
+  check). My own `/inference` payload-signing fix was preserved (it was
+  outside the conflicted region and the merged `_authorize` doesn't
+  reintroduce that gap).
+- **Scope rename**: `CONNECTORS_READ` is the canonical scope for connector
+  reads already (`LocalApiScope`, and `cli.py`'s `--scope` choices); this
+  branch's one-off `FILES_READ` scope wasn't in that list at all, so the
+  files endpoints and both clients (`nua_client/api_client.py`,
+  `CompanionFilesConnector.kt`) now request `CONNECTORS_READ` instead.
+- **`payloadJson`**: the merged `_authorize` requires every signed request to
+  carry the exact canonical payload string alongside the raw payload dict,
+  and checks they agree before even checking the signature. Added this field
+  to every signed request this branch's clients build
+  (`nua_client/api_client.py`'s `_build_signed_body`, Kotlin's
+  `signCompanionRequest` → `CompanionSignedRequest`), and updated this
+  branch's own tests (`owner_approve` calls now explicitly grant the scope
+  each test exercises, since the default grant shrank to
+  `("HEALTH", "PRESENCE_READ")`).
+- Verified for real: 24 companion tests + 10 client tests passing locally
+  after reconciliation (including this branch's own `test_mounts.py` and
+  `test_files_connector.py`, and integration's new `test_service_security.py`
+  and P256-pairing test) — not just a textual merge, a working one.
+
+**Left open, flagged on the PR rather than resolved unilaterally:** both
+branches independently built a full Android companion-pairing client —
+this branch's `presence/companion/` (BouncyCastle Ed25519, its own
+`CompanionSecurity` wire format) and integration's
+`presence/AndroidPresenceIdentity.kt` + `presence/PresencePairingClient.kt`
+(native `java.security` P256, built directly on the canonical
+`LocalApiContract`/`LocalApiRequestMeta` conventions, with `CertificatePinner`).
+They don't conflict at the file or DI level — neither is currently wired
+into Hilt — but keeping both long-term is redundant. That's a real product
+decision, not something to resolve by picking a winner unprompted.
 
 ## Recommended integration order
 
