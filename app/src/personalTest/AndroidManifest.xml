@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Personal testing variant only.
+      This removes restricted/high-sensitivity capabilities that are unnecessary for
+      validating NUA chat, local/cloud inference, memory, research, Model Mesh,
+      Evolution, Presence, connectors and ordinary UI flows.
+
+      Production/main manifest is unchanged.
+    -->
+    <uses-permission android:name="android.permission.SEND_SMS" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" tools:node="remove" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:node="remove" />
+
+    <application
+        android:label="NUA Personal Test"
+        tools:replace="android:label">
+
+        <!-- Remove elevated system integration from the sideload test build. -->
+        <service
+            android:name=".automation.NuaAccessibilityService"
+            tools:node="remove" />
+
+        <service
+            android:name=".notifications.NuaNotificationListenerService"
+            tools:node="remove" />
+
+        <service
+            android:name=".car.NuaCarAppService"
+            tools:node="remove" />
+
+        <receiver
+            android:name=".geofencing.NuaGeofenceBroadcastReceiver"
+            tools:node="remove" />
+
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            tools:node="remove" />
+
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            tools:node="remove" />
+    </application>
+</manifest>
