@@ -1,39 +1,47 @@
 # NUA Sovereign Client — Windows
 
-A thin launcher around the shared client package at
-`shared/protocol-consumers/python` (`nua_client`), same as the Linux and
-macOS launchers. This directory only adds the Windows entry point.
-
 ## Status: SHIPPED_BUILDABLE_NOT_DEVICE_VERIFIED
 
-The `nua_client` package itself is real and covered by a real integration
-test against the actual companion service (see
-`shared/protocol-consumers/python/tests/test_pairing_client.py`), run and
-passing on Linux/Python in this environment. `nua-client.ps1` was not run on
-real Windows — there is no Windows machine available in this environment to
-verify PowerShell execution, `python`/`py` launcher resolution, or file
-permission behavior against.
+The Windows surface now has two layers:
 
-## Usage (PowerShell)
+1. a Tauri 2 native shell under `clients/windows/src-tauri/`;
+2. the shared Python companion client/CLI under `shared/protocol-consumers/python`.
+
+GitHub Actions runs on `windows-latest`, performs `cargo check`, executes the shell
+policy tests, builds the release executable, and uploads
+`nua-sovereign-windows-exe`.
+
+### Current Tauri security envelope
+
+The native shell is deliberately read-only and localhost-only:
+
+- accepts only `http://127.0.0.1:8765` / localhost;
+- refuses remote HTTP endpoints;
+- refuses unexpected ports;
+- exposes only `health` and `presence`;
+- does not proxy arbitrary URLs or arbitrary companion paths;
+- CSP restricts network connections to self.
+
+Privileged inference, connectors, sandbox jobs and cross-device actions remain behind the
+paired/scoped companion APIs rather than the thin desktop shell.
+
+### Shared CLI
+
+With Python 3.11+ installed:
 
 ```powershell
 .\nua-client.ps1 pair
 .\nua-client.ps1 status
 .\nua-client.ps1 ask "hello"
-.\nua-client.ps1 tray   # requires: pip install -e ..\..\shared\protocol-consumers\python[tray]
+.\nua-client.ps1 tray
 ```
 
-Requires Python 3.11+ on `PATH` (or set `$env:NUA_CLIENT_PYTHON` to a
-specific interpreter, e.g. `py`). Pairing requires separate owner approval
-on the companion node (`nua-companion approve <challenge-id>`) — this
-launcher cannot approve itself; see
-`services/companion/nua_companion/pairing.py`.
+Pairing requires separate owner approval on the companion node; the Windows client cannot
+approve itself.
 
-## DEFERRED_PLATFORM_LIMITATION: packaged `.exe` / tray
+### Not yet claimed
 
-A packaged, double-clickable `.exe` (e.g. via PyInstaller) with a native
-Windows system-tray icon was not built. This requires a real Windows build
-host to produce and smoke-test a Windows binary, which is not available in
-this environment; a claim of a working `.exe` without that check would not
-be honest. The script above runs today on any Windows host with Python
-3.11+ installed; only the native packaging step is deferred.
+- The CI-produced executable is not a signed MSIX/MSI installer.
+- No Windows code-signing certificate is configured.
+- No physical POS/desktop hardware validation is claimed.
+- Native tray/updater packaging remains a later release-hardening step.
