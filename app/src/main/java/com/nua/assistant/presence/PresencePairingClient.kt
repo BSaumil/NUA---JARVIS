@@ -4,12 +4,12 @@ import android.os.Build
 import android.util.Base64
 import com.nua.assistant.localapi.LocalApiRequestMeta
 import com.nua.assistant.localapi.NUA_LOCAL_API_VERSION
+import com.nua.assistant.localapi.localApiRequestDigestBytes
 import com.nua.assistant.presence.protocol.DeviceIdentity
 import com.nua.assistant.presence.protocol.PairingChallenge
 import com.nua.assistant.presence.protocol.PresenceState
 import java.net.URI
 import java.security.KeyFactory
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
@@ -32,6 +32,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
+import org.bouncycastle.crypto.signers.Ed25519Signer
 
 private val JSON_MEDIA = "application/json".toMediaType()
 
@@ -87,26 +89,6 @@ fun canonicalJson(element: JsonElement): String = when (element) {
         separator = ",",
     ) { canonicalJson(it) }
     else -> element.toString()
-}
-
-private fun sha256(bytes: ByteArray): ByteArray =
-    MessageDigest.getInstance("SHA-256").digest(bytes)
-
-private fun remoteRequestDigest(
-    meta: LocalApiRequestMeta,
-    operation: String,
-    payloadJson: String,
-): ByteArray {
-    val canonical = listOf(
-        meta.protocolVersion.toString(),
-        meta.requestId,
-        meta.clientId,
-        meta.nonce,
-        meta.timestampMillis.toString(),
-        operation,
-        payloadJson,
-    ).joinToString("|")
-    return sha256(canonical.toByteArray(Charsets.UTF_8))
 }
 
 @Singleton
@@ -213,7 +195,17 @@ class PresencePairingClient @Inject constructor(
             timestampMillis = System.currentTimeMillis(),
             signatureBase64 = "",
         )
-        val signature = identityStore.sign(remoteRequestDigest(unsignedMeta, operation, payloadJson))
+        val signature = identityStore.sign(
+            localApiRequestDigestBytes(
+                unsignedMeta.protocolVersion,
+                unsignedMeta.requestId,
+                unsignedMeta.clientId,
+                unsignedMeta.nonce,
+                unsignedMeta.timestampMillis,
+                operation,
+                payloadJson,
+            ),
+        )
         val meta = unsignedMeta.copy(signatureBase64 = signature)
         val body = buildJsonObject {
             put("meta", json.encodeToJsonElement(LocalApiRequestMeta.serializer(), meta))
@@ -252,22 +244,34 @@ class PresencePairingClient @Inject constructor(
     ): Boolean {
         if (signatureBase64.isNullOrBlank()) return false
         if (identity.keyAlgorithm != "ED25519" || identity.publicKeyEncoding != "RAW") return false
-        if (Build.VERSION.SDK_INT < 33) return false
         val raw = runCatching { Base64.decode(identity.publicKey, Base64.DEFAULT) }.getOrNull() ?: return false
+        val signature = runCatching { Base64.decode(signatureBase64, Base64.DEFAULT) }.getOrNull() ?: return false
         if (raw.size != 32) return false
 
-        // X.509 SubjectPublicKeyInfo prefix for Ed25519 + raw 32-byte public key.
-        val prefix = byteArrayOf(
-            0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
-        )
-        val encoded = prefix + raw
+        if (Build.VERSION.SDK_INT >= 33) {
+            // X.509 SubjectPublicKeyInfo prefix for Ed25519 + raw 32-byte public key.
+            val prefix = byteArrayOf(
+                0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+            )
+            val encoded = prefix + raw
+            return runCatching {
+                val publicKey = KeyFactory.getInstance("Ed25519")
+                    .generatePublic(X509EncodedKeySpec(encoded))
+                val verifier = Signature.getInstance("Ed25519")
+                verifier.initVerify(publicKey)
+                verifier.update(challenge)
+                verifier.verify(signature)
+            }.getOrDefault(false)
+        }
+
+        // Android 26-32 do not provide Ed25519 through the platform provider. Verify the
+        // companion's identity proof with the bundled BC primitive, but keep the Android
+        // device's own long-lived identity in Android Keystore P256.
         return runCatching {
-            val publicKey = KeyFactory.getInstance("Ed25519")
-                .generatePublic(X509EncodedKeySpec(encoded))
-            val verifier = Signature.getInstance("Ed25519")
-            verifier.initVerify(publicKey)
-            verifier.update(challenge)
-            verifier.verify(Base64.decode(signatureBase64, Base64.DEFAULT))
+            val verifier = Ed25519Signer()
+            verifier.init(false, Ed25519PublicKeyParameters(raw, 0))
+            verifier.update(challenge, 0, challenge.size)
+            verifier.verifySignature(signature)
         }.getOrDefault(false)
     }
 }
