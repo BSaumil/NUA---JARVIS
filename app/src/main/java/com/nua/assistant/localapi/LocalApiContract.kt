@@ -108,20 +108,56 @@ fun authorizeLocalApiRequest(
     return LocalApiAuthResult(LocalApiAuthDecision.ALLOW)
 }
 
-fun localApiRequestDigest(meta: LocalApiRequestMeta, operation: String, payloadJson: String): String {
-    val canonical = listOf(
-        meta.protocolVersion.toString(),
+fun localApiRequestCanonicalBytes(
+    protocolVersion: Int,
+    requestId: String,
+    clientId: String,
+    nonce: String,
+    timestampMillis: Long,
+    operation: String,
+    payloadJson: String,
+): ByteArray =
+    listOf(
+        protocolVersion.toString(),
+        requestId,
+        clientId,
+        nonce,
+        timestampMillis.toString(),
+        operation,
+        payloadJson,
+    ).joinToString("|").toByteArray(Charsets.UTF_8)
+
+fun localApiRequestDigestBytes(
+    protocolVersion: Int,
+    requestId: String,
+    clientId: String,
+    nonce: String,
+    timestampMillis: Long,
+    operation: String,
+    payloadJson: String,
+): ByteArray =
+    MessageDigest.getInstance("SHA-256").digest(
+        localApiRequestCanonicalBytes(
+            protocolVersion,
+            requestId,
+            clientId,
+            nonce,
+            timestampMillis,
+            operation,
+            payloadJson,
+        ),
+    )
+
+fun localApiRequestDigest(meta: LocalApiRequestMeta, operation: String, payloadJson: String): String =
+    localApiRequestDigestBytes(
+        meta.protocolVersion,
         meta.requestId,
         meta.clientId,
         meta.nonce,
-        meta.timestampMillis.toString(),
+        meta.timestampMillis,
         operation,
         payloadJson,
-    ).joinToString("|")
-    return MessageDigest.getInstance("SHA-256")
-        .digest(canonical.toByteArray(Charsets.UTF_8))
-        .joinToString("") { "%02x".format(it) }
-}
+    ).joinToString("") { "%02x".format(it) }
 
 /**
  * Canonical operation names. Platform services may expose these over HTTP/WebSocket,
