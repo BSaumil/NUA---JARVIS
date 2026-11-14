@@ -79,6 +79,14 @@ android {
         debug {
             isMinifyEnabled = false
         }
+        create("personalTest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".personaltest"
+            versionNameSuffix = "-personal-test"
+            isMinifyEnabled = false
+            isDebuggable = true
+            matchingFallbacks += listOf("debug")
+        }
     }
 
     compileOptions {
