@@ -24,6 +24,13 @@ class SafeHttpConnector @Inject constructor(
         if (request.capability !in manifest.readCapabilities) {
             return@withContext ConnectorResult.Refused("read capability not declared")
         }
+        if (manifest.authType == ConnectorAuthType.COMPANION_PAIRED) {
+            // A companion-paired connector's requests must be Ed25519-signed against a
+            // specific paired device's key (presence/companion package); this generic HTTP path
+            // has no way to produce that signature, so it must never silently attempt an
+            // unsigned request. See CompanionFilesConnector for the real implementation.
+            return@withContext ConnectorResult.Refused("companion-paired connectors are not served by SafeHttpConnector")
+        }
 
         val base = runCatching { URI(baseUrl) }.getOrNull()
             ?: return@withContext ConnectorResult.Refused("invalid base URL")
@@ -62,16 +69,16 @@ class SafeHttpConnector @Inject constructor(
                 .newCall(builder.build())
                 .execute()
                 .use { response ->
-                if (!response.isSuccessful) return@use ConnectorResult.Failed("HTTP_${response.code}")
-                val contentType = response.header("content-type").orEmpty().lowercase()
-                if (!contentType.startsWith("application/json") && !contentType.startsWith("text/")) {
-                    return@use ConnectorResult.Refused("binary connector response is not accepted")
+                    if (!response.isSuccessful) return@use ConnectorResult.Failed("HTTP_${response.code}")
+                    val contentType = response.header("content-type").orEmpty().lowercase()
+                    if (!contentType.startsWith("application/json") && !contentType.startsWith("text/")) {
+                        return@use ConnectorResult.Refused("binary connector response is not accepted")
+                    }
+                    val bytes = response.body?.bytes() ?: ByteArray(0)
+                    val truncated = bytes.size > MAX_CONNECTOR_BODY
+                    val safe = bytes.copyOf(minOf(bytes.size, MAX_CONNECTOR_BODY)).toString(Charsets.UTF_8)
+                    ConnectorResult.ReadSuccess(manifest.id, contentType, safe, truncated)
                 }
-                val bytes = response.body?.bytes() ?: ByteArray(0)
-                val truncated = bytes.size > MAX_CONNECTOR_BODY
-                val safe = bytes.copyOf(minOf(bytes.size, MAX_CONNECTOR_BODY)).toString(Charsets.UTF_8)
-                ConnectorResult.ReadSuccess(manifest.id, contentType, safe, truncated)
-            }
         }.getOrElse {
             ConnectorResult.Failed("TRANSPORT_FAILURE")
         }

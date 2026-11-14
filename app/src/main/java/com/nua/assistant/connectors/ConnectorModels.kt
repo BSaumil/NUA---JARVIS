@@ -3,8 +3,13 @@ package com.nua.assistant.connectors
 import com.nua.assistant.security.egress.DataCategory
 import kotlinx.serialization.Serializable
 
+/** COMPANION_PAIRED connectors (e.g. the companion mounted-files connector) are never
+ * routed through [SafeHttpConnector] -- they reach a paired companion node over its own
+ * Ed25519-signed Local API (presence/companion package), not plain bearer-token HTTPS, so
+ * [SafeHttpConnector.read] refuses this authType outright rather than silently sending an
+ * unsigned request a companion would reject anyway. */
 @Serializable
-enum class ConnectorAuthType { NONE, BEARER_TOKEN, OAUTH2_EXTERNAL }
+enum class ConnectorAuthType { NONE, BEARER_TOKEN, OAUTH2_EXTERNAL, COMPANION_PAIRED }
 
 @Serializable
 enum class ConnectorRisk { READ_ONLY, WRITE_CAPABLE }

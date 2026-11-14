@@ -7,6 +7,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from .models import configured_models, complete
+from .mounts import MountRegistry
 from .sandbox import WasmJob, WasmSandboxLimits, run_wasm
 from .pairing import PairingStore
 from .protocol import DeviceIdentity, PROTOCOL_VERSION, to_json_dict
@@ -21,6 +22,8 @@ from .security import (
     verify_device_signature,
 )
 
+MAX_FILE_READ_BYTES = 1 * 1024 * 1024
+
 class CompanionState:
     def __init__(self) -> None:
         state_path = Path(os.getenv("NUA_COMPANION_STATE", "~/.nua/companion-pairing.json")).expanduser()
@@ -28,6 +31,7 @@ class CompanionState:
         self.identity_key = load_or_create_identity_key(key_path)
         self.pairing = PairingStore(state_path)
         self.replay = ReplayWindow()
+        self.mounts = MountRegistry.from_env()
         self.device = DeviceIdentity(
             deviceId=os.getenv("NUA_COMPANION_DEVICE_ID", "companion-local"),
             publicKey=public_key_b64(self.identity_key),
@@ -76,7 +80,11 @@ class Handler(BaseHTTPRequestHandler):
                     {"id": m.id, "provider": m.provider, "localToNode": True, "supportsVision": False, "supportsStructuredOutput": False}
                     for m in configured_models()
                 ],
-                "connectors": [],
+                "connectors": (
+                    [{"id": "companion-files", "version": "1", "readCapabilities": ["files.read"], "writeCapabilities": []}]
+                    if STATE.mounts.names()
+                    else []
+                ),
                 "lastVerifiedAtMillis": now_ms(),
             })
             return
@@ -103,6 +111,10 @@ class Handler(BaseHTTPRequestHandler):
             if auth is not None:
                 self._json(403, {"error": auth})
                 return
+            # Read modelId/prompt from the signed `payload`, never from unsigned
+            # top-level fields: _authorize already checked payload against the
+            # exact signed payloadJson string, so acting on anything else here
+            # would reopen that gap.
             payload = body.get("payload") or {}
             models = configured_models()
             requested = str(payload.get("modelId", ""))
@@ -147,6 +159,49 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except (KeyError, TypeError, ValueError):
                 self._json(400, {"error": "invalid_sandbox_request"})
+            return
+
+        if self.path == "/files/list":
+            # Reuses CONNECTORS_READ (the canonical scope for connector reads --
+            # see LocalApiScope) rather than a new FILES_READ scope, so this
+            # doesn't fork the scope taxonomy cli.py's --scope choices and the
+            # Kotlin LocalApiContract already agree on.
+            auth = self._authorize(body, "CONNECTORS_READ")
+            if auth is not None:
+                self._json(403, {"error": auth})
+                return
+            payload = body.get("payload") or {}
+            mount = str(payload.get("mount", ""))
+            relative_path = str(payload.get("path", ""))
+            entries = STATE.mounts.list_entries(mount, relative_path)
+            if entries is None:
+                self._json(404, {"error": "mount_or_path_not_found"})
+                return
+            self._json(200, {"succeeded": True, "entries": entries})
+            return
+
+        if self.path == "/files/read":
+            auth = self._authorize(body, "CONNECTORS_READ")
+            if auth is not None:
+                self._json(403, {"error": auth})
+                return
+            payload = body.get("payload") or {}
+            mount = str(payload.get("mount", ""))
+            relative_path = str(payload.get("path", ""))
+            resolved = STATE.mounts.resolve(mount, relative_path)
+            if resolved is None or not resolved.is_file():
+                self._json(404, {"error": "mount_or_path_not_found"})
+                return
+            try:
+                size = resolved.stat().st_size
+                if size > MAX_FILE_READ_BYTES:
+                    self._json(413, {"error": "file_too_large"})
+                    return
+                data = resolved.read_bytes()
+            except OSError:
+                self._json(502, {"succeeded": False, "errorCode": "READ_FAILURE"})
+                return
+            self._json(200, {"succeeded": True, "contentBase64": base64.b64encode(data).decode("ascii"), "sizeBytes": size})
             return
 
         self._json(404, {"error": "not_found"})

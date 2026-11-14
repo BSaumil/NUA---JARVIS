@@ -149,6 +149,11 @@ dependencies {
     // Secure storage for the Claude API key
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // Ed25519 for the Presence Mesh companion pairing client (presence/companion/**).
+    // minSdk 26 predates platform EdDSA support (Conscrypt added it at API 33), so this
+    // needs a userspace implementation rather than java.security.KeyPairGenerator.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+
     // Biometric step-up authentication for the highest-risk actions (security/BiometricGate.kt)
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
