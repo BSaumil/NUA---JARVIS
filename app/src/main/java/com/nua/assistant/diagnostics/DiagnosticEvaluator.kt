@@ -56,7 +56,7 @@ fun evaluateDiagnostics(inputs: DiagnosticInputs): List<DiagnosticCheck> = listO
 private fun apiCheck(inputs: DiagnosticInputs): DiagnosticCheck = if (inputs.hasApiKey) {
     DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.OK, "Claude API key configured. Use \"Test Connection\" to verify it actually works.")
 } else {
-    DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.NOT_CONFIGURED, "No Claude API key set — add one in Settings to enable NUA.")
+    DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.NOT_CONFIGURED, "Claude cloud key not configured — NUA remains usable in local-only mode; add a key in Settings only for cloud AI.")
 }
 
 private fun memoryCheck(inputs: DiagnosticInputs): DiagnosticCheck = if (inputs.memoryDbReachable) {
