@@ -38,6 +38,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     // ListenableFuture + Futures.immediateFuture, used by the async TileService callbacks.
     implementation("com.google.guava:guava:33.0.0-android")
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
 }
 
 kotlin {
