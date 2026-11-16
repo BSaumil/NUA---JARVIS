@@ -15,7 +15,9 @@ import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.ai.FactRelevance
 import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.ai.PersonalityAxes
 import com.nua.assistant.ai.PersonalityEngine
+import com.nua.assistant.ai.PersonalityPreferenceStore
 import com.nua.assistant.ai.SecondBrainResult
 import com.nua.assistant.ai.SecondBrainSearch
 import com.nua.assistant.ai.SuggestedReminder
@@ -161,6 +163,7 @@ class NuaViewModel @Inject constructor(
     private val claudeApiClient: ClaudeApiClient,
     private val modelMesh: ModelMesh,
     private val personalityEngine: PersonalityEngine,
+    private val personalityPreferenceStore: PersonalityPreferenceStore,
     private val intentRouter: NuaIntentRouter,
     private val factExtractor: FactExtractor,
     private val secureKeyRepository: SecureKeyRepository,
@@ -204,6 +207,9 @@ class NuaViewModel @Inject constructor(
 
     private val _pinnedLanguage = MutableStateFlow(languagePreferenceStore.getPinnedLanguage())
     val pinnedLanguage: StateFlow<NuaLanguage?> = _pinnedLanguage.asStateFlow()
+
+    private val _personalityAxes = MutableStateFlow(personalityPreferenceStore.getAxes())
+    val personalityAxes: StateFlow<PersonalityAxes> = _personalityAxes.asStateFlow()
 
     private val _briefingSchedule = MutableStateFlow(briefingScheduleStore.get())
     val briefingSchedule: StateFlow<BriefingSchedule> = _briefingSchedule.asStateFlow()
@@ -611,6 +617,7 @@ class NuaViewModel @Inject constructor(
                 turnCount,
                 _pinnedLanguage.value,
                 toneDirective,
+                _personalityAxes.value,
             )
             val localPrompt = history.joinToString("\n") { turn ->
                 "${turn.role.uppercase()}: ${turn.content}"
@@ -661,6 +668,7 @@ class NuaViewModel @Inject constructor(
             turnCount,
             _pinnedLanguage.value,
             toneDirective,
+            _personalityAxes.value,
         )
 
         val fullText = StringBuilder()
@@ -1085,6 +1093,11 @@ class NuaViewModel @Inject constructor(
     fun setPinnedLanguage(language: NuaLanguage?) {
         languagePreferenceStore.setPinnedLanguage(language)
         _pinnedLanguage.value = language
+    }
+
+    fun setPersonalityAxes(axes: PersonalityAxes) {
+        personalityPreferenceStore.setAxes(axes)
+        _personalityAxes.value = axes
     }
 
     fun setBriefingSchedule(schedule: BriefingSchedule) {
