@@ -8,6 +8,10 @@ import com.nua.assistant.ai.ClaudeMessage
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.ClaudeStreamEvent
 import com.nua.assistant.ai.FactExtractor
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
 import com.nua.assistant.ai.FactRelevance
 import com.nua.assistant.security.egress.DataEgressGateway
 import com.nua.assistant.ai.NuaActionType
@@ -155,6 +159,7 @@ private const val REMIND_LATER_OFFSET_MILLIS = 60 * 60_000L
 class NuaViewModel @Inject constructor(
     private val memoryDao: MemoryDao,
     private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
     private val personalityEngine: PersonalityEngine,
     private val intentRouter: NuaIntentRouter,
     private val factExtractor: FactExtractor,
@@ -584,26 +589,79 @@ class NuaViewModel @Inject constructor(
     }
 
     private suspend fun replyConversationally(userMessage: String) {
-        if (!connectivityMonitor.isOnline()) {
-            respond(offlineMessage(), extractFacts = false)
-            return
-        }
-
         val rankedFacts = FactRelevance.rank(memoryDao.getAllFacts(), userMessage)
-        // Data Egress Gateway (security/egress/DataEgressGateway.kt): no capsule is
-        // supplied at this call site yet, so this is the strictest policy -- Sensitive-
-        // marked facts never reach the prompt, Standard ones pass through as before.
-        val (relevantFacts, _egressDecision) = DataEgressGateway.filterFacts(capsule = null, facts = rankedFacts)
-        val usedAt = System.currentTimeMillis()
-        relevantFacts.forEach { fact -> memoryDao.touchFactUsage(fact.key, usedAt) }
         val turnCount = memoryDao.countUserMessages()
         val history = memoryDao.getRecentMessages(CONVERSATION_HISTORY_LIMIT).asReversed().map {
             ClaudeMessage(role = if (it.role == MessageRole.USER) "user" else "assistant", content = it.content)
         }
         val toneDirective = VoiceProsody.directiveFor(lastVoiceTone ?: VoiceTone.NEUTRAL)
         lastVoiceTone = null
-        val system = personalityEngine.systemPrompt(relevantFacts, turnCount, _pinnedLanguage.value, toneDirective)
         val language = _pinnedLanguage.value ?: NuaLanguage.ENGLISH
+        val online = connectivityMonitor.isOnline()
+        val hasCloudKey = secureKeyRepository.hasApiKey()
+
+        // Standalone mode: no Claude credential is required to launch or use NUA.
+        // When cloud is unavailable or intentionally unconfigured, the conversation
+        // is offered to the OS-private model only. No cloud fallback can be introduced.
+        if (!online || !hasCloudKey) {
+            val usedAt = System.currentTimeMillis()
+            rankedFacts.forEach { fact -> memoryDao.touchFactUsage(fact.key, usedAt) }
+            val localSystem = personalityEngine.systemPrompt(
+                rankedFacts,
+                turnCount,
+                _pinnedLanguage.value,
+                toneDirective,
+            )
+            val localPrompt = history.joinToString("\n") { turn ->
+                "${turn.role.uppercase()}: ${turn.content}"
+            }
+            val localResult = modelMesh.complete(
+                contract = TaskContract(
+                    task = InferenceTaskType.REASONING,
+                    privacySensitivity = PrivacySensitivity.HIGH,
+                    requiresOffline = true,
+                    allowCloud = false,
+                ),
+                userPrompt = localPrompt,
+                system = localSystem,
+                maxTokens = 1024,
+            )
+            when (localResult) {
+                is ClaudeResult.Success -> {
+                    respond(
+                        localResult.text,
+                        extractFacts = true,
+                        sourceUserMessage = userMessage,
+                    )
+                }
+                is ClaudeResult.Failure -> {
+                    val fallback = if (!online) {
+                        offlineMessage()
+                    } else {
+                        "Cloud AI is not configured, and this device does not currently have " +
+                            "a ready on-device Gemini Nano/AICore model for this request. " +
+                            "NUA's local memory and device actions still work; you can add a " +
+                            "Claude API key in Settings for cloud conversations."
+                    }
+                    respond(fallback, extractFacts = false)
+                }
+            }
+            return
+        }
+
+        // Cloud path: streamed Claude remains available only when the owner explicitly
+        // configured a key and the device is online. Sensitive facts are removed before
+        // the prompt leaves the device.
+        val (relevantFacts, _egressDecision) =
+            DataEgressGateway.filterFacts(capsule = null, facts = rankedFacts)
+        val usedAt = System.currentTimeMillis()
+        relevantFacts.forEach { fact -> memoryDao.touchFactUsage(fact.key, usedAt) }
+        val system = personalityEngine.systemPrompt(
+            relevantFacts,
+            turnCount,
+            _pinnedLanguage.value,
+            toneDirective,
+        )
 
         val fullText = StringBuilder()
         var spokenUpTo = 0
