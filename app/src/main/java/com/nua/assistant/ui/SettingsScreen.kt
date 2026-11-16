@@ -76,12 +76,14 @@ import com.nua.assistant.memory.AutonomyContractEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.DiagnosticStatus
+import com.nua.assistant.decisions.counterfactualIneligibilityReasonFor
 import com.nua.assistant.security.BiometricGate
 import com.nua.assistant.security.guardian.SafetyAnomaly
 import com.nua.assistant.security.encryptionAuditEntries
 import com.nua.assistant.trust.badgeLabel
 import com.nua.assistant.trust.countsAsFailure
 import com.nua.assistant.trust.daysUntilExpiry
+import com.nua.assistant.trust.ShadowAccuracy
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
@@ -642,6 +644,7 @@ private fun AddGeofenceDialog(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PersonalityCard(
     axes: PersonalityAxes,
