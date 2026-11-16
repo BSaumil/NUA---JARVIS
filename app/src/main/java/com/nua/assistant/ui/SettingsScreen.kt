@@ -62,7 +62,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.nua.assistant.ai.DirectnessLevel
+import com.nua.assistant.ai.HumorLevel
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.ai.PersonalityAxes
 import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
@@ -101,6 +104,8 @@ fun SettingsScreen(
     onSetFactPrivacyLevel: (id: Long, level: MemoryPrivacyLevel) -> Unit,
     pinnedLanguage: NuaLanguage?,
     onLanguageSelected: (NuaLanguage?) -> Unit,
+    personalityAxes: PersonalityAxes,
+    onPersonalityAxesChanged: (PersonalityAxes) -> Unit,
     briefingSchedule: BriefingSchedule,
     onBriefingScheduleChanged: (BriefingSchedule) -> Unit,
     repairLevel: RepairLevel,
@@ -167,6 +172,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { LanguageCard(pinnedLanguage, onLanguageSelected) }
+            item { PersonalityCard(personalityAxes, onPersonalityAxesChanged) }
             item { BriefingScheduleCard(briefingSchedule, onBriefingScheduleChanged) }
             item { WakeWordsCard() }
             item { VoiceIdCard(voiceEnrolled, enrollmentProgress, onRecordEnrollmentClip, onResetVoiceEnrollment) }
@@ -605,6 +611,42 @@ private fun AddGeofenceDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun PersonalityCard(
+    axes: PersonalityAxes,
+    onChanged: (PersonalityAxes) -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Personality", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "These are your explicit preferences. They nudge NUA's delivery without changing its safety rules or earned familiarity.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Humor", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HumorLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = axes.humor == level,
+                        onClick = { onChanged(axes.copy(humor = level)) },
+                        label = { Text(level.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                    )
+                }
+            }
+            Text("Directness", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DirectnessLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = axes.directness == level,
+                        onClick = { onChanged(axes.copy(directness = level)) },
+                        label = { Text(level.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
