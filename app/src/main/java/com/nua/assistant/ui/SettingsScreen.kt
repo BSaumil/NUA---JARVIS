@@ -834,6 +834,60 @@ private fun displayActionType(actionType: NuaActionType): String = when (actionT
 }
 
 @Composable
+private fun AutonomyContractsCard(
+    contracts: List<AutonomyContractEntity>,
+    anomalies: List<SafetyAnomaly>,
+    shadowAccuracyByActionType: Map<String, ShadowAccuracy>,
+    onRevokeContract: (NuaActionType) -> Unit,
+) {
+    if (contracts.isEmpty()) return
+    Card {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Autonomy contracts", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Scoped autonomy with its own expiry. Shadow contracts predict what they would decide without acting.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            contracts.forEach { contract ->
+                val actionType = runCatching { NuaActionType.valueOf(contract.actionType) }.getOrNull()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(modifier = Modifier.weight(1f).padding(vertical = 4.dp)) {
+                        Text(actionType?.let(::displayActionType) ?: contract.actionType, style = MaterialTheme.typography.bodySmall)
+                        val status = buildString {
+                            append(if (contract.active) "active" else "suspended")
+                            if (contract.shadowMode) append(" · shadow")
+                            contract.riskCeiling?.let { append(" · up to ${it.label}") }
+                            if (contract.maxPerWindow != null) append(" · max ${contract.maxPerWindow}/window")
+                        }
+                        Text(status, style = MaterialTheme.typography.labelSmall)
+                        if (contract.shadowMode) {
+                            val accuracy = shadowAccuracyByActionType[contract.actionType]
+                            val accuracyText = if (accuracy == null || accuracy.totalResolved == 0) {
+                                "No resolved predictions yet."
+                            } else {
+                                val rate = ((accuracy.accuracyRate ?: 0.0) * 100).toInt()
+                                "$rate% accurate over ${accuracy.totalResolved}; ${accuracy.falsePositives} unsafe false positives."
+                            }
+                            Text(accuracyText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    if (actionType != null && contract.active) {
+                        TextButton(onClick = { onRevokeContract(actionType) }) { Text("Revoke") }
+                    }
+                }
+            }
+            if (anomalies.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Sentinel flagged", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                anomalies.forEach { anomaly ->
+                    Text("• ${anomaly.subject}: ${anomaly.description}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun AuditTrailCard(actionOutcomes: List<ActionOutcomeEntity>) {
     Card {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -1001,6 +1055,9 @@ private fun DecisionsCard(
     onAdd: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordOutcome: (id: Long, outcome: String) -> Unit,
     onRemove: (Long) -> Unit,
+    counterfactualResults: Map<Long, String>,
+    counterfactualLoadingIds: Set<Long>,
+    onRunCounterfactual: (DecisionEntity) -> Unit,
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var outcomeTargetId by remember { mutableStateOf<Long?>(null) }
@@ -1042,6 +1099,21 @@ private fun DecisionsCard(
                                 )
                             } else {
                                 TextButton(onClick = { outcomeTargetId = decision.id }) { Text("Record outcome") }
+                            }
+                            if (counterfactualIneligibilityReasonFor(decision) == null) {
+                                counterfactualResults[decision.id]?.let { speculation ->
+                                    Text(
+                                        "What if: $speculation",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { onRunCounterfactual(decision) },
+                                    enabled = decision.id !in counterfactualLoadingIds,
+                                ) {
+                                    Text(if (decision.id in counterfactualLoadingIds) "Thinking…" else "What if?")
+                                }
                             }
                         }
                         IconButton(onClick = { onRemove(decision.id) }) {
