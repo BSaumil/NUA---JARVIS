@@ -135,6 +135,8 @@ fun SettingsScreen(
     onRemoveVisionMonitor: (Long) -> Unit,
     diagnostics: List<DiagnosticCheck>,
     testingApiConnection: Boolean,
+    hasCloudApiKey: Boolean,
+    onConfigureCloudApi: () -> Unit,
     onRefreshDiagnostics: () -> Unit,
     onTestApiConnection: () -> Unit,
     onBack: (() -> Unit)?,
@@ -169,6 +171,7 @@ fun SettingsScreen(
             item { WakeWordsCard() }
             item { VoiceIdCard(voiceEnrolled, enrollmentProgress, onRecordEnrollmentClip, onResetVoiceEnrollment) }
             item { GeofenceCard(geofences, onAddGeofence, onRemoveGeofence) }
+            item { CloudAiCard(hasCloudApiKey, onConfigureCloudApi) }
             item { UsageCard(usageThisMonth) }
             item {
                 TrustCard(
@@ -602,6 +605,31 @@ private fun AddGeofenceDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun CloudAiCard(
+    hasCloudApiKey: Boolean,
+    onConfigureCloudApi: () -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("AI mode", style = MaterialTheme.typography.titleSmall)
+            Text(
+                if (hasCloudApiKey) {
+                    "Local/device intelligence remains available, and Claude cloud fallback is configured."
+                } else {
+                    "Local-only mode. NUA can run device actions, local memory and Gemini Nano/AICore " +
+                        "text intelligence when supported by this device. Claude cloud access is optional."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onConfigureCloudApi) {
+                Text(if (hasCloudApiKey) "Replace Claude API key" else "Add optional Claude API key")
+            }
+        }
+    }
 }
 
 @Composable
