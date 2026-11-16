@@ -72,10 +72,12 @@ import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.goals.GoalType
 import com.nua.assistant.evolution.RepairLevel
 import com.nua.assistant.memory.ActionOutcomeEntity
+import com.nua.assistant.memory.AutonomyContractEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.DiagnosticStatus
 import com.nua.assistant.security.BiometricGate
+import com.nua.assistant.security.guardian.SafetyAnomaly
 import com.nua.assistant.security.encryptionAuditEntries
 import com.nua.assistant.trust.badgeLabel
 import com.nua.assistant.trust.countsAsFailure
@@ -125,6 +127,11 @@ fun SettingsScreen(
     onEnableAutoApprove: (NuaActionType) -> Unit,
     activeAutonomyGrants: List<AutonomyPreferenceEntity>,
     onDisableAutoApprove: (NuaActionType) -> Unit,
+    autonomyContracts: List<AutonomyContractEntity>,
+    contractAnomalies: List<SafetyAnomaly>,
+    shadowAccuracyByActionType: Map<String, ShadowAccuracy>,
+    onCreateShadowContract: (NuaActionType) -> Unit,
+    onRevokeContract: (NuaActionType) -> Unit,
     goals: List<GoalEntity>,
     goalObservations: List<GoalObservationEntity>,
     onAddGoal: (text: String, type: GoalType) -> Unit,
@@ -135,6 +142,9 @@ fun SettingsScreen(
     onAddDecision: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordDecisionOutcome: (id: Long, outcome: String) -> Unit,
     onRemoveDecision: (Long) -> Unit,
+    counterfactualResults: Map<Long, String>,
+    counterfactualLoadingIds: Set<Long>,
+    onRunCounterfactual: (DecisionEntity) -> Unit,
     visionMonitors: List<VisionMonitorEntity>,
     onRecheckVisionMonitor: (monitorId: Long, uri: Uri) -> Unit,
     onRemoveVisionMonitor: (Long) -> Unit,
@@ -187,12 +197,31 @@ fun SettingsScreen(
                     onEnableAutoApprove,
                     activeAutonomyGrants,
                     onDisableAutoApprove,
+                    onCreateShadowContract,
+                )
+            }
+            item {
+                AutonomyContractsCard(
+                    contracts = autonomyContracts,
+                    anomalies = contractAnomalies,
+                    shadowAccuracyByActionType = shadowAccuracyByActionType,
+                    onRevokeContract = onRevokeContract,
                 )
             }
             item { AuditTrailCard(actionOutcomes) }
             item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
             item { DreamsCard(dreams, dreamConnections) }
-            item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
+            item {
+                DecisionsCard(
+                    decisions,
+                    onAddDecision,
+                    onRecordDecisionOutcome,
+                    onRemoveDecision,
+                    counterfactualResults,
+                    counterfactualLoadingIds,
+                    onRunCounterfactual,
+                )
+            }
             item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
             item { DiagnosticsCard(diagnostics, testingApiConnection, onRefreshDiagnostics, onTestApiConnection) }
             item { EvolutionCard(repairLevel, onRepairLevelChanged) }
@@ -707,6 +736,7 @@ private fun TrustCard(
     onEnableAutoApprove: (NuaActionType) -> Unit,
     activeAutonomyGrants: List<AutonomyPreferenceEntity>,
     onDisableAutoApprove: (NuaActionType) -> Unit,
+    onCreateShadowContract: (NuaActionType) -> Unit,
 ) {
     Card {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -721,6 +751,17 @@ private fun TrustCard(
                 text = if (trustScore != null) "$trustScore%" else "Loading…",
                 style = MaterialTheme.typography.headlineSmall,
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Try shadow mode", style = MaterialTheme.typography.labelMedium)
+            Text(
+                "NUA predicts whether it would act, but still asks you every time. Use this before granting live autonomy.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row {
+                TextButton(onClick = { onCreateShadowContract(NuaActionType.SMS_SEND) }) { Text("Texts") }
+                TextButton(onClick = { onCreateShadowContract(NuaActionType.REPLY_TO_NOTIFICATION) }) { Text("Replies") }
+            }
 
             if (autonomySuggestions.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
