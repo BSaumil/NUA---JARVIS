@@ -183,6 +183,9 @@ dependencies {
     // Geofenced proactive suggestions (geofencing/GeofenceManager.kt)
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
+    // Read-only phone -> Wear OS Presence transport. This does not grant remote action authority.
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
+
     // Android Auto entry point (car/NuaCarAppService.kt)
     implementation("androidx.car.app:app:1.4.0")
 
