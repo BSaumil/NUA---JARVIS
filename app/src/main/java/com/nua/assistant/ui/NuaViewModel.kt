@@ -88,6 +88,7 @@ import com.nua.assistant.automation.uaf.StepOutcomeState
 import com.nua.assistant.automation.uaf.WorkflowExecutor
 import com.nua.assistant.automation.uaf.encodePlanReminders
 import com.nua.assistant.privacy.PrivacyRepository
+import com.nua.assistant.presence.WearPresencePublisher
 import com.nua.assistant.privacy.buildDataExport
 import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.timeline.TimelineBuilder
@@ -200,6 +201,7 @@ class NuaViewModel @Inject constructor(
     private val counterfactualSimulator: CounterfactualSimulator,
     private val privacyRepository: PrivacyRepository,
     private val worldModelRepository: WorldModelRepository,
+    private val wearPresencePublisher: WearPresencePublisher,
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
     private val nuaStateRepository: NuaStateRepository,
     private val skillCatalog: SkillCatalog,
@@ -484,6 +486,7 @@ class NuaViewModel @Inject constructor(
         }
         voiceManager.setOnFinalSpeechDoneListener { onReplyFinishedSpeaking() }
         viewModelScope.launch { geofenceManager.registerAll() }
+        wearPresencePublisher.publishPhoneActive()
         viewModelScope.launch { maybeShowSelfReport() }
         viewModelScope.launch { maybeShowDream() }
     }
