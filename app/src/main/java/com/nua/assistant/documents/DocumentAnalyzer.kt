@@ -1,9 +1,13 @@
 package com.nua.assistant.documents
 
-import com.nua.assistant.ai.CLAUDE_MODEL_CONVERSATION
 import com.nua.assistant.ai.ClaudeApiClient
 import com.nua.assistant.ai.ClaudeResult
 import com.nua.assistant.ai.extractJsonPayload
+import com.nua.assistant.ai.mesh.InferenceTaskType
+import com.nua.assistant.ai.mesh.ModelMesh
+import com.nua.assistant.ai.mesh.PrivacySensitivity
+import com.nua.assistant.ai.mesh.TaskContract
+import com.nua.assistant.ai.mesh.TaskProfile
 import com.nua.assistant.security.FIREWALL_SYSTEM_DIRECTIVE
 import com.nua.assistant.security.UntrustedSource
 import com.nua.assistant.security.wrapUntrusted
@@ -54,16 +58,16 @@ private val ANSWER_SYSTEM_PROMPT = """
 """.trimIndent()
 
 /**
- * The Claude-calling half of Document Intelligence: turns page images into text
- * ([transcribePage]), turns full text into a summary plus optional expiry date
- * ([summarize]), and answers targeted questions against one or more documents' text
- * ([answer]) — the same targeted-Q&A and comparison the spec asks for, since comparing
- * two documents is just answering a question with both texts as context. Extraction
- * itself (PdfTextExtractor, DocxTextExtractor) is separate and needs no Claude call.
+ * Document Intelligence provider boundary. Page-image transcription still needs a
+ * vision-capable cloud provider today, because NUA's verified private OS provider is
+ * text-only. Text summarization and Q&A are routed through Model Mesh, so DOCX/extracted
+ * text can run on Gemini Nano/AICore with no Claude key when the device supports it, with
+ * cloud fallback only when the normal Model Mesh policy permits it.
  */
 @Singleton
 class DocumentAnalyzer @Inject constructor(
     private val claudeApiClient: ClaudeApiClient,
+    private val modelMesh: ModelMesh,
     private val json: Json,
 ) {
 
@@ -78,10 +82,27 @@ class DocumentAnalyzer @Inject constructor(
     }
 
     suspend fun summarize(text: String): DocumentSummary {
-        val result = claudeApiClient.complete(
-            userPrompt = wrapUntrusted(redactSensitivePatterns(text.take(MAX_CONTEXT_CHARS)), UntrustedSource.DOCUMENT),
+        val prompt = wrapUntrusted(
+            redactSensitivePatterns(text.take(MAX_CONTEXT_CHARS)),
+            UntrustedSource.DOCUMENT,
+        )
+        val result = modelMesh.completeValidated(
+            contract = TaskContract(
+                task = InferenceTaskType.SUMMARIZATION,
+                privacySensitivity = PrivacySensitivity.MEDIUM,
+                profile = TaskProfile(structuredOutput = true),
+            ),
+            userPrompt = prompt,
             system = SUMMARY_SYSTEM_PROMPT,
             maxTokens = 500,
+            validator = { raw ->
+                runCatching {
+                    json.decodeFromString(
+                        DocumentSummaryDto.serializer(),
+                        extractJsonPayload(raw),
+                    )
+                }.isSuccess
+            },
         )
         val replyText = (result as? ClaudeResult.Success)?.text
             ?: return DocumentSummary("Couldn't summarize this document.", null)
@@ -101,10 +122,14 @@ class DocumentAnalyzer @Inject constructor(
         }
         // The question comes first and is never wrapped, so it's unambiguous which part
         // of the prompt is the user's actual instruction versus document data to read.
-        val result = claudeApiClient.complete(
+        val result = modelMesh.complete(
+            contract = TaskContract(
+                task = InferenceTaskType.REASONING,
+                privacySensitivity = PrivacySensitivity.MEDIUM,
+                requiresFrontierCapability = true,
+            ),
             userPrompt = "Question: $question\n\n$context",
             system = ANSWER_SYSTEM_PROMPT,
-            model = CLAUDE_MODEL_CONVERSATION,
             maxTokens = 600,
         )
         return (result as? ClaudeResult.Success)?.text ?: "Couldn't get an answer right now."

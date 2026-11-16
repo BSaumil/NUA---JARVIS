@@ -62,21 +62,28 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.nua.assistant.ai.DirectnessLevel
+import com.nua.assistant.ai.HumorLevel
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.ai.PersonalityAxes
 import com.nua.assistant.ai.UsageSummary
 import com.nua.assistant.automation.NuaAccessibilityService
 import com.nua.assistant.briefing.BriefingSchedule
 import com.nua.assistant.goals.GoalType
 import com.nua.assistant.evolution.RepairLevel
 import com.nua.assistant.memory.ActionOutcomeEntity
+import com.nua.assistant.memory.AutonomyContractEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.DiagnosticStatus
+import com.nua.assistant.decisions.counterfactualIneligibilityReasonFor
 import com.nua.assistant.security.BiometricGate
+import com.nua.assistant.security.guardian.SafetyAnomaly
 import com.nua.assistant.security.encryptionAuditEntries
 import com.nua.assistant.trust.badgeLabel
 import com.nua.assistant.trust.countsAsFailure
 import com.nua.assistant.trust.daysUntilExpiry
+import com.nua.assistant.trust.ShadowAccuracy
 import com.nua.assistant.memory.DecisionEntity
 import com.nua.assistant.memory.DreamEntity
 import com.nua.assistant.memory.GeofenceEntity
@@ -101,6 +108,8 @@ fun SettingsScreen(
     onSetFactPrivacyLevel: (id: Long, level: MemoryPrivacyLevel) -> Unit,
     pinnedLanguage: NuaLanguage?,
     onLanguageSelected: (NuaLanguage?) -> Unit,
+    personalityAxes: PersonalityAxes,
+    onPersonalityAxesChanged: (PersonalityAxes) -> Unit,
     briefingSchedule: BriefingSchedule,
     onBriefingScheduleChanged: (BriefingSchedule) -> Unit,
     repairLevel: RepairLevel,
@@ -120,6 +129,11 @@ fun SettingsScreen(
     onEnableAutoApprove: (NuaActionType) -> Unit,
     activeAutonomyGrants: List<AutonomyPreferenceEntity>,
     onDisableAutoApprove: (NuaActionType) -> Unit,
+    autonomyContracts: List<AutonomyContractEntity>,
+    contractAnomalies: List<SafetyAnomaly>,
+    shadowAccuracyByActionType: Map<String, ShadowAccuracy>,
+    onCreateShadowContract: (NuaActionType) -> Unit,
+    onRevokeContract: (NuaActionType) -> Unit,
     goals: List<GoalEntity>,
     goalObservations: List<GoalObservationEntity>,
     onAddGoal: (text: String, type: GoalType) -> Unit,
@@ -130,11 +144,16 @@ fun SettingsScreen(
     onAddDecision: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordDecisionOutcome: (id: Long, outcome: String) -> Unit,
     onRemoveDecision: (Long) -> Unit,
+    counterfactualResults: Map<Long, String>,
+    counterfactualLoadingIds: Set<Long>,
+    onRunCounterfactual: (DecisionEntity) -> Unit,
     visionMonitors: List<VisionMonitorEntity>,
     onRecheckVisionMonitor: (monitorId: Long, uri: Uri) -> Unit,
     onRemoveVisionMonitor: (Long) -> Unit,
     diagnostics: List<DiagnosticCheck>,
     testingApiConnection: Boolean,
+    hasCloudApiKey: Boolean,
+    onConfigureCloudApi: () -> Unit,
     onRefreshDiagnostics: () -> Unit,
     onTestApiConnection: () -> Unit,
     onBack: (() -> Unit)?,
@@ -165,10 +184,12 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { LanguageCard(pinnedLanguage, onLanguageSelected) }
+            item { PersonalityCard(personalityAxes, onPersonalityAxesChanged) }
             item { BriefingScheduleCard(briefingSchedule, onBriefingScheduleChanged) }
             item { WakeWordsCard() }
             item { VoiceIdCard(voiceEnrolled, enrollmentProgress, onRecordEnrollmentClip, onResetVoiceEnrollment) }
             item { GeofenceCard(geofences, onAddGeofence, onRemoveGeofence) }
+            item { CloudAiCard(hasCloudApiKey, onConfigureCloudApi) }
             item { UsageCard(usageThisMonth) }
             item {
                 TrustCard(
@@ -178,12 +199,31 @@ fun SettingsScreen(
                     onEnableAutoApprove,
                     activeAutonomyGrants,
                     onDisableAutoApprove,
+                    onCreateShadowContract,
+                )
+            }
+            item {
+                AutonomyContractsCard(
+                    contracts = autonomyContracts,
+                    anomalies = contractAnomalies,
+                    shadowAccuracyByActionType = shadowAccuracyByActionType,
+                    onRevokeContract = onRevokeContract,
                 )
             }
             item { AuditTrailCard(actionOutcomes) }
             item { GoalsCard(goals, goalObservations, onAddGoal, onRemoveGoal) }
             item { DreamsCard(dreams, dreamConnections) }
-            item { DecisionsCard(decisions, onAddDecision, onRecordDecisionOutcome, onRemoveDecision) }
+            item {
+                DecisionsCard(
+                    decisions,
+                    onAddDecision,
+                    onRecordDecisionOutcome,
+                    onRemoveDecision,
+                    counterfactualResults,
+                    counterfactualLoadingIds,
+                    onRunCounterfactual,
+                )
+            }
             item { VisionMonitorsCard(visionMonitors, onRecheckVisionMonitor, onRemoveVisionMonitor) }
             item { DiagnosticsCard(diagnostics, testingApiConnection, onRefreshDiagnostics, onTestApiConnection) }
             item { EvolutionCard(repairLevel, onRepairLevelChanged) }
@@ -604,6 +644,68 @@ private fun AddGeofenceDialog(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PersonalityCard(
+    axes: PersonalityAxes,
+    onChanged: (PersonalityAxes) -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Personality", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "These are your explicit preferences. They nudge NUA's delivery without changing its safety rules or earned familiarity.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Humor", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HumorLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = axes.humor == level,
+                        onClick = { onChanged(axes.copy(humor = level)) },
+                        label = { Text(level.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                    )
+                }
+            }
+            Text("Directness", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DirectnessLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = axes.directness == level,
+                        onClick = { onChanged(axes.copy(directness = level)) },
+                        label = { Text(level.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudAiCard(
+    hasCloudApiKey: Boolean,
+    onConfigureCloudApi: () -> Unit,
+) {
+    Card {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("AI mode", style = MaterialTheme.typography.titleSmall)
+            Text(
+                if (hasCloudApiKey) {
+                    "Local/device intelligence remains available, and Claude cloud fallback is configured."
+                } else {
+                    "Local-only mode. NUA can run device actions, local memory and Gemini Nano/AICore " +
+                        "text intelligence when supported by this device. Claude cloud access is optional."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onConfigureCloudApi) {
+                Text(if (hasCloudApiKey) "Replace Claude API key" else "Add optional Claude API key")
+            }
+        }
+    }
+}
+
 @Composable
 private fun UsageCard(usageThisMonth: UsageSummary?) {
     Card {
@@ -637,6 +739,7 @@ private fun TrustCard(
     onEnableAutoApprove: (NuaActionType) -> Unit,
     activeAutonomyGrants: List<AutonomyPreferenceEntity>,
     onDisableAutoApprove: (NuaActionType) -> Unit,
+    onCreateShadowContract: (NuaActionType) -> Unit,
 ) {
     Card {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -651,6 +754,17 @@ private fun TrustCard(
                 text = if (trustScore != null) "$trustScore%" else "Loading…",
                 style = MaterialTheme.typography.headlineSmall,
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Try shadow mode", style = MaterialTheme.typography.labelMedium)
+            Text(
+                "NUA predicts whether it would act, but still asks you every time. Use this before granting live autonomy.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row {
+                TextButton(onClick = { onCreateShadowContract(NuaActionType.SMS_SEND) }) { Text("Texts") }
+                TextButton(onClick = { onCreateShadowContract(NuaActionType.REPLY_TO_NOTIFICATION) }) { Text("Replies") }
+            }
 
             if (autonomySuggestions.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -720,6 +834,60 @@ private fun displayActionType(actionType: NuaActionType): String = when (actionT
     NuaActionType.PLAN_TASK -> "confirming task plans"
     NuaActionType.SMS_SEND -> "sending texts"
     else -> actionType.name.lowercase().replace('_', ' ')
+}
+
+@Composable
+private fun AutonomyContractsCard(
+    contracts: List<AutonomyContractEntity>,
+    anomalies: List<SafetyAnomaly>,
+    shadowAccuracyByActionType: Map<String, ShadowAccuracy>,
+    onRevokeContract: (NuaActionType) -> Unit,
+) {
+    if (contracts.isEmpty()) return
+    Card {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Autonomy contracts", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Scoped autonomy with its own expiry. Shadow contracts predict what they would decide without acting.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            contracts.forEach { contract ->
+                val actionType = runCatching { NuaActionType.valueOf(contract.actionType) }.getOrNull()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(modifier = Modifier.weight(1f).padding(vertical = 4.dp)) {
+                        Text(actionType?.let(::displayActionType) ?: contract.actionType, style = MaterialTheme.typography.bodySmall)
+                        val status = buildString {
+                            append(if (contract.active) "active" else "suspended")
+                            if (contract.shadowMode) append(" · shadow")
+                            contract.riskCeiling?.let { append(" · up to ${it.label}") }
+                            if (contract.maxPerWindow != null) append(" · max ${contract.maxPerWindow}/window")
+                        }
+                        Text(status, style = MaterialTheme.typography.labelSmall)
+                        if (contract.shadowMode) {
+                            val accuracy = shadowAccuracyByActionType[contract.actionType]
+                            val accuracyText = if (accuracy == null || accuracy.totalResolved == 0) {
+                                "No resolved predictions yet."
+                            } else {
+                                val rate = ((accuracy.accuracyRate ?: 0.0) * 100).toInt()
+                                "$rate% accurate over ${accuracy.totalResolved}; ${accuracy.falsePositives} unsafe false positives."
+                            }
+                            Text(accuracyText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    if (actionType != null && contract.active) {
+                        TextButton(onClick = { onRevokeContract(actionType) }) { Text("Revoke") }
+                    }
+                }
+            }
+            if (anomalies.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Sentinel flagged", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                anomalies.forEach { anomaly ->
+                    Text("• ${anomaly.subject}: ${anomaly.description}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -890,6 +1058,9 @@ private fun DecisionsCard(
     onAdd: (decision: String, reasoning: String?, facts: String?, unknowns: String?, constraints: String?, options: String?) -> Unit,
     onRecordOutcome: (id: Long, outcome: String) -> Unit,
     onRemove: (Long) -> Unit,
+    counterfactualResults: Map<Long, String>,
+    counterfactualLoadingIds: Set<Long>,
+    onRunCounterfactual: (DecisionEntity) -> Unit,
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var outcomeTargetId by remember { mutableStateOf<Long?>(null) }
@@ -931,6 +1102,21 @@ private fun DecisionsCard(
                                 )
                             } else {
                                 TextButton(onClick = { outcomeTargetId = decision.id }) { Text("Record outcome") }
+                            }
+                            if (counterfactualIneligibilityReasonFor(decision) == null) {
+                                counterfactualResults[decision.id]?.let { speculation ->
+                                    Text(
+                                        "What if: $speculation",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { onRunCounterfactual(decision) },
+                                    enabled = decision.id !in counterfactualLoadingIds,
+                                ) {
+                                    Text(if (decision.id in counterfactualLoadingIds) "Thinking…" else "What if?")
+                                }
                             }
                         }
                         IconButton(onClick = { onRemove(decision.id) }) {

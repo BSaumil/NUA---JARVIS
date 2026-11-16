@@ -1,9 +1,14 @@
 package com.nua.assistant.ui.trust
 
 import com.nua.assistant.ai.NuaActionType
+import com.nua.assistant.memory.AutonomyContractEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
 import com.nua.assistant.memory.TrustLedgerEntity
+import com.nua.assistant.security.guardian.SafetyAnomaly
+import com.nua.assistant.security.guardian.auditContracts
+import com.nua.assistant.trust.ShadowAccuracy
 import com.nua.assistant.trust.TrustRepository
+import com.nua.assistant.trust.shadowAccuracyFor
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,6 +94,15 @@ class TrustUiController @Inject constructor(
     private val _activeAutonomyGrants = MutableStateFlow<List<AutonomyPreferenceEntity>>(emptyList())
     val activeAutonomyGrants: StateFlow<List<AutonomyPreferenceEntity>> = _activeAutonomyGrants.asStateFlow()
 
+    private val _autonomyContracts = MutableStateFlow<List<AutonomyContractEntity>>(emptyList())
+    val autonomyContracts: StateFlow<List<AutonomyContractEntity>> = _autonomyContracts.asStateFlow()
+
+    private val _contractAnomalies = MutableStateFlow<List<SafetyAnomaly>>(emptyList())
+    val contractAnomalies: StateFlow<List<SafetyAnomaly>> = _contractAnomalies.asStateFlow()
+
+    private val _shadowAccuracyByActionType = MutableStateFlow<Map<String, ShadowAccuracy>>(emptyMap())
+    val shadowAccuracyByActionType: StateFlow<Map<String, ShadowAccuracy>> = _shadowAccuracyByActionType.asStateFlow()
+
     /** Called when Settings opens — same reasoning as NuaViewModel's other refresh* functions: cheap local reads, not worth a live subscription. */
     suspend fun refresh() {
         val state = refreshedTrustState(
@@ -101,6 +115,7 @@ class TrustUiController @Inject constructor(
         _trustLedger.value = state.trustLedger
         _autonomySuggestions.value = state.autonomySuggestions
         _activeAutonomyGrants.value = state.activeAutonomyGrants
+        refreshContracts()
     }
 
     /** Immediate revoke — the flip side of [enableAutoApprove], and Earned Autonomy's
@@ -110,6 +125,34 @@ class TrustUiController @Inject constructor(
         trustRepository.setAutoApprove(actionType, enabled = false)
         _activeAutonomyGrants.value = trustRepository.activeAutonomyGrants()
         _autonomySuggestions.value = trustRepository.autonomySuggestions()
+    }
+
+    private suspend fun refreshContracts() {
+        val contracts = trustRepository.allContracts()
+        _autonomyContracts.value = contracts
+        _contractAnomalies.value = auditContracts(contracts, System.currentTimeMillis())
+
+        val resolved = trustRepository.recentResolvedShadowPredictions(limit = 100)
+        _shadowAccuracyByActionType.value = contracts.associate { contract ->
+            contract.actionType to shadowAccuracyFor(
+                resolved.filter { prediction ->
+                    prediction.contractId == contract.id || prediction.actionType == contract.actionType
+                },
+            )
+        }
+    }
+
+    suspend fun createShadowContract(actionType: NuaActionType) {
+        trustRepository.createContract(
+            actionType = actionType,
+            shadowMode = true,
+        )
+        refreshContracts()
+    }
+
+    suspend fun revokeContract(actionType: NuaActionType) {
+        trustRepository.revokeContract(actionType)
+        refreshContracts()
     }
 
     suspend fun enableAutoApprove(actionType: NuaActionType) {

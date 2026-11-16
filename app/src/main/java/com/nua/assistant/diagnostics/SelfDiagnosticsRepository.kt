@@ -40,7 +40,7 @@ class SelfDiagnosticsRepository @Inject constructor(
     /** A real, lightweight round trip to Claude — the only way to honestly confirm the key works, not just that one is set. */
     suspend fun testApiConnection(): DiagnosticCheck {
         if (!secureKeyRepository.hasApiKey()) {
-            return DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.NOT_CONFIGURED, "No Claude API key set — add one in Settings to enable NUA.")
+            return DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.NOT_CONFIGURED, "Claude cloud key not configured — NUA remains usable in local-only mode; add a key in Settings only for cloud AI.")
         }
         return when (val result = claudeApiClient.complete(userPrompt = "Reply with the single word: ok", maxTokens = 8)) {
             is ClaudeResult.Success -> DiagnosticCheck(DiagnosticCategory.API, DiagnosticStatus.OK, "Connection verified — Claude responded successfully.")

@@ -79,6 +79,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val facts by viewModel.facts.collectAsState()
     val pinnedLanguage by viewModel.pinnedLanguage.collectAsState()
+    val personalityAxes by viewModel.personalityAxes.collectAsState()
     val briefingSchedule by viewModel.briefingSchedule.collectAsState()
     val repairLevel by viewModel.repairLevel.collectAsState()
     val voiceEnrolled by viewModel.voiceEnrolled.collectAsState()
@@ -90,11 +91,16 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val actionOutcomes by viewModel.actionOutcomes.collectAsState()
     val autonomySuggestions by viewModel.autonomySuggestions.collectAsState()
     val activeAutonomyGrants by viewModel.activeAutonomyGrants.collectAsState()
+    val autonomyContracts by viewModel.autonomyContracts.collectAsState()
+    val contractAnomalies by viewModel.contractAnomalies.collectAsState()
+    val shadowAccuracyByActionType by viewModel.shadowAccuracyByActionType.collectAsState()
     val goals by viewModel.goals.collectAsState()
     val goalObservations by viewModel.goalObservations.collectAsState()
     val dreams by viewModel.dreams.collectAsState()
     val dreamConnections by viewModel.dreamConnections.collectAsState()
     val decisions by viewModel.decisions.collectAsState()
+    val counterfactualResults by viewModel.counterfactualResults.collectAsState()
+    val counterfactualLoadingIds by viewModel.counterfactualLoadingIds.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
     val secondBrainQuery by viewModel.secondBrainQuery.collectAsState()
     val secondBrainResults by viewModel.secondBrainResults.collectAsState()
@@ -110,6 +116,7 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val paletteQuery by viewModel.paletteQuery.collectAsState()
     val paletteMemories by viewModel.paletteMemories.collectAsState()
     var showPalette by remember { mutableStateOf(false) }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
     // One destination enum replaces the pile of boolean show* flags this screen used to
     // navigate with — each new screen used to mean another flag and another early return,
     // and the user got no sense of where they were.
@@ -223,6 +230,8 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onSetFactPrivacyLevel = viewModel::setFactPrivacyLevel,
                     pinnedLanguage = pinnedLanguage,
                     onLanguageSelected = viewModel::setPinnedLanguage,
+                    personalityAxes = personalityAxes,
+                    onPersonalityAxesChanged = viewModel::setPersonalityAxes,
                     briefingSchedule = briefingSchedule,
                     onBriefingScheduleChanged = viewModel::setBriefingSchedule,
                     repairLevel = repairLevel,
@@ -242,6 +251,11 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onEnableAutoApprove = viewModel::enableAutoApprove,
                     activeAutonomyGrants = activeAutonomyGrants,
                     onDisableAutoApprove = viewModel::disableAutoApprove,
+                    autonomyContracts = autonomyContracts,
+                    contractAnomalies = contractAnomalies,
+                    shadowAccuracyByActionType = shadowAccuracyByActionType,
+                    onCreateShadowContract = viewModel::createShadowContract,
+                    onRevokeContract = viewModel::revokeContract,
                     goals = goals,
                     goalObservations = goalObservations,
                     onAddGoal = viewModel::addGoal,
@@ -252,11 +266,16 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onAddDecision = viewModel::addDecision,
                     onRecordDecisionOutcome = viewModel::recordDecisionOutcome,
                     onRemoveDecision = viewModel::removeDecision,
+                    counterfactualResults = counterfactualResults,
+                    counterfactualLoadingIds = counterfactualLoadingIds,
+                    onRunCounterfactual = viewModel::runCounterfactual,
                     visionMonitors = visionMonitors,
                     onRecheckVisionMonitor = viewModel::recheckVisionMonitor,
                     onRemoveVisionMonitor = viewModel::removeVisionMonitor,
                     diagnostics = diagnostics,
                     testingApiConnection = testingApiConnection,
+                    hasCloudApiKey = !uiState.needsApiKey,
+                    onConfigureCloudApi = { showApiKeyDialog = true },
                     onRefreshDiagnostics = viewModel::refreshDiagnostics,
                     onTestApiConnection = viewModel::testApiConnection,
                     onBack = null,
@@ -265,8 +284,14 @@ fun NuaScreen(viewModel: NuaViewModel) {
         }
     }
 
-    if (uiState.needsApiKey) {
-        ApiKeyDialog(onSave = viewModel::saveApiKey)
+    if (showApiKeyDialog) {
+        ApiKeyDialog(
+            onSave = { key ->
+                viewModel.saveApiKey(key)
+                showApiKeyDialog = false
+            },
+            onDismiss = { showApiKeyDialog = false },
+        )
     }
 
     if (showPalette) {
@@ -509,23 +534,37 @@ private fun MessageBubble(message: ChatMessage) {
 }
 
 @Composable
-private fun ApiKeyDialog(onSave: (String) -> Unit) {
+private fun ApiKeyDialog(
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var apiKey by remember { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = { /* required before NUA can talk to Claude at all */ },
-        title = { Text("Add your Claude API key") },
+        onDismissRequest = onDismiss,
+        title = { Text("Cloud AI (optional)") },
         text = {
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                placeholder = { Text("sk-ant-...") },
-                singleLine = true,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "NUA works without a Claude API key using local/device features and " +
+                        "Gemini Nano/AICore when available. Add a Claude key only if you want " +
+                        "cloud conversations and cloud-only intelligence such as vision.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    placeholder = { Text("sk-ant-...") },
+                    singleLine = true,
+                )
+            }
         },
         confirmButton = {
             TextButton(onClick = { if (apiKey.isNotBlank()) onSave(apiKey) }, enabled = apiKey.isNotBlank()) {
-                Text("Save")
+                Text("Save key")
             }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Use local only") }
         },
     )
 }
