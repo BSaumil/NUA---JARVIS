@@ -91,11 +91,16 @@ fun NuaScreen(viewModel: NuaViewModel) {
     val actionOutcomes by viewModel.actionOutcomes.collectAsState()
     val autonomySuggestions by viewModel.autonomySuggestions.collectAsState()
     val activeAutonomyGrants by viewModel.activeAutonomyGrants.collectAsState()
+    val autonomyContracts by viewModel.autonomyContracts.collectAsState()
+    val contractAnomalies by viewModel.contractAnomalies.collectAsState()
+    val shadowAccuracyByActionType by viewModel.shadowAccuracyByActionType.collectAsState()
     val goals by viewModel.goals.collectAsState()
     val goalObservations by viewModel.goalObservations.collectAsState()
     val dreams by viewModel.dreams.collectAsState()
     val dreamConnections by viewModel.dreamConnections.collectAsState()
     val decisions by viewModel.decisions.collectAsState()
+    val counterfactualResults by viewModel.counterfactualResults.collectAsState()
+    val counterfactualLoadingIds by viewModel.counterfactualLoadingIds.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
     val secondBrainQuery by viewModel.secondBrainQuery.collectAsState()
     val secondBrainResults by viewModel.secondBrainResults.collectAsState()
@@ -246,6 +251,11 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onEnableAutoApprove = viewModel::enableAutoApprove,
                     activeAutonomyGrants = activeAutonomyGrants,
                     onDisableAutoApprove = viewModel::disableAutoApprove,
+                    autonomyContracts = autonomyContracts,
+                    contractAnomalies = contractAnomalies,
+                    shadowAccuracyByActionType = shadowAccuracyByActionType,
+                    onCreateShadowContract = viewModel::createShadowContract,
+                    onRevokeContract = viewModel::revokeContract,
                     goals = goals,
                     goalObservations = goalObservations,
                     onAddGoal = viewModel::addGoal,
@@ -256,6 +266,9 @@ fun NuaScreen(viewModel: NuaViewModel) {
                     onAddDecision = viewModel::addDecision,
                     onRecordDecisionOutcome = viewModel::recordDecisionOutcome,
                     onRemoveDecision = viewModel::removeDecision,
+                    counterfactualResults = counterfactualResults,
+                    counterfactualLoadingIds = counterfactualLoadingIds,
+                    onRunCounterfactual = viewModel::runCounterfactual,
                     visionMonitors = visionMonitors,
                     onRecheckVisionMonitor = viewModel::recheckVisionMonitor,
                     onRemoveVisionMonitor = viewModel::removeVisionMonitor,
