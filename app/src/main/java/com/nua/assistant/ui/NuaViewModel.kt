@@ -35,6 +35,8 @@ import com.nua.assistant.context.WhatNowAdvisor
 import com.nua.assistant.context.WhatNowResult
 import com.nua.assistant.context.chatSummary
 import com.nua.assistant.decisions.DecisionRepository
+import com.nua.assistant.decisions.CounterfactualResult
+import com.nua.assistant.decisions.CounterfactualSimulator
 import com.nua.assistant.diagnostics.DiagnosticCategory
 import com.nua.assistant.diagnostics.DiagnosticCheck
 import com.nua.assistant.diagnostics.SelfDiagnosticsRepository
@@ -42,6 +44,7 @@ import com.nua.assistant.documents.DocumentAnalyzer
 import com.nua.assistant.evolution.EvolutionSettingsStore
 import com.nua.assistant.evolution.RepairLevel
 import com.nua.assistant.security.UserUtterance
+import com.nua.assistant.security.guardian.SafetyAnomaly
 import com.nua.assistant.state.NuaState
 import com.nua.assistant.state.NuaStateRepository
 import com.nua.assistant.ui.orb.OrbState
@@ -90,6 +93,7 @@ import com.nua.assistant.sms.SmsSender
 import com.nua.assistant.timeline.TimelineBuilder
 import com.nua.assistant.timeline.TimelineEntry
 import com.nua.assistant.trust.ActionOutcomeState
+import com.nua.assistant.trust.ShadowAccuracy
 import com.nua.assistant.trust.AutonomyTier
 import com.nua.assistant.trust.finalAutoApproveDecision
 import com.nua.assistant.trust.TrustRepository
@@ -97,6 +101,7 @@ import com.nua.assistant.trust.idempotencyKeyFor
 import com.nua.assistant.trust.sameDayWindowStart
 import com.nua.assistant.memory.ActionOutcomeEntity
 import com.nua.assistant.memory.AutonomyPreferenceEntity
+import com.nua.assistant.memory.AutonomyContractEntity
 import com.nua.assistant.memory.TrustLedgerEntity
 import com.nua.assistant.voice.EnrollmentStep
 import com.nua.assistant.voice.LanguagePreferenceStore
@@ -192,6 +197,7 @@ class NuaViewModel @Inject constructor(
     private val whatNowAdvisor: WhatNowAdvisor,
     private val dreamRepository: DreamRepository,
     private val decisionRepository: DecisionRepository,
+    private val counterfactualSimulator: CounterfactualSimulator,
     private val privacyRepository: PrivacyRepository,
     private val worldModelRepository: WorldModelRepository,
     private val selfDiagnosticsRepository: SelfDiagnosticsRepository,
@@ -267,6 +273,9 @@ class NuaViewModel @Inject constructor(
     val trustLedger: StateFlow<List<TrustLedgerEntity>> = trustUiController.trustLedger
     val autonomySuggestions: StateFlow<List<AutonomyPreferenceEntity>> = trustUiController.autonomySuggestions
     val activeAutonomyGrants: StateFlow<List<AutonomyPreferenceEntity>> = trustUiController.activeAutonomyGrants
+    val autonomyContracts: StateFlow<List<AutonomyContractEntity>> = trustUiController.autonomyContracts
+    val contractAnomalies: StateFlow<List<SafetyAnomaly>> = trustUiController.contractAnomalies
+    val shadowAccuracyByActionType: StateFlow<Map<String, ShadowAccuracy>> = trustUiController.shadowAccuracyByActionType
 
     private val _actionOutcomes = MutableStateFlow<List<ActionOutcomeEntity>>(emptyList())
     val actionOutcomes: StateFlow<List<ActionOutcomeEntity>> = _actionOutcomes.asStateFlow()
@@ -305,6 +314,12 @@ class NuaViewModel @Inject constructor(
 
     val decisions: StateFlow<List<DecisionEntity>> = decisionRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _counterfactualResults = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val counterfactualResults: StateFlow<Map<Long, String>> = _counterfactualResults.asStateFlow()
+
+    private val _counterfactualLoadingIds = MutableStateFlow<Set<Long>>(emptySet())
+    val counterfactualLoadingIds: StateFlow<Set<Long>> = _counterfactualLoadingIds.asStateFlow()
 
     /**
      * What the palette can search over. Facts and dreams only — the things NUA actually
@@ -422,6 +437,20 @@ class NuaViewModel @Inject constructor(
 
     fun removeDecision(id: Long) {
         viewModelScope.launch { decisionRepository.delete(id) }
+    }
+
+    fun runCounterfactual(decision: DecisionEntity) {
+        if (decision.id in _counterfactualLoadingIds.value) return
+        _counterfactualLoadingIds.update { it + decision.id }
+        viewModelScope.launch {
+            val result = counterfactualSimulator.simulate(decision)
+            val text = when (result) {
+                is CounterfactualResult.Speculation -> result.text
+                is CounterfactualResult.Ineligible -> result.reason
+            }
+            _counterfactualResults.update { it + (decision.id to text) }
+            _counterfactualLoadingIds.update { it - decision.id }
+        }
     }
 
     /** A fresh export text built from whatever's currently loaded — cheap, pure, no need
@@ -1301,6 +1330,14 @@ class NuaViewModel @Inject constructor(
 
     fun disableAutoApprove(actionType: NuaActionType) {
         viewModelScope.launch { trustUiController.disableAutoApprove(actionType) }
+    }
+
+    fun createShadowContract(actionType: NuaActionType) {
+        viewModelScope.launch { trustUiController.createShadowContract(actionType) }
+    }
+
+    fun revokeContract(actionType: NuaActionType) {
+        viewModelScope.launch { trustUiController.revokeContract(actionType) }
     }
 
     fun resetVoiceEnrollment() {
