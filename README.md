@@ -635,12 +635,33 @@ itself to, and `docs/HISTORY.md` for the incident that made it explicit.
 
 ## Building
 
-Requires the Android SDK (compileSdk 35) and a JDK 17+. Set your Claude API key at
-runtime through the in-app dialog (stored via `SecureKeyRepository`, never in a build
-file). Optionally pass a Picovoice access key for wake-word support — the same key is
-reused for Eagle voice enrollment (Settings → Voice ID), though Eagle may need its own
-product enablement in the Picovoice console depending on your plan:
+Requires the Android SDK (compileSdk 35) and JDK 17+.
+
+**A Claude API key is optional.** NUA starts in local-only mode and can use Android
+Gemini Nano/AICore for supported text intelligence when the model is available on the
+device. Device actions, local memory, calendar, weather, trust, recipes, Presence and
+other on-device features do not require a Claude credential. Add a Claude key from
+Settings only to enable Claude cloud fallback and cloud-only vision/PDF transcription.
+The key is stored by `SecureKeyRepository` in encrypted preferences backed by Android
+Keystore; it is never committed to the build.
+
+Wake-word detection and speaker verification are separate: pass a Picovoice access key
+at build time for Porcupine/Eagle. Without one, manual tap-to-talk, Android
+SpeechRecognizer and TTS remain available but wake-word/owner-voice verification stay
+disabled.
 
 ```
 ./gradlew assembleDebug -PPICOVOICE_ACCESS_KEY=your_key_here
 ```
+
+For sideload testing use the dedicated `personalTest` variant. It has a separate
+application id and removes restricted permissions/components such as SMS, background
+location, Accessibility, Notification Listener and Android Auto from that test APK
+without weakening the production manifest:
+
+```
+./gradlew :app:assemblePersonalTest
+```
+
+See `docs/NUA_STANDALONE_CREDENTIAL_AUDIT_2026-11-16.md` for the complete capability
+matrix and external-service requirements.
